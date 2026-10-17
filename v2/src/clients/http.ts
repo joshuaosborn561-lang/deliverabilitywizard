@@ -1,5 +1,5 @@
 import { V2_FETCH_TIMEOUT_MS } from "../canon/constants.js";
-import { combineSignals } from "../lib/tickClock.js";
+import { combineSignals, raceDeadline, remainingFromSignal, throwIfAborted } from "../lib/tickClock.js";
 import { redactSecrets, requestLabel } from "../lib/redact.js";
 
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -54,19 +54,30 @@ export async function requestJson<T>(
 ): Promise<T> {
   const method = (opts.method ?? "GET").toUpperCase();
   const label = requestLabel(method, url);
-  const timeout = fetchTimeoutSignal(opts.timeoutMs ?? V2_FETCH_TIMEOUT_MS);
+  throwIfAborted(opts.signal, "fetch");
+  const remaining = remainingFromSignal(opts.signal);
+  const timeoutMs = Math.max(
+    1,
+    Math.min(opts.timeoutMs ?? V2_FETCH_TIMEOUT_MS, remaining ?? Number.POSITIVE_INFINITY),
+  );
+  const timeout = fetchTimeoutSignal(timeoutMs);
   const signal = combineSignals(opts.signal, timeout.signal);
   try {
-    const res = await fetch(url, {
-      method,
-      headers: {
-        Accept: "application/json",
-        ...(opts.body !== undefined ? { "Content-Type": "application/json" } : {}),
-        ...opts.headers,
-      },
-      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+    const res = await raceDeadline(
+      fetch(url, {
+        method,
+        headers: {
+          Accept: "application/json",
+          ...(opts.body !== undefined ? { "Content-Type": "application/json" } : {}),
+          ...opts.headers,
+        },
+        body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+        signal,
+      }),
       signal,
-    });
+      "fetch",
+      timeoutMs,
+    );
     if (res.status === 429) {
       throw new RateLimitError(`${label} → 429`, parseRetryAfterMs(res.headers.get("retry-after")));
     }

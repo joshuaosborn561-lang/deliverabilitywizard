@@ -1,4 +1,6 @@
-import { V2_FETCH_TIMEOUT_MS } from "../canon/constants.js";
+import { V2_FETCH_TIMEOUT_MS, V2_SMARTLEAD_429_MAX_WAIT_MS, V2_TICK_ABORT_GRACE_MS } from "../canon/constants.js";
+
+const tickDeadlines = new WeakMap<AbortSignal, number>();
 
 export class TickTimeoutError extends Error {
   readonly reason = "timeout" as const;
@@ -28,22 +30,113 @@ export function throwIfAborted(signal?: AbortSignal, hungIn = "unknown"): void {
   throw new TickTimeoutError(hungIn, 0);
 }
 
+export function remainingFromSignal(signal?: AbortSignal, now = Date.now()): number | undefined {
+  if (!signal) return undefined;
+  const deadline = tickDeadlines.get(signal);
+  if (deadline == null) return undefined;
+  return Math.max(0, deadline - now);
+}
+
+/** Honor Retry-After, but never past the tick deadline (or a 30s backstop with no tick). */
+export function capWaitMs(requestedMs: number, signal?: AbortSignal): number {
+  const remaining = remainingFromSignal(signal);
+  const cap = remaining == null ? V2_SMARTLEAD_429_MAX_WAIT_MS : remaining;
+  return Math.max(0, Math.min(Math.max(0, requestedMs), cap));
+}
+
 export function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  const wait = capWaitMs(ms, signal);
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(signal.reason instanceof Error ? signal.reason : new TickTimeoutError("sleep", 0));
       return;
     }
+    if (wait <= 0) {
+      if (signal && remainingFromSignal(signal) === 0) {
+        reject(new TickTimeoutError("sleep", 0));
+        return;
+      }
+      resolve();
+      return;
+    }
     const timer = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
+      if (signal?.aborted) {
+        reject(signal.reason instanceof Error ? signal.reason : new TickTimeoutError("sleep", 0));
+        return;
+      }
+      if (signal && remainingFromSignal(signal) === 0) {
+        reject(new TickTimeoutError("sleep", 0));
+        return;
+      }
       resolve();
-    }, ms);
+    }, wait);
     const onAbort = () => {
       clearTimeout(timer);
       reject(signal?.reason instanceof Error ? signal.reason : new TickTimeoutError("sleep", 0));
     };
     signal?.addEventListener("abort", onAbort, { once: true });
   });
+}
+
+/**
+ * D284 — a hung await that ignores AbortSignal still loses. Used around
+ * fetch, limiter retries, and the whole tick so the lease is released.
+ */
+export function raceDeadline<T>(
+  promise: Promise<T>,
+  signal: AbortSignal | undefined,
+  hungIn: string,
+  timeoutMs?: number,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let done = false;
+    const finish = (fn: () => void) => {
+      if (done) return;
+      done = true;
+      signal?.removeEventListener("abort", onAbort);
+      if (timer) clearTimeout(timer);
+      fn();
+    };
+    const fail = (error: unknown) =>
+      finish(() => {
+        reject(error instanceof Error ? error : new TickTimeoutError(hungIn, 0));
+      });
+    const onAbort = () =>
+      fail(signal?.reason instanceof Error ? signal.reason : new TickTimeoutError(hungIn, 0));
+    if (signal?.aborted) {
+      onAbort();
+      void promise.catch(() => undefined);
+      return;
+    }
+    const timer =
+      timeoutMs != null && timeoutMs >= 0
+        ? setTimeout(() => fail(new TickTimeoutError(hungIn, timeoutMs)), timeoutMs)
+        : undefined;
+    signal?.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => finish(() => resolve(value)),
+      (error) => fail(error),
+    );
+  });
+}
+
+/** After the tick abort fires, give in-memory scoring a beat to finish. */
+export function withTickDeadline<T>(tick: TickHandle, work: Promise<T>, graceMs = V2_TICK_ABORT_GRACE_MS): Promise<T> {
+  const timeout = new Promise<never>((_, reject) => {
+    const fire = () => {
+      setTimeout(() => {
+        reject(
+          tick.signal.reason instanceof TickTimeoutError
+            ? tick.signal.reason
+            : new TickTimeoutError(tick.hungIn, tick.elapsedMs()),
+        );
+      }, graceMs);
+    };
+    if (tick.signal.aborted) fire();
+    else tick.signal.addEventListener("abort", fire, { once: true });
+  });
+  return Promise.race([work, timeout]);
 }
 
 export function combineSignals(...signals: Array<AbortSignal | undefined>): AbortSignal {
@@ -77,6 +170,8 @@ export interface TickHandle {
 export function startTick(timeoutMs: number): TickHandle {
   const ac = new AbortController();
   const started = Date.now();
+  const deadlineAt = started + timeoutMs;
+  tickDeadlines.set(ac.signal, deadlineAt);
   let hungIn = "start";
   const timer = setTimeout(() => {
     if (!ac.signal.aborted) {
@@ -97,7 +192,7 @@ export function startTick(timeoutMs: number): TickHandle {
       return Date.now() - started;
     },
     remainingMs() {
-      return Math.max(0, timeoutMs - (Date.now() - started));
+      return Math.max(0, deadlineAt - Date.now());
     },
     throwIfAborted() {
       throwIfAborted(ac.signal, hungIn);

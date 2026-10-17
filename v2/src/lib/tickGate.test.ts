@@ -15,5 +15,10 @@ describe("D280 tick skip reasons", () => {
       formatSkipLog("staff", "quiet_hours"),
       "[v2] staff skip reason=quiet_hours",
     );
+    assert.equal(
+      tickSkipReason({ quietHours: true, inventoryUnready: true }),
+      "quiet_hours",
+      "weekend/quiet skip must not wait on inventory",
+    );
   });
 });

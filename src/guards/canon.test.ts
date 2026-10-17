@@ -7025,8 +7025,8 @@ describe("owner intent — D278 v2 must not starve the old wizard Smartlead key"
     );
     assert.match(
       canon,
-      /20 requests\/min/,
-      stop("CANON names the v2 20/min courtesy cap (D278).", "CANON.md lost D278."),
+      /60 requests\/min/,
+      stop("CANON names the v2 60/min courtesy cap (D284).", "CANON.md lost the v2 rate cap."),
     );
     assert.match(
       canon,
@@ -7119,6 +7119,44 @@ describe("owner intent — D281 v2 ticks finish: timeout, abort, TTL lease, heal
       decisions,
       /^\| D281 \|/m,
       stop("The status index lists D281 (D127).", "DECISIONS.md index has no D281 row."),
+    );
+  });
+});
+
+describe("owner intent — D284 v2 tick deadline actually ends; 60/min budget", () => {
+  it("D284: CANON names raced timeout, 60/min bucket, quiet-hours skip before I/O", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    assert.match(
+      canon,
+      /Canon as of \*\*D284\*\*/,
+      stop("CANON is dated D284.", "CANON.md header is not D284."),
+    );
+    assert.match(
+      canon,
+      /races/,
+      stop("CANON names the tick Promise.race (D284).", "CANON.md lost the raced deadline."),
+    );
+    assert.match(
+      canon,
+      /60 requests\/min/,
+      stop("CANON names the 60/min token bucket (D284).", "CANON.md lost 60/min."),
+    );
+    assert.match(
+      canon,
+      /quiet-hours\/weekend skips return before any inventory load/,
+      stop("CANON names immediate quiet-hours skip (D284).", "CANON.md lost the skip-before-I/O rule."),
+    );
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    assert.match(
+      decisions,
+      /## D284 — v2 tick deadlines must actually end; 60\/min Smartlead budget/,
+      stop("The D284 deadline contract is in the ledger.", "DECISIONS.md no longer has D284."),
+    );
+    assert.match(
+      decisions,
+      /^\| D284 \|/m,
+      stop("The status index lists D284 (D127).", "DECISIONS.md index has no D284 row."),
     );
   });
 });

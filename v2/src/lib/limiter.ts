@@ -6,7 +6,13 @@ import {
   V2_SMARTLEAD_MIN_GAP_MS,
 } from "../canon/constants.js";
 import { RateLimitError } from "../clients/http.js";
-import { abortableSleep, throwIfAborted } from "./tickClock.js";
+import {
+  abortableSleep,
+  capWaitMs,
+  remainingFromSignal,
+  throwIfAborted,
+  TickTimeoutError,
+} from "./tickClock.js";
 import type { V2Store } from "../store.js";
 
 export { RateLimitError };
@@ -21,12 +27,39 @@ function retryAfterFrom(error: unknown): number | undefined {
   return error instanceof RateLimitError ? error.retryAfterMs : undefined;
 }
 
+/** D284 — 429 backoff honors Retry-After but never past the tick deadline. */
+export async function retryOn429<T>(
+  fn: () => Promise<T>,
+  signal?: AbortSignal,
+  maxAttempts = V2_SMARTLEAD_429_MAX_ATTEMPTS,
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    throwIfAborted(signal, "retry_429");
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (!isRateLimitError(error) || attempt >= maxAttempts) throw error;
+      const requested =
+        retryAfterFrom(error) ?? Math.min(30_000, 1_000 * 2 ** Math.min(attempt - 1, 5));
+      const wait = capWaitMs(requested, signal);
+      if (wait <= 0) throw error;
+      await abortableSleep(wait, signal);
+      const leftover = requested - wait;
+      if (leftover > 50) {
+        throw new TickTimeoutError("retry_429", remainingFromSignal(signal) ?? wait);
+      }
+    }
+  }
+  throw lastError;
+}
+
 /**
- * D278 — v2's own Smartlead budget (20/min, concurrency 1), Postgres-shared
- * across staff + isolation so shadow cannot starve the old wizard (D257 150).
- * 429s release the slot, back off, and retry.
- * D281 — acquire waits are abortable; a held slot expires by TTL so a hung
- * fetch cannot pin inflight=1 forever.
+ * D278/D284 — v2's own Smartlead budget (60/min token bucket, concurrency 1),
+ * Postgres-shared across staff + isolation so shadow cannot starve the old
+ * wizard (D257 150). 429s release the slot, honor Retry-After, and retry
+ * only while the tick deadline remains.
  */
 export class SharedSmartleadLimiter {
   private lastStartAt = 0;
@@ -35,6 +68,8 @@ export class SharedSmartleadLimiter {
   private starts: number[] = [];
   private inflight = 0;
   private waiters: Array<() => void> = [];
+  private tokens: number;
+  private lastRefill = Date.now();
 
   constructor(
     private readonly store?: V2Store,
@@ -43,14 +78,25 @@ export class SharedSmartleadLimiter {
     private readonly minGapMs = V2_SMARTLEAD_MIN_GAP_MS,
     private readonly maxAttempts = V2_SMARTLEAD_429_MAX_ATTEMPTS,
     private readonly slotTtlMs = V2_RATE_SLOT_TTL_MS,
-  ) {}
+  ) {
+    this.tokens = maxPerMin;
+  }
 
   async schedule<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     let lastError: unknown;
     for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
       throwIfAborted(signal, "limiter");
       const pause = this.pausedUntil - Date.now();
-      if (pause > 0) await abortableSleep(pause, signal);
+      if (pause > 0) {
+        const wait = capWaitMs(pause, signal);
+        if (wait <= 0) {
+          throw new TickTimeoutError("limiter_429", remainingFromSignal(signal) ?? 0);
+        }
+        await abortableSleep(wait, signal);
+        if (this.pausedUntil - Date.now() > 50) {
+          throw new TickTimeoutError("limiter_429", remainingFromSignal(signal) ?? wait);
+        }
+      }
       if (this.store) {
         await this.acquireShared(signal);
       } else {
@@ -95,6 +141,7 @@ export class SharedSmartleadLimiter {
     concurrency: number;
   } {
     this.pruneStarts(Date.now());
+    this.refillTokens();
     return {
       inflight: this.inflight,
       waiting: this.waiters.length,
@@ -104,6 +151,13 @@ export class SharedSmartleadLimiter {
       maxPerMin: this.maxPerMin,
       concurrency: this.concurrency,
     };
+  }
+
+  private refillTokens(now = Date.now()): void {
+    const elapsed = now - this.lastRefill;
+    if (elapsed <= 0) return;
+    this.tokens = Math.min(this.maxPerMin, this.tokens + (elapsed * this.maxPerMin) / 60_000);
+    this.lastRefill = now;
   }
 
   private pruneStarts(now: number): void {
@@ -127,13 +181,15 @@ export class SharedSmartleadLimiter {
   private async acquireLocal(signal?: AbortSignal): Promise<void> {
     for (;;) {
       throwIfAborted(signal, "limiter");
+      this.refillTokens();
       this.pruneStarts(Date.now());
-      if (this.starts.length >= this.maxPerMin) {
-        const wait = this.starts[0]! + 60_000 - Date.now() + 5;
+      if (this.tokens < 1) {
+        const wait = ((1 - this.tokens) * 60_000) / this.maxPerMin;
         if (wait > 0) await abortableSleep(wait, signal);
         continue;
       }
       if (this.inflight < this.concurrency) {
+        this.tokens -= 1;
         this.inflight += 1;
         return;
       }

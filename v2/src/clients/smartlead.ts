@@ -1,6 +1,6 @@
 import { V2_SMARTLEAD_PAGE_DELAY_MS, V2_STAFF_ACCOUNT_PAGE_CAP } from "../canon/constants.js";
 import { getJson, type ScheduleFn } from "./http.js";
-import { abortableSleep } from "../lib/tickClock.js";
+import { abortableSleep, throwIfAborted } from "../lib/tickClock.js";
 import { dedupeById } from "../lib/inventory.js";
 import type { SequenceSample, SlimAccount, SlimCampaign } from "../types.js";
 
@@ -45,6 +45,7 @@ export class SmartleadReader {
     const out: SlimAccount[] = [];
     try {
       for (let page = 0, offset = 0; page < maxPages; page += 1, offset += 100) {
+        throwIfAborted(opts.signal, "list_accounts");
         opts.onProgress?.({ step: "list_accounts", page: page + 1, offset });
         const raw = await this.schedule(
           () =>
@@ -66,6 +67,10 @@ export class SmartleadReader {
             : [];
         if (!rows.length) break;
         for (const row of rows) out.push(normalizeAccount(row as Record<string, unknown>));
+        if (opts.signal?.aborted) {
+          opts.onProgress?.({ step: "list_accounts", truncated: true, n: out.length });
+          return dedupeById(out);
+        }
         if (rows.length < 100) break;
         if (page + 1 >= maxPages) {
           opts.onProgress?.({

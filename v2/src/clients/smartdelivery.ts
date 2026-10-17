@@ -4,6 +4,7 @@ import {
   V2_ISOLATION_TEST_PAGE_CAP,
 } from "../canon/constants.js";
 import { getJson, postJson, type ScheduleFn } from "./http.js";
+import { throwIfAborted } from "../lib/tickClock.js";
 import type { ProviderSplit, SpamTest } from "../types.js";
 
 /** Same base the old wizard uses (`src/clients/smartdelivery.ts`). */
@@ -38,6 +39,7 @@ export class SmartDeliveryReader {
     const maxPages = opts.maxPages ?? V2_ISOLATION_TEST_PAGE_CAP;
     try {
       for (let offset = 0, page = 0; page < maxPages; page += 1, offset += limit) {
+        throwIfAborted(opts.signal, "list_tests");
         opts.onProgress?.({ step: "list_tests", page: page + 1 });
         const raw = await this.schedule(
           () => postJson<unknown>(this.url(LIST_TESTS_PATH), { limit, offset }, {}, opts.signal),
@@ -96,6 +98,10 @@ export class SmartDeliveryReader {
     const out: SpamTest[] = [];
     let used = 0;
     for (const test of tests) {
+      if (signal?.aborted) {
+        out.push(test);
+        continue;
+      }
       if ((test.senders?.length ?? 0) > 0 || !test.id || used >= cap) {
         out.push(test);
         continue;
@@ -106,8 +112,7 @@ export class SmartDeliveryReader {
         const raw = await this.getSenderAccountWise(test.id, signal);
         const senders = sendersFromAccountWise(raw);
         out.push(senders.length ? { ...test, senders } : test);
-      } catch (error) {
-        if (signal?.aborted) throw error;
+      } catch {
         out.push(test);
       }
     }
@@ -123,6 +128,10 @@ export class SmartDeliveryReader {
     const out: SpamTest[] = [];
     let used = 0;
     for (const test of tests) {
+      if (signal?.aborted) {
+        out.push(test);
+        continue;
+      }
       if (
         (test.providers?.length ?? 0) > 0 ||
         (test.senders?.length ?? 0) > 0 ||
@@ -138,8 +147,7 @@ export class SmartDeliveryReader {
         const raw = await this.getProviderwiseReport(test.id, signal);
         const providers = providerSplitsFromReport(raw);
         out.push(providers.length ? { ...test, providers } : test);
-      } catch (error) {
-        if (signal?.aborted) throw error;
+      } catch {
         out.push(test);
       }
     }

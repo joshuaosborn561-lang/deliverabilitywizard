@@ -1,5 +1,13 @@
 import type { SlackClient } from "../clients/slack.js";
+import type { SmartleadClient } from "../clients/smartlead.js";
 import type { AppConfig } from "../config.js";
+import { accountEmail } from "../clients/smartlead.js";
+import type { SmartleadAccountWithCampaigns } from "../clients/smartlead.js";
+import { mailboxWarmupPerDayTarget } from "../lib/sendCeiling.js";
+import { returnGenericToUntaggedPool } from "../lib/genericReturn.js";
+import { runGenericLedgerCleanup } from "../lib/genericLedgerCleanup.js";
+import { upsertGenericLedgerToSupabase } from "../lib/genericLedgerSupabase.js";
+import { sleep } from "../lib/http.js";
 import {
   canaryLockAlertText,
   canaryLockFindingLine,
@@ -30,8 +38,9 @@ export function genericPoolFindingAlertText(findings: string[]): string {
   return [
     ":rotating_light: CANON miss: generic pool assignment is wrong (D221)",
     ...lines,
-    "A generic is assigned only to bring a client POD up to 40 staffable senders.",
+    "A generic is assigned only to bring a client POD up to 40 staffable senders (D221/D286).",
     "Surplus, paused, or replaced seats return to the fleet pool. One seat, one client.",
+    "Ledger findings: generic_outside_ledger / generic_not_warming / generic_on_insight / pod_short_no_free_generic.",
     "Investigate in-thread. This page is the first alert; /health stays no until the table is clean.",
   ].join("\n");
 }
@@ -53,6 +62,16 @@ export class GenericPoolCanonService {
     private readonly config: AppConfig,
     private readonly state: StateStore,
     private readonly slack: Pick<SlackClient, "send">,
+    private readonly smartlead?: Pick<
+      SmartleadClient,
+      "updateEmailAccount" | "configureWarmup" | "removeEmailAccountsFromCampaign"
+    > &
+      Partial<
+        Pick<
+          SmartleadClient,
+          "ensureTag" | "removeTags" | "addEmailAccountsToCampaign"
+        >
+      >,
   ) {}
 
   async run(opts: {
@@ -68,6 +87,21 @@ export class GenericPoolCanonService {
       accounts: opts.inventory.accounts,
       clients: opts.inventory.clients,
     });
+    if (this.smartlead) {
+      try {
+        await runGenericLedgerCleanup({
+          config: this.config,
+          smartlead: this.smartlead,
+          state: this.state,
+          accounts: opts.inventory.accounts as SmartleadAccountWithCampaigns[],
+          campaigns: opts.inventory.campaigns,
+          dryRun,
+          now: opts.now,
+        });
+      } catch (error) {
+        console.warn("[generic-ledger] cleanup failed", error);
+      }
+    }
     const existing = this.state.listGenericSeats();
     const synced = await syncGenericSeatsFromInventory({
       existing,
@@ -90,6 +124,8 @@ export class GenericPoolCanonService {
       liveClientIdsByEmail: synced.liveClientIdsByEmail,
       powerGrydClientId,
       idleExemptEmails,
+      minFloorByClient: this.config.minFloorByClient,
+      now: opts.now,
     });
     const pre =
       existing.length === 0
@@ -105,6 +141,7 @@ export class GenericPoolCanonService {
           }).filter(
             (row) =>
               row.kind === "generic_outside_table" ||
+              row.kind === "generic_outside_ledger" ||
               row.kind === "generic_multi_client",
           );
     const seen = new Set<string>();
@@ -139,6 +176,27 @@ export class GenericPoolCanonService {
     if (!dryRun) {
       this.state.replaceGenericSeats(synced.seats);
       this.state.setGenericPoolFindings(findings);
+      if (this.smartlead) {
+        await this.enforceLedgerWrites({
+          inventory: opts.inventory,
+          warmupOff: synced.warmupOffEmails,
+          unassignedWithPodTags: synced.unassignedWithPodTags,
+          now: opts.now ?? new Date(),
+        });
+      }
+      const mirror = await upsertGenericLedgerToSupabase({
+        seats: synced.seats,
+        now: opts.now,
+      });
+      if (mirror.skipped) {
+        console.log(
+          `[generic-ledger] supabase skipped (${mirror.reason}) — wizard state is source of truth`,
+        );
+      } else if (mirror.error) {
+        console.warn(`[generic-ledger] supabase upsert failed: ${mirror.error}`);
+      } else {
+        console.log(`[generic-ledger] supabase upserted=${mirror.upserted}`);
+      }
     }
 
     const openKeys = new Set(findingKeys(findings));
@@ -197,5 +255,58 @@ export class GenericPoolCanonService {
       `[generic-pool] seats=${result.seats} assigned=${result.assigned} findings=${findings.length} alerted=${result.alerted.length}`,
     );
     return result;
+  }
+
+  private async enforceLedgerWrites(input: {
+    inventory: InventorySnapshot;
+    warmupOff: string[];
+    unassignedWithPodTags: string[];
+    now: Date;
+  }): Promise<void> {
+    const smartlead = this.smartlead;
+    if (!smartlead) return;
+    const byEmail = new Map(
+      (input.inventory.accounts as SmartleadAccountWithCampaigns[]).map(
+        (account) => [accountEmail(account)?.toLowerCase(), account] as const,
+      ),
+    );
+    for (const email of input.warmupOff) {
+      const account = byEmail.get(email);
+      if (!account || typeof account.id !== "number") continue;
+      if (this.state.warmupEnsuredRecently(account.id, input.now.getTime())) {
+        continue;
+      }
+      try {
+        await smartlead.configureWarmup(account.id, {
+          warmup_enabled: true,
+          total_warmup_per_day: mailboxWarmupPerDayTarget(account, this.config),
+          daily_rampup: this.config.warmupDailyRampup,
+          reply_rate_percentage: this.config.warmupReplyRatePercentage,
+        });
+        this.state.markWarmupEnsured(account.id, input.now.getTime());
+        await sleep(process.env.NODE_TEST_CONTEXT ? 0 : 150);
+        console.log(`[generic-ledger] warmup re-enabled ${email}`);
+      } catch (error) {
+        console.warn(`[generic-ledger] warmup ${email} failed`, error);
+      }
+    }
+    for (const email of input.unassignedWithPodTags) {
+      const account = byEmail.get(email);
+      if (!account || typeof account.id !== "number") continue;
+      const seat = this.state.getGenericSeat(email);
+      if (seat?.assignedClientId != null) continue;
+      try {
+        await returnGenericToUntaggedPool({
+          smartlead,
+          state: this.state,
+          account,
+          email,
+          reason: "stale_pod_tag",
+          now: input.now,
+        });
+      } catch (error) {
+        console.warn(`[generic-ledger] strip tags ${email} failed`, error);
+      }
+    }
   }
 }

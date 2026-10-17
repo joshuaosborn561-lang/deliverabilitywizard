@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D285** (2026-10-17). One page of current truth. When a new
+Canon as of **D286** (2026-10-17). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -15,6 +15,7 @@ from it. Derive behaviour from this file; use the ledger only to understand
 Changes to this section require Josh's explicit approval. PRs that alter it must never auto-merge.
 
 - POD-40: every client POD A and POD B must each hold >=40 warm seats the client owns (TechEvo 30), counted per POD, never per campaign; borrowed seats never count; when under, rotate free warm generics in (Insight: no generics, alert Josh daily). Never narrow, skip the off-week POD, or exempt any client from the count.
+- Generics Ledger: Every generic inbox we own has exactly one row: email, ESP, warmup on/off, assigned client (blank = free pool), assigned POD (A/B), assigned_at, and covering_for (the specific branded seats of that client it stands in for, each with its 21-day warm-ready date). All generics warm continuously; any generic found not warming gets warmup turned back on the same day. A generic is assigned only to fill one client's POD to 40 (30 TechEvo), to one client and one POD, and never moves PODs. Branded is preferred: when a covered branded seat reaches 21 days warm, it goes into the POD and the generic it covered comes out the same day: unlinked, client_id cleared, POD/POC tags stripped, signature reset, back to the free pool. No generic is assigned or released outside the ledger. Insight never receives generics; every other client, including PowerGRYD, does. CornerStone-domain inboxes are never generics and never in the pool. A generic on a live campaign without a ledger row, a generic tagged to Insight, a generic not warming, or a POD under 40 with no free warm generic alerts Josh the same day.
 
 ## Mission
 
@@ -551,10 +552,12 @@ Caps ramp manually (35 on Oct 12).
   across clients.
 - **Generics** are **ONE fleet-wide pool** (D221/D230/D231). The wizard
   tracks every generic seat in `state.genericSeats` (the `generics` table
-  in `src/state/store.ts`, one row per seat):
-  seat id (`sl_account_id`), `email`, `assigned_client_id` (nullable),
-  `assigned_pod` (A/B, nullable), `assigned_at`, `reason`, and a
-  `released_at` history, plus `provider`, `warm_ready_at`, and
+  in `src/state/store.ts`, one row per seat — the D286 ledger):
+  seat id (`sl_account_id`), `email`, ESP/`provider`, `warmup_enabled`,
+  `assigned_client_id` (nullable / blank = free pool),
+  `assigned_pod` (A/B, nullable), `assigned_at`, `reason`,
+  `covering_for` (branded seats + `warm_ready_at`), a
+  `released_at` history, plus `warm_ready_at` and
   `assigned_campaign_id(s)`. **Every** generic assign and release
   (min40, TERRL sub, named-warm / surplus return, cleanup) goes
   through that table — never ad hoc. A check blocks any generic
@@ -636,8 +639,19 @@ Caps ramp manually (35 on Oct 12).
   generic assigned to more than one client is a
   `generic_multi_client` finding. A generic tagged in Smartlead
   without a matching table assignment is
-  `generic_outside_table`. Those three are core CANON misses —
-  `/health` goes no and Slack pages once per incident.
+  `generic_outside_table` / `generic_outside_ledger`. A generic
+  with warmup off is `generic_not_warming` (seeder turns warmup
+  back on the same day). A generic tagged to Insight is
+  `generic_on_insight`. A POD under floor with no free warm
+  generic is `pod_short_no_free_generic`. Those are core CANON
+  misses — `/health` goes no and Slack pages Josh the same day
+  (weekday ops_alert). The morning named-warm swap is **per-seat**:
+  when a `covering_for` branded seat's `warmReadyAt` passes, attach
+  that branded seat and release its linked generic via
+  `returnGenericToUntaggedPool`; headcount oldest/worst is only
+  the fallback for unlinked seats. Never drop a POD below floor.
+  CornerStone-domain inboxes are never generics and never in the
+  pool. Insight never receives generics; PowerGRYD does.
   **Exception (D197/D199/D203/D207/D209/D221):** exclusive generic + client-sig seats
   filling a POD shortfall must not be peeled as foreign Goliath
   while they are needed. Surplus pool generics above 40 per POD
@@ -1094,7 +1108,7 @@ and `mutationQueue.{depth,oldestWaitMs,rateLimitStreak}` (D247),
 stamps from the sidecar when the full dump is behind (D249), `canonCompliant` yes/no on the core kinds (staffing
 / on-week staffable 40, ESP mix, exclusivity, 21-day warmup, signatures,
 gap, volume, placement test, both canaries, merge-tag fill,
-generic-pool idle / multi-client, canary lock, Insight non-Josh sender — D108/D180/D217/D221/D238/D282), open `canonFindings` by kind, per-stage `stageHealth` watchdog
+generic-pool idle / multi-client / outside-ledger / not-warming / on-insight / pod-short-no-free-generic, canary lock, Insight non-Josh sender — D108/D180/D217/D221/D238/D282/D286), open `canonFindings` by kind, per-stage `stageHealth` watchdog
 (D84) with `overdue` / `overdueStages` / `lastSkipReason` (D166) including
 the D205/D219 canon-ops stages (`hold-enforcement`, `min40-topup`,
 `powergryd-watch`, `generic-cleanup`, `mailbox-type-tags`), `/run?mode=end-poc`

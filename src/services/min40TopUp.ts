@@ -797,6 +797,8 @@ export class Min40TopUpService {
       releaseHistory: seat.releaseHistory,
       tags: account.tags,
       assignedPod: seat.assignedPod ?? null,
+      excluded: seat.excluded,
+      email,
     });
   }
 

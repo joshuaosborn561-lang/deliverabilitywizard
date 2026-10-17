@@ -67,6 +67,10 @@ import {
   type GenericSeatRecord,
 } from "../lib/genericPool.js";
 import {
+  parseGenericLedgerCleanupStamp,
+  type GenericLedgerCleanupStamp,
+} from "../lib/genericLedger.js";
+import {
   terlHoldActive,
   terlHeldUntil,
   terlSubstitutionKey,
@@ -382,6 +386,8 @@ export interface AppState {
   genericSeats: Record<string, GenericSeatRecord>;
   /** D221 — latest generic-pool canon findings (`generic_idle` / `generic_multi_client`). */
   genericPoolFindings: string[];
+  /** D286 — one-time generics-ledger cleanup stamp (idempotent). */
+  genericLedgerCleanup: GenericLedgerCleanupStamp | null;
   /**
    * D236 — overlay so `/run?mode=end-poc` can release a name-list POC
    * without waiting for a Railway env change. Ids stay until cleared.
@@ -829,6 +835,7 @@ const EMPTY_STATE: AppState = {
   tenantOutboundBlocks: {},
   genericSeats: {},
   genericPoolFindings: [],
+  genericLedgerCleanup: null,
   endedPocClientIds: [],
   tenantTerlHolds: {},
   terlPausedDays: {},
@@ -956,6 +963,9 @@ export class StateStore {
           parsed.tenantOutboundBlocks,
         ),
         genericSeats: parseGenericSeats(parsed.genericSeats),
+        genericLedgerCleanup: parseGenericLedgerCleanupStamp(
+          parsed.genericLedgerCleanup,
+        ),
         endedPocClientIds: Array.isArray(parsed.endedPocClientIds)
           ? parsed.endedPocClientIds.filter(
               (id): id is number => Number.isFinite(id) && id > 0,
@@ -1472,6 +1482,16 @@ export class StateStore {
 
   listGenericPoolFindings(): string[] {
     return [...this.state.genericPoolFindings];
+  }
+
+  getGenericLedgerCleanup(): GenericLedgerCleanupStamp | null {
+    return this.state.genericLedgerCleanup
+      ? { ...this.state.genericLedgerCleanup }
+      : null;
+  }
+
+  setGenericLedgerCleanup(stamp: GenericLedgerCleanupStamp): void {
+    this.state.genericLedgerCleanup = { ...stamp };
   }
 
   /**

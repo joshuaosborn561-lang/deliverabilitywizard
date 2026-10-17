@@ -20,6 +20,10 @@ import {
 import { pickWeightedGenericReturns } from "./namedWarmSwap.js";
 import type { EspSlotFamily } from "./mailboxType.js";
 import { minFloorForClient } from "./minFloorByClient.js";
+import {
+  ledgerNoRestaffClientId,
+  pickCoveringForReturns,
+} from "./genericLedger.js";
 
 export const GENERIC_SURPLUS_RETURN_WEEKDAYS_ONLY = true;
 
@@ -27,6 +31,8 @@ export interface SurplusReturnCandidate {
   email: string;
   clientId: number;
   pod: string | null;
+  attachBranded?: string[];
+  via?: "covering_for" | "headcount";
 }
 
 export function openTerlSubstituteEmails(
@@ -111,19 +117,46 @@ export function surplusGenericReturns(input: {
     const pod = podRaw as GenericAssignedPod;
     const named = input.namedStaffableByClientPod.get(key) ?? 0;
     const floor = minFloorForClient(clientId, input.minFloorByClient);
-    const picked =
-      input.clientHasActiveCampaign?.get(clientId) === false
-        ? rankGenericsOldestWorstFirst(seats)
-        : pickWeightedGenericReturns(seats, {
-            namedStaffable: named,
-            preferEspSlot: input.preferEspSlot,
-            floor,
-          });
+    if (input.clientHasActiveCampaign?.get(clientId) === false) {
+      for (const seat of rankGenericsOldestWorstFirst(seats)) {
+        out.push({
+          email: seat.email,
+          clientId: seat.assignedClientId!,
+          pod,
+          via: "headcount",
+        });
+      }
+      continue;
+    }
+    const covering = pickCoveringForReturns({
+      seats,
+      namedStaffable: named,
+      floor,
+      now,
+      noRestaff: ledgerNoRestaffClientId(clientId),
+    });
+    const coveringEmails = new Set(covering.map((row) => row.email));
+    for (const row of covering) {
+      out.push({
+        email: row.email,
+        clientId: row.clientId,
+        pod: row.pod,
+        attachBranded: row.attachBranded,
+        via: "covering_for",
+      });
+    }
+    const unlinked = seats.filter((seat) => !coveringEmails.has(seat.email) && !seat.coveringFor?.length);
+    const picked = pickWeightedGenericReturns(unlinked, {
+      namedStaffable: named,
+      preferEspSlot: input.preferEspSlot,
+      floor,
+    });
     for (const seat of picked) {
       out.push({
         email: seat.email,
         clientId: seat.assignedClientId!,
         pod,
+        via: "headcount",
       });
     }
   }
@@ -134,7 +167,13 @@ export function surplusGenericReturns(input: {
         input.seats.find((seat) => genericSeatKey(seat.email) === genericSeatKey(row.email))
           ?.assignedAt ?? null,
     })),
-  ).map(({ email, clientId, pod }) => ({ email, clientId, pod }));
+  ).map(({ email, clientId, pod, attachBranded, via }) => ({
+    email,
+    clientId,
+    pod,
+    attachBranded,
+    via,
+  }));
 }
 
 /** True when keeping this generic is required to hold the POD at 40. */

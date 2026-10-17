@@ -9,6 +9,7 @@ import { preferredGenericOwnerId } from "./dedicatedGeneric.js";
 import type { GenericAssignedPod, GenericSeatRecord } from "./genericPool.js";
 import { podFromMailboxTags } from "./genericPool.js";
 import { isFreedPowerGrydAttachBlocked } from "./powerGrydFreedCleanup.js";
+import { isCornerstoneGenericDomain, isInsightClientId } from "./genericLedger.js";
 
 export const GENERIC_POD_TAG_A = "POD-A";
 export const GENERIC_POD_TAG_B = "POD-B";
@@ -45,7 +46,12 @@ export function genericEligibleForClientPod(input: {
   releaseHistory?: Array<{ reason?: string | null }>;
   tags?: Array<{ tag_name?: unknown; name?: unknown }> | string[] | null;
   assignedPod?: GenericAssignedPod | null;
+  excluded?: boolean;
+  email?: string;
 }): boolean {
+  if (input.excluded) return false;
+  if (input.email && isCornerstoneGenericDomain(input.email)) return false;
+  if (isInsightClientId(input.clientId)) return false;
   if (
     isFreedPowerGrydAttachBlocked({
       mailboxClientId: input.mailboxClientId,

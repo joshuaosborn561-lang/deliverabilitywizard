@@ -49,6 +49,10 @@ describe("D221 generic-pool constants", () => {
       "generic_idle",
       "generic_multi_client",
       "generic_outside_table",
+      "generic_outside_ledger",
+      "generic_not_warming",
+      "generic_on_insight",
+      "pod_short_no_free_generic",
     ]);
     for (const kind of GENERIC_POOL_CORE_KINDS) {
       assert.ok(
@@ -462,10 +466,85 @@ describe("D221 syncGenericSeatsFromInventory", () => {
     const free = result.seats.find((row) => row.email.startsWith("free"))!;
     assert.equal(free.assignedClientId, null);
     assert.equal(free.reason, null);
+    assert.equal(assigned.warmupEnabled, false);
+    assert.equal(free.warmupEnabled, false);
+    assert.ok(result.warmupOffEmails.includes("ada@getintroduced.info"));
     assert.equal(
       result.namedStaffableByClientPod.get(clientPodKey(77, "A")),
       1,
     );
+  });
+
+  it("D286: seeds a campaign generic, skips CornerStone, and flags ledger findings", async () => {
+    const result = await syncGenericSeatsFromInventory({
+      existing: [],
+      accounts: [
+        {
+          id: 11,
+          email: "marekbrooks@meetconnectbox.com",
+          type: "GMAIL",
+          client_id: 592842,
+          campaign_ids: [4005226],
+          tags: [{ tag_name: "GENERIC" }],
+          warmup_details: { status: "ACTIVE" },
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+        {
+          id: 12,
+          email: "owen@cornerstoneearthworksmy.info",
+          type: "OUTLOOK",
+          client_id: 574088,
+          campaign_ids: [1],
+          tags: [{ tag_name: "GENERIC" }],
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+      ],
+      campaigns: [
+        { id: 4005226, client_id: 592842, status: "ACTIVE" },
+        { id: 1, client_id: 574088, status: "ACTIVE" },
+      ],
+      config: {
+        extraGenericMailboxes: [],
+        extraGenericDomains: ["meetconnectbox.com"],
+        prewarmedDomains: [],
+      },
+      state,
+      now: new Date("2026-10-17T20:00:00.000Z"),
+    });
+    const marek = result.seats.find(
+      (row) => row.email === "marekbrooks@meetconnectbox.com",
+    )!;
+    assert.equal(marek.assignedClientId, 592842);
+    assert.deepEqual(marek.assignedCampaignIds, [4005226]);
+    assert.equal(marek.warmupEnabled, true);
+    const stone = result.seats.find((row) =>
+      row.email.includes("cornerstone"),
+    )!;
+    assert.equal(stone.excluded, true);
+    assert.equal(stone.assignedClientId, null);
+
+    const findings = validateGenericPool({
+      seats: [
+        emptyGenericSeat("ghost@getintroduced.info", { warmupEnabled: false }),
+        emptyGenericSeat("cold@getintroduced.info", { warmupEnabled: false }),
+        emptyGenericSeat("insight@getintroduced.info", {
+          assignedClientId: 582890,
+          assignedPod: "A",
+        }),
+      ],
+      namedStaffableByClientPod: new Map([[clientPodKey(77, "A"), 20]]),
+      clientHasActiveCampaign: new Map([
+        [77, true],
+        [582890, true],
+      ]),
+      liveClientIdsByEmail: new Map([["ghost@getintroduced.info", [77]]]),
+    });
+    assert.ok(findings.some((row) => row.kind === "generic_outside_ledger"));
+    assert.ok(findings.some((row) => row.kind === "generic_not_warming"));
+    assert.ok(findings.some((row) => row.kind === "generic_on_insight"));
+    assert.ok(findings.some((row) => row.kind === "pod_short_no_free_generic"));
   });
 
   it("keeps an existing TERRL substitute reason across a same-client resync", async () => {

@@ -16916,15 +16916,26 @@ describe("owner intent — D268 Allow-generics retired", () => {
       /Never add them when named/,
       stop("min40 skips a covered POD (D268).", "min40TopUp.ts lost the named-cover rule."),
     );
-    assert.match(
+    assert.doesNotMatch(
       min40,
       /if \(pod !== onWeek\) continue/,
-      stop("New generics only top up the on-week POD (D268).", "fillShortPods still fills the off-week cylinder."),
+      stop(
+        "D268 off-week skip is retired (D285).",
+        "fillShortPods still skips the off-week cylinder.",
+      ),
+    );
+    assert.doesNotMatch(
+      canon,
+      /Never assign new generics to the off-week cylinder/,
+      stop(
+        "D268 off-week skip is retired (D285).",
+        "CANON.md still forbids off-week generic assigns.",
+      ),
     );
     assert.match(
       canon,
-      /Never assign new generics to the off-week cylinder/,
-      stop("CANON forbids off-week generic assigns (D268).", "CANON.md still fills the off-week cylinder with new generics."),
+      /Never skip the off-week POD/,
+      stop("Never skip the off-week POD (D285).", "CANON.md lost the both-POD fill rule."),
     );
     assert.match(
       min40,
@@ -17551,7 +17562,7 @@ describe("owner intent — D282 Insight Josh-only senders", () => {
     assert.match(
       canon,
       /insightExemptFromSenderTopUp/,
-      stop("CANON names the Insight min40 skip (D282).", "CANON.md lost insightExemptFromSenderTopUp."),
+      stop("CANON names the Insight no-generics gate (D282).", "CANON.md lost insightExemptFromSenderTopUp."),
     );
     assert.match(
       canon,
@@ -17589,7 +17600,10 @@ describe("owner intent — D282 Insight Josh-only senders", () => {
     assert.match(
       min40,
       /insightExemptFromSenderTopUp/,
-      stop("min40 skips Insight (D282).", "min40TopUp.ts lost insightExemptFromSenderTopUp."),
+      stop(
+        "min40 never assigns Insight generics (D282).",
+        "min40TopUp.ts lost insightExemptFromSenderTopUp.",
+      ),
     );
     assert.match(
       check,
@@ -17601,10 +17615,18 @@ describe("owner intent — D282 Insight Josh-only senders", () => {
     );
     assert.match(
       check,
+      /applyNamedPodUnderstaffed/,
+      stop(
+        "campaign-check counts Insight per POD (D285).",
+        "campaignCheck.ts lost POD understaffed for Insight.",
+      ),
+    );
+    assert.doesNotMatch(
+      check,
       /insightExemptFromSenderTopUp/,
       stop(
-        "campaign-check suppresses Insight understaffed (D282).",
-        "campaignCheck.ts still pages understaffed for Insight.",
+        "D282 understaffed silence is retired (D285).",
+        "campaignCheck.ts still suppresses Insight understaffed.",
       ),
     );
     assert.doesNotMatch(
@@ -17619,7 +17641,7 @@ describe("owner intent — D282 Insight Josh-only senders", () => {
 });
 
 describe("owner intent — D283 freed PowerGRYD seats; CornerStone / HOLD-UNTIL never attach", () => {
-  it("D283: SL-null wins over powergryd_dedicated; no generics on PG; CornerStone/HOLD-UNTIL hard-exclude", async () => {
+  it("D283: SL-null wins over powergryd_dedicated; freed seats stay off PG; CornerStone/HOLD-UNTIL hard-exclude", async () => {
     const { readFile } = await import("node:fs/promises");
     const { preferredGenericOwnerId } = await import("../lib/dedicatedGeneric.js");
     const { genericBlockedOnPowerGrydStaffing } = await import(
@@ -17652,7 +17674,22 @@ describe("owner intent — D283 freed PowerGRYD seats; CornerStone / HOLD-UNTIL 
         assignedClientId: 592842,
       }),
       true,
-      "PowerGRYD must never take generics (D283).",
+      "Onboarding-freed SL-null leftover PowerGRYD owner must not restaff onto 592842 (D283).",
+    );
+    assert.equal(
+      genericBlockedOnPowerGrydStaffing({
+        account: { client_id: null, signature: "" },
+        email: "spare@crosslaunchco.com",
+        targetClientId: 592842,
+        emptyByDesign: false,
+        mailboxClientId: null,
+        assignedClientId: null,
+      }),
+      false,
+      stop(
+        "PowerGRYD may take a free-pool generic (D285).",
+        "genericBlockedOnPowerGrydStaffing still blocks every generic onto 592842.",
+      ),
     );
     assert.equal(
       isAttachForbiddenSeat({
@@ -17675,8 +17712,8 @@ describe("owner intent — D283 freed PowerGRYD seats; CornerStone / HOLD-UNTIL 
 
     assert.match(
       canon,
-      /Canon as of \*\*D283\*\*/,
-      stop("CANON is dated D283.", "CANON.md header is not D283."),
+      /Canon as of \*\*D(283|28[4-9]|29[0-9])\*\*/,
+      stop("CANON is dated D283 or later.", "CANON.md header is before D283."),
     );
     assert.match(
       canon,
@@ -17685,8 +17722,19 @@ describe("owner intent — D283 freed PowerGRYD seats; CornerStone / HOLD-UNTIL 
     );
     assert.match(
       canon,
+      /must not flip back onto/,
+      stop(
+        "CANON keeps D283 freed-seat ownership (D285).",
+        "CANON.md lost the Onboarding-freed PowerGRYD stay-freed rule.",
+      ),
+    );
+    assert.doesNotMatch(
+      canon,
       /never staff fleet-pool generics onto PowerGRYD/,
-      stop("CANON forbids generics on PowerGRYD (D283).", "CANON.md lost the PowerGRYD never-generics rule."),
+      stop(
+        "PowerGRYD may take generics (D285).",
+        "CANON.md still forbids all PowerGRYD generics.",
+      ),
     );
     assert.match(
       decisions,

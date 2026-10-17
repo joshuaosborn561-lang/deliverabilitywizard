@@ -15,6 +15,12 @@ Create a GitHub branch ruleset for `main`:
 6. Require the CI status check named **`check`** after the CI workflow has
    landed on `main`.
 7. Allow only repository admins to bypass, for genuine production emergencies.
+8. **LOCKED canon (D285).** PRs that change the `LOCKED — Josh-only changes`
+   section of `CANON.md` require Josh's explicit approval (CODEOWNERS on
+   `CANON.md`, `docs/LOCKED-CANON.md`, and `src/lib/lockedCanon.ts`). Those
+   PRs must **never auto-merge**. The CI job `locked-canon` fails when that
+   section diffs against the PR base so merge bots cannot proceed. `check`
+   stays the required human-merge status; Josh merges locked-canon PRs.
 
 Recommended merge methods:
 

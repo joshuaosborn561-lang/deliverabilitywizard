@@ -12,10 +12,16 @@ import {
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import {
   insightDualSignatureMismatch,
-  insightExemptFromSenderTopUp,
   isInsightCampaign,
   mailboxActiveSalesGliderCampaigns,
 } from "../lib/insightCampaigns.js";
+import { isPocEngagementClient } from "../lib/pocClient.js";
+import { isRealNamedClientId } from "../lib/dedicatedGeneric.js";
+import {
+  countOwnedClientPods,
+  formatPodUnderstaffedDetail,
+  type OwnedPodCount,
+} from "../lib/podOwnedInventory.js";
 import { mailboxSignatureMismatch } from "../lib/mailboxSignature.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
@@ -90,6 +96,8 @@ export interface CampaignAuditResult {
   campaigns: CampaignAuditRow[];
   untested: CampaignAuditRow[];
   understaffed: CampaignAuditRow[];
+  /** D285 — named-client min-40 is per POD owned inventory. */
+  podUnderstaffed: OwnedPodCount[];
   signatureIssues: SignatureQaIssue[];
   totalShortfall: number;
   supply: SupplyForecast;
@@ -205,13 +213,24 @@ export class CampaignAuditService {
           typeof c.client_id === "number"
             ? clientDisplayName(clients.find((row) => row.id === c.client_id))
             : "";
+        const pocEngagement = isPocEngagementClient({
+          clientId: c.client_id,
+          hay: clientName,
+          patterns: this.config.pocClientNamePatterns,
+          endedIds: this.state.listEndedPocClientIds(),
+        });
         const floor = staffFloorForCampaign(
           c,
           clientInboxFloors.eligible,
           clientName,
           clientInboxFloors.onWeek,
-          { minFloorByClient: this.config.minFloorByClient },
+          { pocEngagement, minFloorByClient: this.config.minFloorByClient },
         );
+        // D285 — named min-40 is POD inventory, never per campaign.
+        const namedPodFloor =
+          !pocEngagement &&
+          typeof c.client_id === "number" &&
+          isRealNamedClientId(c.client_id, (id) => this.state.isMarkerClientId(id));
         return {
           id: c.id,
           name: String(c.name ?? `campaign ${c.id}`),
@@ -219,9 +238,7 @@ export class CampaignAuditService {
           senders,
           staffable,
           floor,
-          shortBy: insightExemptFromSenderTopUp(c)
-            ? 0
-            : Math.max(0, floor - staffable),
+          shortBy: namedPodFloor ? 0 : Math.max(0, floor - staffable),
           hasTest: tested.has(String(c.id)),
           domains: [...(domainsByCampaign.get(c.id) ?? new Map())]
             .map(([domain, count]) => ({ domain, count }))
@@ -245,6 +262,35 @@ export class CampaignAuditService {
 
     const untested = rows.filter((r) => !r.hasTest);
     const understaffed = rows.filter((r) => r.shortBy > 0);
+    const namedClientIds = [
+      ...new Set(
+        (campaigns as SmartleadCampaign[])
+          .filter((c) => String(c.status ?? "").toUpperCase() === "ACTIVE")
+          .filter((c) => !isAnyShellCampaign(c))
+          .map((c) => c.client_id)
+          .filter((id): id is number => typeof id === "number")
+          .filter((id) => {
+            const client = clients.find((row) => row.id === id);
+            const clientName = clientDisplayName(client ?? { id });
+            return (
+              isRealNamedClientId(id, (marker) => this.state.isMarkerClientId(marker)) &&
+              !isPocEngagementClient({
+                clientId: id,
+                hay: clientName,
+                patterns: this.config.pocClientNamePatterns,
+                endedIds: this.state.listEndedPocClientIds(),
+              })
+            );
+          }),
+      ),
+    ];
+    const podUnderstaffed = countOwnedClientPods({
+      accounts: accounts as SmartleadAccountWithCampaigns[],
+      campaigns: campaigns as SmartleadCampaign[],
+      config: this.config,
+      state: this.state,
+      clientIds: namedClientIds,
+    }).filter((row) => row.shortBy > 1e-9);
     const signatureIssues = await this.auditSignatures({
       campaigns: campaigns as SmartleadCampaign[],
       accounts: accounts as SmartleadAccountWithCampaigns[],
@@ -256,14 +302,23 @@ export class CampaignAuditService {
       campaigns: rows,
       untested,
       understaffed,
+      podUnderstaffed,
       signatureIssues,
-      totalShortfall: understaffed.reduce((sum, r) => sum + r.shortBy, 0),
+      totalShortfall:
+        understaffed.reduce((sum, r) => sum + r.shortBy, 0) +
+        podUnderstaffed.reduce((sum, r) => sum + r.shortBy, 0),
       supply,
     };
 
     console.log(
-      `[campaign-audit] ${rows.length} active campaign(s); ${untested.length} without a placement test; ${understaffed.length} under their on-week client-pod floor (short ${displayShortfallSenders(result.totalShortfall)} total); ${signatureIssues.length} signature QA miss(es)`,
+      `[campaign-audit] ${rows.length} active campaign(s); ${untested.length} without a placement test; ${understaffed.length} under their on-week client-pod floor; ${podUnderstaffed.length} named POD(s) under owned floor (short ${displayShortfallSenders(result.totalShortfall)} total); ${signatureIssues.length} signature QA miss(es)`,
     );
+    for (const row of podUnderstaffed) {
+      const client = (clients as SmartleadClientRecord[]).find((c) => c.id === row.clientId);
+      console.log(
+        `[campaign-audit]   ${formatPodUnderstaffedDetail(row, clientDisplayName(client ?? { id: row.clientId }))}`,
+      );
+    }
     for (const r of rows) {
       const brands = r.domains
         .slice(0, 4)

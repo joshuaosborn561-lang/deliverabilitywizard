@@ -141,6 +141,8 @@ function fakeState(
       if (result.ok) seats.set(result.seat.email, result.seat);
       return result;
     },
+    listEndedPocClientIds: () => [],
+    isMarkerClientId: () => false,
     save: async () => undefined,
   } as unknown as StateStore;
   return { state, current: () => current };
@@ -161,7 +163,7 @@ describe("CampaignTopUpService safety", () => {
     let addCalls = 0;
     const smartlead = {
       listCampaigns: async () => [
-        { id: 2, name: "Goliath Thin", status: "ACTIVE", client_id: 2 },
+        { id: 2, name: "Deep Roots Thin", status: "ACTIVE", client_id: 597783 },
       ],
       listAllEmailAccounts: async () => [
         {
@@ -194,7 +196,7 @@ describe("CampaignTopUpService safety", () => {
           campaign_ids: [],
         })),
       ],
-      listClients: async () => [{ id: 2, name: "Client B" }],
+      listClients: async () => [{ id: 597783, name: "Deep Roots", logo: "Deep Roots" }],
       addEmailAccountsToCampaign: async () => {
         addCalls += 1;
       },
@@ -211,9 +213,9 @@ describe("CampaignTopUpService safety", () => {
     const result = await service.run();
     assert.equal(addCalls, 1);
     assert.equal(result.assigned.length, 1);
-    // D217: live floor is 40 on-week staffable, not half of ~100 named.
-    // 0 staffable + 1 placed ⇒ short 39.
-    assert.equal(result.unfilled[0]?.shortBy, 39);
+    // D285 — named min-40 is POD inventory; campaign-top-up only fills
+    // POC engagement to 60. 0 staffable + 1 placed ⇒ short 59.
+    assert.equal(result.unfilled[0]?.shortBy, 59);
   });
 
   it("rolls back donor and target membership before retrying a failed move", async () => {
@@ -291,22 +293,13 @@ describe("CampaignTopUpService safety", () => {
     );
 
     const result = await service.run();
-    assert.deepEqual(events.slice(0, 6), [
-      "add:2",
-      "remove:1",
-      "identity:Move Sender\nGoliath B",
-      "remove:2",
-      "add:1",
-      "identity:Old signature",
-    ]);
     assert.equal(
-      events.filter((event) => event === "add:2").length,
-      2,
-      "move should retry only after the first attempt was compensated",
+      events.some((event) => event === "add:2" || event === "remove:1"),
+      false,
+      "D254 / D285 — POC fill must not steal another client's assigned generic",
     );
-    assert.equal(result.assigned.length, 1);
-    assert.equal(result.assigned[0]?.movedFrom[0], 1);
-    assert.equal(current().assignedClientId, 2);
+    assert.equal(result.assigned.length, 0);
+    assert.equal(current().assignedClientId, 1);
     assert.equal(current().status, "assigned");
   });
 
@@ -519,7 +512,12 @@ describe("CampaignTopUpService safety", () => {
     assert.equal(addCalls, 0, "TechEvo must stay client-inbox only");
     assert.equal(result.assigned.length, 0);
     assert.ok(
-      result.skipped.some((row) => row.includes("client-inbox only")),
+      result.skipped.some(
+        (row) =>
+          row.includes("client-inbox only") ||
+          row.includes("named min-40 is POD inventory"),
+      ),
+      `TechEvo named fill must stay off campaign-top-up: ${result.skipped.join(" | ")}`,
     );
   });
 
@@ -1134,7 +1132,7 @@ describe("CampaignTopUpService safety", () => {
             id: 4084613,
             name: "Deep Roots POC",
             status: "ACTIVE",
-            client_id: 548611,
+            client_id: 597783,
           },
         ],
         listAllEmailAccounts: async () => [
@@ -1151,7 +1149,7 @@ describe("CampaignTopUpService safety", () => {
           },
         ],
         listClients: async () => [
-          { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+          { id: 597783, name: "Deep Roots", logo: "Deep Roots" },
         ],
         addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
           added.push([id, ids]);

@@ -214,7 +214,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D200 | Superseded by D207 — same-client generics may multi-link like named seats; exclusive-attach / exclusiveExtras peel is retired; cross-client peel stays | Exclusive-attach / no-multi-link applies to pool generics only; same-client named seats (techevolution* / TechEvo 521881) may sit on every campaign of that client; still peel pool multi-link, foreign-client tag, and rotating undedicated pool shares |
 | D203 | Live — live send floor is per ACTIVE campaign (D207); 40-A + 40-B inventory, static named split, ~1/3 ESP mix, never-retag stay | Named-client POD A/B is a static even split of named senders only; each POD owes 40 staffable seats at client inventory (40-A + 40-B) and a ~1/3 Outlook/Gmail mix floor when both ESPs exist; exclusive client-signed generics are thin per-POD top-up when named half is short; do not retag named seats or over-disperse the free pool |
 | D205 | Live — Insight SEG removed from hold defaults by D246; min40 shares same-client generics (D207); PowerGRYD restaff-as-special-case retired by D237; watch still never START/PAUSE; auto-allow / Allow-generics Slack retired by D268 | Wizard-owned canon-ops stages (hold-enforcement / min40-topup / powergryd-watch / generic-cleanup) on a weekday Chicago 30-minute cron; the only live-campaign PAUSED write besides shells |
-| D207 | Live — rest-record peel loophole closed by D209 | MIN 40 is per ACTIVE campaign; same-client generics may multi-link; no PAUSED/STOPPED detach (D169 retired); min40 share-then-assign; detachWouldBreakStaffableFloor on every ACTIVE remove except disconnected / cross-client / HOLD-RETIRE / under-warmed; PowerGRYD restaff with own seats; daily under-40 Slack |
+| D207 | Live — named min-40 *fill/page* superseded by D285; peel-below-40 on ACTIVE stays | MIN 40 peel floor is per ACTIVE campaign; same-client generics may multi-link; no PAUSED/STOPPED detach (D169 retired); detachWouldBreakStaffableFloor on every ACTIVE remove except disconnected / cross-client / HOLD-RETIRE / under-warmed. Named fill and ops_alert are per POD owned inventory (D285) |
 | D209 | Live | Same-client multi-link is never a peel reason; a rest record on a still-attached seat does not shrink the 40 floor or exempt the peel; client-rest only marks resting after a successful detach; CultureFits / Vasco GENERIC seats that already staff a named client are normal pool seats, not dirt |
 | D210 | Live | SURBL (any `*.surbl.org` zone) never counts as a blacklist hit — info-only; no teardown, retire, or alert |
 | D211 | Live | 15-minute health chain resumes leftover late stages after a mid-chain SIGTERM (skip-if-fresh, not at boot); `/run?mode=mailbox-gap` is gap-only |
@@ -261,9 +261,9 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D253 | Live | Production image builds pull Node 22 bookworm-slim from `mirror.gcr.io/library/node`, not anonymous Docker Hub; runtime stays the official image; D247–D252 and 40/40 unchanged |
 | D254 | Live | POC min40 fills refuse another client's seat and any seat whose locked POD is not on-week (check before link); min40 summary includes PowerGRYD on-week POD shortfall and pages zero on-week generics; powergryd-watch does not stay hands-off when a whole POD is empty; named A/B split stays static; canary and client-named-domain seats are never generics |
 | D255 | Live | Insight copy must not contain a hardcoded Josh Osborn / Insight sign-off; `%signature%` like every other client; mailbox sig is Josh Osborn / Strategic Account Executive / Insight; D178 close writer deleted |
-| D256 | Live — empty-by-design / live-SL-wins staffing lock added by D258; never-generics onto PowerGRYD added by D283 | PowerGRYD 592842 is a normal named client (not POC); D254 POC lock and empty-POD Slack stay; `MIN_FLOOR_BY_CLIENT` (TechEvo 521881 → 30, else 40); min40 returns surplus generics above that floor |
+| D256 | Live — empty-by-design / live-SL-wins staffing lock added by D258; D283 never-generics onto PowerGRYD superseded by D285 | PowerGRYD 592842 is a normal named client (not POC); D254 POC lock and empty-POD Slack stay; `MIN_FLOOR_BY_CLIENT` (TechEvo 521881 → 30, else 40); min40 returns surplus generics above that floor. PowerGRYD takes generics (D285). |
 | D257 | Live — stringify path amended by D262; exit path amended by D265; rate budget / SmartDelivery amended by D267 | Event-loop freezes: off-thread pruned/debounced state dump; shared Smartlead limiter (concurrency + 429 backoff); freeze watchdog exits on repeated multi-second freezes; scan-backfill start/end/timing logs |
-| D258 | Live — D283 extends live-SL-wins to `client_id=null` and forbids all generics on PowerGRYD | Live Smartlead `client_id` wins dedicated-generic resolution when pool `assignedClientId` disagrees; realign the pool row; PowerGRYD empty-by-design (branded seats warming) hard-blocks foreign-signature / foreign-client generics on PG ACTIVE campaigns; one-client does not peel TE/Insight seats for a stale PG pool row |
+| D258 | Live — D283 extends live-SL-wins to `client_id=null`; D283 never-generics onto PowerGRYD superseded by D285 | Live Smartlead `client_id` wins dedicated-generic resolution when pool `assignedClientId` disagrees; realign the pool row; PowerGRYD empty-by-design (branded seats warming) hard-blocks foreign-signature / foreign-client generics on PG ACTIVE campaigns; one-client does not peel TE/Insight seats for a stale PG pool row. PowerGRYD takes free-pool generics (D285). |
 | D259 | Live | Slack / human-facing sender counts are whole senders; shortfall ceils after a 1e-6 scrub, assigned/staffable floor; internal Azure 0.1 math stays |
 | D260 | Live | Generic-family / GENERIC-tagged sending domains stay generic even when assigned to a client; domain-lifecycle continues past a per-domain retire/cover refusal |
 | D261 | Live — prune persist / hole keep amended by D262 / D267 | A watchdog stage that starts must stamp ok or a real error; isolation-branch honors abort, saves once per run, and prunes deleted/finished campaigns off the hole list |
@@ -273,13 +273,14 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D265 | Live | Freeze watchdog must exit non-zero after flushing lastOk sidecar (never drain to 0); Railway restartPolicyType ALWAYS |
 | D266 | Live | One-tap spend/retire cards update in place to Done by the tapper; pendingSpend is pruned; actions are idempotent; transient errors retry then stay pending; client cover buys use the client InboxKit workspace; retired seats are scheduled for cancellation |
 | D267 | Live | Freeze/restart reliability: top-up/fan-out/campaign-audit yield; isolation prune persists on the sidecar; isolation-branch stays inside its 10m budget and stamps lastOk on a partial pass; Smartlead limiter 150/min including SmartDelivery; canon-ops skipped ticks log a reason and retry |
-| D268 | Live | Allow-generics is gone. Generics are a thin on-week floor-only top-up (40, TechEvo 30). Never past the floor. Never onto a POD whose named seats already cover it. Never new generics onto the off-week cylinder. No Slack card, no auto-allow list, no pending allow-generics state. Named A/B split, canaries, and Gabe Calls exclusions stay. |
+| D268 | Live — off-week skip (point 3) superseded by D285 | Allow-generics is gone. Generics are a thin floor-only top-up (40, TechEvo 30). Never past the floor. Never onto a POD whose named seats already cover it. No Slack card, no auto-allow list, no pending allow-generics state. Named A/B split, canaries, and Gabe Calls exclusions stay. Both PODs fill when under (D285). |
 | D269 | Live — inventory parse / pass isolation amended by D270 | Freeze/restart loop after D267/D268: ghost-pool drops persist on the lastOk sidecar; fat fetch_campaigns inventory pages slim to campaign_ids (off-thread when large); min40 prefix / generic-seat sync / client-rest yield so a 40–50s stall cannot trip the freeze watchdog |
 | D270 | Live — stream/parse/stringify amended by D271 | Freeze/restart follow-up after D269: stream fat Smartlead OK bodies (never response.text of fetch_campaigns pages); exclusive health limiter lane; monitor waits on health and retries; leftover skip cannot hide a stale/empty inventory; failed inventory continues on the accepted book; copy-canary attach reuses the shared book |
 | D271 | Live — stringify/index yield amended by D272 | Freeze/restart follow-up after D270: stall logs name the in-flight stage plus sampled stack / async-hooks / perf_hooks attribution; state.json saves stream to disk without joining the blob; load parses off-thread in yielded key/slice chunks; OK Smartlead bodies always stream in 64KB slices; fat campaigns/health-metrics/account JSON stays off-thread; account-by-campaign index yields. Watchdog thresholds unchanged. |
 | D272 | Live | Freeze/restart follow-up after D271: stringify time-slices via setTimeout(0) and emits flushed slices (saveHot included); indexAccountsByCampaign yields on inner campaign ids; campaign-audit pauses CPU while health is live. Watchdog thresholds unchanged. |
-| D282 | Live | Insight (Smartlead client 582890) campaigns may only send from Josh Osborn inboxes on SalesGlider or Insight domains; no generics / other named senders; floor is Josh-seats only, never backfill; `insight_non_josh_sender` flags existing violations; understaffed/min40 suppressed |
-| D283 | Live | Onboarding-freed Smartlead `client_id=null` is authoritative over a stale PowerGRYD / `powergryd_dedicated` pool row (one-time cleanup of those generic-domain seats); never staff generics onto PowerGRYD; CornerStone 574088 and unexpired HOLD-UNTIL never attach (`addEmailAccountsToCampaign` hard-reject, same shape as D282); leftover HOLD-UNTIL still does not pull; never START / unpause STOPPED |
+| D282 | Live — understaffed/min40 silence superseded by D285; no-generics stays | Insight (Smartlead client 582890) campaigns may only send from Josh Osborn inboxes on SalesGlider or Insight domains; no generics / other named senders; Josh-only seats count toward the POD floor; `insight_non_josh_sender` flags existing violations; POD shortfalls still page Josh daily (D285) |
+| D283 | Live — never-generics onto PowerGRYD superseded by D285; freed-seat ownership stays | Onboarding-freed Smartlead `client_id=null` is authoritative over a stale PowerGRYD / `powergryd_dedicated` pool row (one-time cleanup of those generic-domain seats); those freed seats must not flip back onto 592842. CornerStone 574088 and unexpired HOLD-UNTIL never attach (`addEmailAccountsToCampaign` hard-reject, same shape as D282); leftover HOLD-UNTIL still does not pull; never START / unpause STOPPED. PowerGRYD otherwise takes generics (D285). |
+| D285 | Live | Min-40 is per POD owned inventory, never per campaign. POD A and POD B each hold >=40 warm seats the client owns (TechEvo 30). Borrowed seats never count. When under, rotate free warm generics in; never skip the off-week POD. Insight 582890 is the only client that never gets generics; alert Josh daily while under. PowerGRYD takes generics. LOCKED core canon — Josh-only; PRs that change the locked section must never auto-merge. |
 
 ---
 
@@ -10025,6 +10026,85 @@ SL-null + PG pool; `cleanupFreedPowerGrydGenerics`;
 `canAttachMailboxToCampaign` refuses CornerStone and HOLD-UNTIL.
 Tests: 21592200 / 21592202 stay `client_id` null and off PowerGRYD;
 CornerStone HOLD-UNTIL seats never attach to EMCOR / TechEvo.
+
+---
+
+## D285 — Min-40 is per POD owned inventory; POD-40 is LOCKED canon
+
+**Date.** 2026-10-17 (Josh).
+
+**Decision.** Min-40 is per POD, never per campaign. Every named
+client's POD A and POD B must each hold >=40 warm staffable seats
+the client owns (TechEvo 30). Count client-owned named seats plus
+generics assigned to that client and POD. Seats sitting on another
+named client's campaigns never count.
+
+1. **Delete per-campaign min-40 counting.** min40 no longer walks
+   ACTIVE named campaigns (`countOnWeekStaffable` → `shortBy` →
+   `fillCampaign`) to fill them to 40. Campaign-check, campaign-audit,
+   and campaign-top-up do not flag or fill named clients per campaign.
+   POC engagement 60 stays campaign-level. The D207 peel floor
+   (do not detach a staffable seat from an ACTIVE campaign at 40
+   on-week staffable) stays.
+
+2. **Undo D268 point 3.** When either POD — on-week or off-week —
+   is under floor, assign free warm (≥21d or `WARMUP-GATE-EXEMPT`)
+   untagged pool generics via `state.genericSeats`. Keep exclusivity,
+   ESP match, locked canaries, client signature. Never CornerStone
+   or HOLD-UNTIL/RETIRE. Never touch STOPPED. Never START/PAUSE.
+   On-week campaigns link only the on-week POD; off-week generics
+   stay assigned and unlinked (D228). Surplus return and named-warm
+   swap stay POD-based. Never add generics past the floor. Never add
+   them when named / owned seats already cover that POD.
+
+3. **Insight 582890 is the only client that never gets generics**
+   (D282). Remove D282's understaffed silence: count Insight per
+   POD like everyone else; Josh-only seats. **PowerGRYD 592842
+   takes generics** like any named client. D283 freed-seat
+   handling stays only so Onboarding-freed SL-null leftover
+   `powergryd_dedicated` seats cannot flip back onto 592842.
+
+4. **Alert.** Every client POD still under floor after fill gets
+   one Slack `ops_alert` to Josh per weekday (6am–8pm CT) naming
+   client, POD, owned count, and shortfall — including Insight and
+   PowerGRYD while under.
+
+5. **LOCKED core canon.** CANON.md opens with
+   `LOCKED — Josh-only changes` and the POD-40 sentence. That
+   section, `docs/LOCKED-CANON.md`, and `src/lib/lockedCanon.ts`
+   must stay identical. Changing it requires Josh's explicit
+   approval. Such PRs must never auto-merge (CODEOWNERS on
+   CANON.md; CI `locked-canon` job fails when the locked section
+   diffs vs base).
+
+**Why.** Josh (2026-10-17): min-40 was being counted per campaign
+and skipping the off-week POD. That is wrong. Each POD is an
+inventory cylinder the client owns. Borrowed seats are not owned.
+Never narrow, skip the off-week POD, or exempt any client from
+the count. Make that a locked rule so a later session cannot
+quietly undo it.
+
+**Rejected.** Per-campaign min-40 fill. Skipping the off-week POD.
+Counting borrowed seats. Exempting Insight from the owned count
+(it still gets no generics). Keeping PowerGRYD on the no-generics
+list. Auto-merging a PR that edits the locked section. Narrowing
+the floor.
+
+**Supersedes / amends.** Supersedes D207's per-campaign min-40
+*fill and ops_alert* (peel-below-40 on ACTIVE stays). Supersedes
+D268 point 3 (off-week skip). Amends D282: Insight is counted and
+alerted; no-generics stays. Supersedes D283 never-generics onto
+PowerGRYD; keeps D283 freed-seat ownership (SL-null leftover
+`powergryd_dedicated` must not flip back onto 592842). Amends
+D254: both PODs, not on-week only. Does not reverse D228
+(off-week unlinked), D230 (no POD retag), D256 (TechEvo 30),
+D40, or D4.
+
+**Guards.** `src/guards/lockedCanon.test.ts`: locked section
+present and unaltered; min40 counts both PODs; no
+`if (pod !== onWeek) continue`; named fill is POD inventory not
+per campaign. CODEOWNERS + CI `locked-canon` block auto-merge
+when the locked section changes vs base.
 
 ---
 

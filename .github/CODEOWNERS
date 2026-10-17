@@ -6,3 +6,10 @@
 /CLAUDE.md @joshuaosborn561-lang
 /DECISIONS.md @joshuaosborn561-lang
 /DEPLOYMENT.md @joshuaosborn561-lang
+
+# LOCKED canon (POD-40 and any later locked rules) requires Josh's
+# explicit approval. PRs that change these files must never auto-merge.
+/CANON.md @joshuaosborn561-lang
+/docs/LOCKED-CANON.md @joshuaosborn561-lang
+/src/lib/lockedCanon.ts @joshuaosborn561-lang
+/src/guards/lockedCanon.test.ts @joshuaosborn561-lang

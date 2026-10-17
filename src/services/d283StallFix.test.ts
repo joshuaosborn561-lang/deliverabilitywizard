@@ -220,12 +220,10 @@ describe("D283 stall fix — book-only guards, no PowerGRYD pool walk", () => {
     );
     assert.equal(
       attached.some(
-        (row) =>
-          pgCampaignIds.has(row[0]) &&
-          row[1].some((id) => freedIds.has(id) || id >= 300_000),
+        (row) => pgCampaignIds.has(row[0]) && row[1].some((id) => freedIds.has(id)),
       ),
       false,
-      `no generics onto PowerGRYD: ${JSON.stringify(attached)}`,
+      `Onboarding-freed seats must not flip back onto PowerGRYD: ${JSON.stringify(attached)}`,
     );
     assert.equal(
       attached.some((row) => row[0] === 5486 && row[1].some((id) => freedIds.has(id))),

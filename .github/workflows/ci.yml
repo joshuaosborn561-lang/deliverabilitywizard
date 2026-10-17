@@ -67,3 +67,59 @@ jobs:
               process.exit(1);
             });
           '
+
+  # D285 — LOCKED canon PRs must never auto-merge. `check` stays the
+  # required human-merge status. This job fails when the LOCKED section
+  # of CANON.md diffs against the PR base so merge bots cannot proceed.
+  locked-canon:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Locked canon golden text
+        run: npx tsx --test src/guards/lockedCanon.test.ts src/lib/lockedCanon.ts
+      - name: Block auto-merge when LOCKED canon section changes
+        shell: bash
+        run: |
+          git fetch origin "${{ github.base_ref }}" --depth=1
+          python3 - <<'PY'
+          import os, subprocess, sys
+          base_ref = os.environ.get("GITHUB_BASE_REF") or ""
+          if not base_ref:
+              print("No base ref; treating as a locked-section change.")
+              print("Never auto-merge. Josh must approve and merge this PR.")
+              sys.exit(1)
+          try:
+              base = subprocess.check_output(
+                  ["git", "show", f"origin/{base_ref}:CANON.md"],
+                  text=True,
+              )
+          except subprocess.CalledProcessError:
+              print("No CANON.md on base — LOCKED section is new.")
+              print("Never auto-merge. Josh must approve and merge this PR.")
+              sys.exit(1)
+          with open("CANON.md", encoding="utf-8") as fh:
+              head = fh.read()
+          heading = "## LOCKED — Josh-only changes"
+          def extract(md: str) -> str:
+              start = md.find(heading)
+              if start < 0:
+                  return ""
+              rest = md[start:]
+              search_from = len(heading)
+              nxt = rest.find("\n## ", search_from)
+              return (rest if nxt < 0 else rest[:nxt]).strip()
+          if extract(head) != extract(base):
+              print("LOCKED canon section changed vs base.")
+              print("Never auto-merge. Josh must approve and merge this PR.")
+              sys.exit(1)
+          print("LOCKED canon section unchanged vs base")
+          PY

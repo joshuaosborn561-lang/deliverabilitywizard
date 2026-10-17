@@ -32,7 +32,7 @@ import {
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
-import { pocClientId } from "../lib/pocClient.js";
+import { isPocEngagementClient, pocClientId } from "../lib/pocClient.js";
 import { chunkArray, sleep } from "../lib/http.js";
 import { dropGhostPoolSeats } from "../lib/poolInventoryReconcile.js";
 import { indexAccountsByCampaign } from "../lib/accountCampaignIndex.js";
@@ -235,6 +235,21 @@ export class CampaignTopUpService {
     };
 
     const clientsById = new Map(clients.map((c) => [c.id, c]));
+    const endedPocIds = this.state.listEndedPocClientIds();
+    const isPocFillCampaign = (campaign: SmartleadCampaign): boolean => {
+      const clientId =
+        typeof campaign.client_id === "number" ? campaign.client_id : null;
+      if (clientId == null) return false;
+      const client = clientsById.get(clientId);
+      return isPocEngagementClient({
+        clientId,
+        hay: clientDisplayName(client ?? { id: clientId }),
+        name: client?.name,
+        logo: client?.logo,
+        patterns: this.config.pocClientNamePatterns,
+        endedIds: endedPocIds,
+      });
+    };
     const campaignById = new Map(
       (campaigns as SmartleadCampaign[]).map((c) => [c.id, c]),
     );
@@ -306,7 +321,10 @@ export class CampaignTopUpService {
               })
             : "",
           clientInboxFloors.onWeek,
-          { minFloorByClient: this.config.minFloorByClient },
+          {
+            pocEngagement: isPocFillCampaign(campaign),
+            minFloorByClient: this.config.minFloorByClient,
+          },
         ),
       ]),
     );
@@ -423,6 +441,14 @@ export class CampaignTopUpService {
           result.skipped.push(`${c.id} ${c.name ?? ""} (excluded)`.trim());
           return false;
         }
+        // D285 — named min-40 is POD inventory in min40-topup, never
+        // per campaign here. POC 60 stays campaign-level.
+        if (!isPocFillCampaign(c)) {
+          result.skipped.push(
+            `${c.id} ${c.name ?? ""} (named min-40 is POD inventory)`.trim(),
+          );
+          return false;
+        }
         return true;
       })
       .map((c) => ({
@@ -502,7 +528,12 @@ export class CampaignTopUpService {
     // Recompute shortfalls against the post-release counts.
     const needyAfter = (campaigns as SmartleadCampaign[])
       .filter((c) => isManagedCampaign(c))
-      .filter((c) => !isExcluded(c, excluded) && !insightExemptFromSenderTopUp(c))
+      .filter(
+        (c) =>
+          !isExcluded(c, excluded) &&
+          !insightExemptFromSenderTopUp(c) &&
+          isPocFillCampaign(c),
+      )
       .map((c) => ({ campaign: c, senders: projected.get(c.id) ?? 0 }))
       .filter((row) => row.senders < (floorByCampaign.get(row.campaign.id) ?? 0))
       .sort((a, b) => a.senders - b.senders);
@@ -650,6 +681,8 @@ export class CampaignTopUpService {
                           ? poolAccount.client_id
                           : null,
                       assignedClientId,
+                      assignedReason: seat?.reason ?? null,
+                      releaseHistory: seat?.releaseHistory,
                       isMarkerClientId: (id) => this.state.isMarkerClientId(id),
                     })
                   ) {

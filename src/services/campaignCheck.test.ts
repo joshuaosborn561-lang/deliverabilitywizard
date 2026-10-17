@@ -2037,7 +2037,7 @@ describe("D241 GABE-VM-RESERVED campaign-check", () => {
     );
   });
 
-  it("D282: flags a non-Josh Insight sender and does not page understaffed", async () => {
+  it("D282/D285: flags a non-Josh Insight sender and pages POD understaffed", async () => {
     const state = new StateStore(stateFile());
     await state.load();
     const removed: Array<[number, number[]]> = [];
@@ -2092,7 +2092,11 @@ describe("D241 GABE-VM-RESERVED campaign-check", () => {
     const row = hourly.findings.find((item) => item.campaignId === 3921647);
     const kinds = (row?.findings ?? []).map((finding) => finding.kind);
     assert.equal(kinds.includes("insight_non_josh_sender"), true);
-    assert.equal(kinds.includes("understaffed"), false);
+    assert.equal(
+      kinds.includes("understaffed"),
+      true,
+      "Insight is counted per POD and still pages understaffed (D285)",
+    );
     assert.deepEqual(removed, [], "D282 flags Owen; it does not auto-unlink");
   });
 });

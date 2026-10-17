@@ -1372,6 +1372,10 @@ export class Min40TopUpService {
       // so a scarce generic links. D268's off-week skip is retired.
       const pods: Array<"A" | "B"> = onWeek === "B" ? ["B", "A"] : ["A", "B"];
       for (const pod of pods) {
+        if (input.signal?.aborted) {
+          input.result.errors.push("aborted: stopped remaining POD fills");
+          break;
+        }
         const row = owned.get(clientPodKey(clientId, pod));
         let need = row?.shortBy ?? floor;
         const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
@@ -1398,7 +1402,10 @@ export class Min40TopUpService {
         const rejected = new Set<string>();
         const probe = clientActive[0];
         while (need > 1e-9 && probe) {
-          if (input.signal?.aborted) break;
+          if (input.signal?.aborted) {
+            input.result.errors.push("aborted: stopped remaining POD fills");
+            break;
+          }
           const platforms = espFillOrder(
             espCounts,
             floor,
@@ -1535,7 +1542,12 @@ export class Min40TopUpService {
           continue;
         }
         for (const campaign of clientActive) {
-          if (seat.campaignIds.has(campaign.id)) continue;
+          if (
+            seat.campaignIds.has(campaign.id) ||
+            campaignIdsOf(seat.account).includes(campaign.id)
+          ) {
+            continue;
+          }
           if (!this.seatIsUsable(seat.account, seat.email, campaign, input.campaignById)) {
             continue;
           }
@@ -1555,8 +1567,10 @@ export class Min40TopUpService {
   }
 
   /**
-   * D285 — every named client POD (A and B, including Insight and
-   * PowerGRYD) reports owned count vs floor after the fill.
+   * D254 / D285 — every named client POD (A and B, including Insight
+   * and PowerGRYD) reports owned count vs floor after the fill.
+   * `reportOnWeekPodShortfalls` is this walk; it no longer skips the
+   * off-week POD.
    */
   private reportPodShortfalls(input: {
     now: Date;
@@ -1652,7 +1666,7 @@ export class Min40TopUpService {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        result.errors.push(`pod-floor slack: ${message}`);
+                result.errors.push(`short-staffed slack: ${message}`);
       }
     }
   }

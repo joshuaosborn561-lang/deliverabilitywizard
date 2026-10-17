@@ -293,22 +293,13 @@ describe("CampaignTopUpService safety", () => {
     );
 
     const result = await service.run();
-    assert.deepEqual(events.slice(0, 6), [
-      "add:2",
-      "remove:1",
-      "identity:Move Sender\nGoliath B",
-      "remove:2",
-      "add:1",
-      "identity:Old signature",
-    ]);
     assert.equal(
-      events.filter((event) => event === "add:2").length,
-      2,
-      "move should retry only after the first attempt was compensated",
+      events.some((event) => event === "add:2" || event === "remove:1"),
+      false,
+      "D254 / D285 — POC fill must not steal another client's assigned generic",
     );
-    assert.equal(result.assigned.length, 1);
-    assert.equal(result.assigned[0]?.movedFrom[0], 1);
-    assert.equal(current().assignedClientId, 2);
+    assert.equal(result.assigned.length, 0);
+    assert.equal(current().assignedClientId, 1);
     assert.equal(current().status, "assigned");
   });
 
@@ -521,7 +512,12 @@ describe("CampaignTopUpService safety", () => {
     assert.equal(addCalls, 0, "TechEvo must stay client-inbox only");
     assert.equal(result.assigned.length, 0);
     assert.ok(
-      result.skipped.some((row) => row.includes("client-inbox only")),
+      result.skipped.some(
+        (row) =>
+          row.includes("client-inbox only") ||
+          row.includes("named min-40 is POD inventory"),
+      ),
+      `TechEvo named fill must stay off campaign-top-up: ${result.skipped.join(" | ")}`,
     );
   });
 
@@ -1136,7 +1132,7 @@ describe("CampaignTopUpService safety", () => {
             id: 4084613,
             name: "Deep Roots POC",
             status: "ACTIVE",
-            client_id: 548611,
+            client_id: 597783,
           },
         ],
         listAllEmailAccounts: async () => [
@@ -1153,7 +1149,7 @@ describe("CampaignTopUpService safety", () => {
           },
         ],
         listClients: async () => [
-          { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+          { id: 597783, name: "Deep Roots", logo: "Deep Roots" },
         ],
         addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
           added.push([id, ids]);

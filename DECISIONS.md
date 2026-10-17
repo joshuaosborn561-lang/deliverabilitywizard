@@ -283,11 +283,12 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D275 | Live | Plain text only: no HTML bodies; open and link tracking off; check every ACTIVE and new campaign |
 | D276 | Live | No scheduled job or Slack post outside weekdays 6am–8pm America/Chicago |
 | D277 | Live | Word-hunt substitutes never suggest AirPods, tickets, TJ, or free POC |
-| D278 | Live | v2 shares the old wizard Smartlead key: 20/min concurrency 1, 429 retry, 30-minute inventory |
+| D278 | Live — 20/min superseded by D284 60/min token bucket | v2 shares the old wizard Smartlead key: courtesy cap, 429 retry, 30-minute inventory |
 | D279 | Live | v2 shadow scoring matches old-wizard findings; attaches are floor deficit + pending dedupe; stampOk clears last_error/overdue; one ok log line per stage |
 | D280 | Live — tick TTL / health-only worker amended by D281 | v2 staff/isolation boot-tick + skip-reason logs; all roles bind /health; idempotent placement_scores unique; unwarmed copy-canary counts; per-campaign settings; purge pre-D279 pending attaches |
-| D281 | Live | v2 tick hard timeout + AbortController; in-flight lease and rate-slot TTL; isolation off the Smartlead limiter; workers serve /health only; per-tick request budget + progress logs |
+| D281 | Live — abort amended by D284 (Promise.race + capped Retry-After) | v2 tick hard timeout + AbortController; in-flight lease and rate-slot TTL; isolation off the Smartlead limiter; workers serve /health only; per-tick request budget + progress logs |
 | D282 | Live | Insight (Smartlead client 582890) campaigns may only send from Josh Osborn inboxes on SalesGlider or Insight domains; no generics / other named senders; floor is Josh-seats only, never backfill; `insight_non_josh_sender` flags existing violations; understaffed/min40 suppressed |
+| D284 | Live | v2 tick deadline actually ends the pass (Promise.race + abortable fetch/retry); 429 Retry-After never sleeps past the deadline; 60/min token bucket; quiet-hours skip before I/O; isolation scores fetched tests on abort so 0% campaigns get flagged |
 
 ---
 
@@ -10282,6 +10283,65 @@ reverse D26 one-client, D229 Insight rest, or D255 mailbox sig.
 `CANON_CORE_KINDS`; staff tick skips understaffed/min40; flags
 Owen without detach. Tests cover Josh-on-salesglider allowed,
 Owen/generic rejected, finding without unlink.
+
+---
+
+## D284 — v2 tick deadlines must actually end; 60/min Smartlead budget
+
+**Date.** 2026-10-17 (Josh).
+
+**Decision.** D281's 8/10-minute AbortController did not stop
+ticks. Isolation and staff passes logged `finished` after 8h,
+16h, and 24h with **0 campaigns scored / 0 evaluated**. A
+weekday pass must score campaigns and flag 0% ugly well inside
+30 minutes. v2 must:
+
+1. **Hard-stop the tick.** Every fetch, 429 backoff, and page
+   loop races the tick deadline (`raceDeadline` /
+   `withTickDeadline`). Aborting the controller is not enough —
+   a hung `fetch` that ignores `AbortSignal`, or
+   `abortableSleep(Retry-After)` of hours, still loses the race
+   and the in-flight lease is released so the next tick starts.
+2. **Honor Retry-After on 429, but only up to the remaining
+   deadline.** An 8-hour Retry-After must not hold the tick.
+   Pagination stays bounded and stops on abort.
+3. **Quiet hours / weekend skip returns immediately** — before
+   any inventory load or Smartlead/SmartDelivery call. Isolation
+   used to `loadInventory()` first, which held the skip path
+   open.
+4. **Score what was fetched.** Isolation no longer N+1
+   `latestRun`s every campaign before scoring. If the deadline
+   fires mid-hydrate, score the tests already in hand so a 0%
+   copy-canary still flags. Only stamp timeout-without-score
+   when there is nothing to score.
+5. **v2 Smartlead budget is a 60/min token bucket**,
+   concurrency 1, Postgres-shared staff+isolation. That leaves
+   ~140/min for the old wizard under the 200/min account cap.
+   Isolation SmartDelivery still does not consume that bucket;
+   it retries 429s on its own abortable path. `WRITE_ENABLED` /
+   `SHADOW` are unchanged — v2 stays zero-write.
+
+**Why.** Production: last score Friday 16 Oct 2:18pm CT; later
+passes sat 8h/16h/24h against an 8-minute cap. D281 abort was
+tied only to `fetch({ signal })`. Smartlead 429 Retry-After and
+unbounded waits never saw the abort, so the lease stayed held.
+Isolation loaded inventory before the quiet-hours check, and
+scored 0 because it never reached hydrate/`runIsolationTick`
+(and when it did, it first awaited `latestRun` per campaign).
+
+**Rejected.** Raising v2 to the old wizard's 150/min. Removing
+quiet hours. Changing `WRITE_ENABLED` / `SHADOW`. Waiting out
+an 8-hour Retry-After.
+
+**Supersedes / amends.** D278 20/min courtesy cap is now 60/min
+token bucket. D281 timeout/abort/TTL/health-only stays; this
+makes the timeout actually return and the scoring pass run.
+
+**Guards.** `raceDeadline` / `withTickDeadline` / `capWaitMs`;
+`V2_SMARTLEAD_MAX_PER_MIN=60`; isolation skip before
+`loadInventory`; `retryOn429` for SmartDelivery; score-on-partial
+hydrate. Tests: hung fetch ignoring abort, 8h Retry-After
+capped, weekday scoring pass flags 0% campaigns.
 
 ---
 

@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   abortableSleep,
+  capWaitMs,
   leaseIsStale,
+  raceDeadline,
   startTick,
   TickTimeoutError,
+  withTickDeadline,
 } from "./tickClock.js";
 
 describe("D281 tick clock", () => {
@@ -30,5 +33,33 @@ describe("D281 tick clock", () => {
     assert.equal(leaseIsStale(null, 60_000, now), true);
     assert.equal(leaseIsStale("2026-10-15T23:50:00.000Z", 8 * 60_000, now), true);
     assert.equal(leaseIsStale("2026-10-15T23:59:00.000Z", 8 * 60_000, now), false);
+  });
+});
+
+describe("D284 hard deadline actually ends a hung await", () => {
+  it("caps an 8h Retry-After to the remaining tick time", () => {
+    const tick = startTick(80);
+    assert.ok(capWaitMs(8 * 60 * 60 * 1000, tick.signal) <= 80);
+    tick.dispose();
+  });
+
+  it("raceDeadline rejects a promise that ignores AbortSignal", async () => {
+    const tick = startTick(40);
+    const hung = new Promise<string>(() => undefined);
+    const started = Date.now();
+    await assert.rejects(() => raceDeadline(hung, tick.signal, "list_tests"), TickTimeoutError);
+    assert.ok(Date.now() - started < 500);
+    tick.dispose();
+  });
+
+  it("withTickDeadline returns even when work never settles", async () => {
+    const tick = startTick(30);
+    const started = Date.now();
+    await assert.rejects(
+      () => withTickDeadline(tick, new Promise(() => undefined), 20),
+      TickTimeoutError,
+    );
+    assert.ok(Date.now() - started < 500);
+    tick.dispose();
   });
 });

@@ -112,8 +112,8 @@ describe("ported live constants", () => {
     assert.equal(SMARTLEAD_MAX_PER_MIN, 150);
     assert.equal(SMARTLEAD_CONCURRENCY, 2);
   });
-  it("D278: v2 courtesy cap is 20/min concurrency 1, inventory every 30m", () => {
-    assert.equal(V2_SMARTLEAD_MAX_PER_MIN, 20);
+  it("D278/D284: v2 courtesy cap is 60/min concurrency 1, inventory every 30m", () => {
+    assert.equal(V2_SMARTLEAD_MAX_PER_MIN, 60);
     assert.equal(V2_SMARTLEAD_CONCURRENCY, 1);
     assert.equal(V2_INVENTORY_MAX_AGE_MS, 30 * 60 * 1000);
   });
@@ -197,6 +197,11 @@ describe("ported canon that Josh said v2 was missing", () => {
     assert.match(srcBlob, /isInsightJoshAllowedSender/, stop("D282", "Josh-only Insight helper missing"));
     assert.match(srcBlob, /insightExemptFromSenderTopUp/, stop("D282", "Insight min40 skip missing"));
     assert.match(srcBlob, /insight_non_josh_sender/, stop("D282", "insight_non_josh_sender finding missing"));
+    assert.match(srcBlob, /raceDeadline/, stop("D284", "tick deadline race missing"));
+    assert.match(srcBlob, /withTickDeadline/, stop("D284", "tick Promise.race missing"));
+    assert.match(srcBlob, /capWaitMs/, stop("D284", "Retry-After must be capped to the tick deadline"));
+    assert.match(srcBlob, /retryOn429/, stop("D284", "abortable 429 retry missing"));
+    assert.match(srcBlob, /V2_SMARTLEAD_MAX_PER_MIN = 60/, stop("D284", "v2 Smartlead budget must be 60/min"));
   });
 });
 

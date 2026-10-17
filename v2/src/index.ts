@@ -28,9 +28,11 @@ import {
   tickSkipReason,
 } from "./lib/tickGate.js";
 import {
+  isAbortError,
   isTickTimeoutError,
   startTick,
   TickTimeoutError,
+  withTickDeadline,
   type TickHandle,
 } from "./lib/tickClock.js";
 import { hasTag, isActiveStatus } from "./lib/staffable.js";
@@ -40,10 +42,10 @@ import { InboxkitReader } from "./clients/inboxkit.js";
 import { runInboxkitSweep } from "./jobs/inboxkit.js";
 import { runIsolationTick } from "./jobs/isolation.js";
 import { runStaffTick } from "./jobs/staff.js";
-import { SharedSmartleadLimiter } from "./lib/limiter.js";
+import { retryOn429, SharedSmartleadLimiter } from "./lib/limiter.js";
 import { WriteGate } from "./shadow.js";
 import { MemoryStore, PostgresStore, type V2Store } from "./store.js";
-import type { SequenceSample } from "./types.js";
+import type { SequenceSample, SpamTest } from "./types.js";
 
 const config = loadConfig();
 const store: V2Store = config.databaseUrl
@@ -89,7 +91,7 @@ const smartlead = config.smartleadApiKey
   ? new SmartleadReader(config.smartleadApiKey, (fn, signal) => limiter.schedule(fn, signal))
   : null;
 const smartDelivery = config.smartDeliveryApiKey
-  ? new SmartDeliveryReader(config.smartDeliveryApiKey)
+  ? new SmartDeliveryReader(config.smartDeliveryApiKey, (fn, signal) => retryOn429(fn, signal))
   : null;
 const inboxkit = config.inboxkitApiKey ? new InboxkitReader(config.inboxkitApiKey) : null;
 
@@ -146,7 +148,7 @@ async function fetchBook(tick: TickHandle) {
       });
     }
   }
-  tick.throwIfAborted();
+  if (tick.signal.aborted && !campaigns.length) tick.throwIfAborted();
   return {
     fetchedAt: new Date().toISOString(),
     campaigns,
@@ -210,7 +212,7 @@ async function guardedPass(
   const tick = startTick(timeoutMs);
   try {
     progress(stage, tick, "start", { timeout_ms: timeoutMs });
-    await work(tick);
+    await withTickDeadline(tick, work(tick));
     await store.stampOk(stage);
   } catch (error) {
     const hungIn = tick.hungIn;
@@ -275,38 +277,58 @@ async function staffPass(): Promise<void> {
 }
 
 async function isolationPass(): Promise<void> {
-  const book = await store.loadInventory();
   await guardedPass(
     "isolation",
     V2_ISOLATION_TICK_TIMEOUT_MS,
     tickSkipReason({
       quietHours: !inStaffingHours(),
       missingKey: smartDelivery ? null : "smartdelivery",
-      inventoryUnready: !book || book.campaigns.length === 0,
     }),
     async (tick) => {
-      const inventory = book!;
-      progress("isolation", tick, "list_tests", { campaigns: inventory.campaigns.length });
-      const listed = await smartDelivery!.listTests({
-        signal: tick.signal,
-        onProgress: (info) => progress("isolation", tick, "list_tests", { page: info.page }),
-      });
-      const ranked = prioritizeTestsToHydrate(listed, inventory.campaigns);
-      progress("isolation", tick, "hydrate_senders", { listed: listed.length });
-      const withSenders = await smartDelivery!.hydrateSenders(
-        ranked,
-        V2_ISOLATION_SENDER_HYDRATE_CAP,
-        tick.signal,
-        (info) => progress("isolation", tick, "hydrate_senders", { n: info.n, id: info.id }),
+      progress("isolation", tick, "load_inventory");
+      const inventory = await store.loadInventory();
+      if (!inventory || inventory.campaigns.length === 0) {
+        console.log(formatSkipLog("isolation", "inventory_unready"));
+        return;
+      }
+      let tests: SpamTest[] = [];
+      try {
+        progress("isolation", tick, "list_tests", { campaigns: inventory.campaigns.length });
+        tests = await smartDelivery!.listTests({
+          signal: tick.signal,
+          onProgress: (info) => progress("isolation", tick, "list_tests", { page: info.page }),
+        });
+        const ranked = prioritizeTestsToHydrate(tests, inventory.campaigns);
+        progress("isolation", tick, "hydrate_senders", { listed: tests.length });
+        tests = await smartDelivery!.hydrateSenders(
+          ranked,
+          V2_ISOLATION_SENDER_HYDRATE_CAP,
+          tick.signal,
+          (info) => progress("isolation", tick, "hydrate_senders", { n: info.n, id: info.id }),
+        );
+        progress("isolation", tick, "hydrate_providers");
+        tests = await smartDelivery!.hydrateProviderSplits(
+          tests,
+          V2_ISOLATION_PROVIDER_HYDRATE_CAP,
+          tick.signal,
+          (info) => progress("isolation", tick, "hydrate_providers", { n: info.n, id: info.id }),
+        );
+      } catch (error) {
+        if (!isAbortError(error) && !isTickTimeoutError(error)) throw error;
+        if (!tests.length) throw error;
+        console.log(
+          formatProgressLog("isolation", "partial_tests", {
+            tests: tests.length,
+            elapsed_ms: tick.elapsedMs(),
+          }),
+        );
+      }
+      console.log(
+        formatProgressLog("isolation", "isolation_tick", {
+          tests: tests.length,
+          elapsed_ms: tick.elapsedMs(),
+        }),
       );
-      progress("isolation", tick, "hydrate_providers");
-      const tests = await smartDelivery!.hydrateProviderSplits(
-        withSenders,
-        V2_ISOLATION_PROVIDER_HYDRATE_CAP,
-        tick.signal,
-        (info) => progress("isolation", tick, "hydrate_providers", { n: info.n, id: info.id }),
-      );
-      progress("isolation", tick, "isolation_tick", { tests: tests.length });
       const result = await runIsolationTick({
         book: inventory,
         tests,
@@ -314,7 +336,11 @@ async function isolationPass(): Promise<void> {
         gate,
         store,
         config,
+        signal: tick.signal.aborted ? undefined : tick.signal,
       });
+      if (tick.signal.aborted && result.scored === 0) {
+        throw new TickTimeoutError(tick.hungIn, tick.elapsedMs());
+      }
       const keep = (await store.listFindings()).filter((f) => !ISOLATION_FINDING_KINDS.has(f.kind));
       await store.replaceFindings([...keep, ...result.findings]);
       console.log(

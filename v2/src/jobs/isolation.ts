@@ -29,6 +29,7 @@ import {
 import { huntCopyWords, wordHuntSlackPayload } from "../lib/wordHunt.js";
 import { burnedRetireReason } from "../lib/retireReason.js";
 import { isActiveStatus } from "../lib/staffable.js";
+import { throwIfAborted } from "../lib/tickClock.js";
 import { intendSpend } from "./spend.js";
 import { runQaTick } from "./qa.js";
 import type { WriteGate } from "../shadow.js";
@@ -65,6 +66,7 @@ export async function runIsolationTick(opts: {
   sequences?: SequenceSample[];
   leads?: LeadSample[];
   runQa?: boolean;
+  signal?: AbortSignal;
 }): Promise<IsolationTickResult> {
   const now = opts.now ?? new Date();
   const findings: Finding[] = [];
@@ -74,12 +76,16 @@ export async function runIsolationTick(opts: {
   let overdue = 0;
   let wordHunts = 0;
 
+  throwIfAborted(opts.signal, "isolation_tick");
   const existingScores = await opts.store.listScores();
   const suspects = await opts.store.listSuspects();
   const latestBy = new Map<number, IsolationRun>();
-  for (const campaign of opts.book.campaigns) {
-    const run = await opts.store.latestRun(campaign.id);
-    if (run) latestBy.set(campaign.id, run);
+  async function rememberRun(campaignId: number): Promise<IsolationRun | undefined> {
+    if (latestBy.has(campaignId)) return latestBy.get(campaignId);
+    throwIfAborted(opts.signal, "latest_run");
+    const run = await opts.store.latestRun(campaignId);
+    if (run) latestBy.set(campaignId, run);
+    return run;
   }
 
   const scores: PlacementScore[] = [];
@@ -91,13 +97,7 @@ export async function runIsolationTick(opts: {
   const priority = prioritizeCampaigns({
     campaigns: opts.book.campaigns,
     scores: existingScores,
-    ugly: uglyWithoutIsolation({
-      scores: existingScores,
-      suspects,
-      latestRun: (id) => latestBy.get(id),
-      keepCampaignId: (id) =>
-        opts.book.campaigns.some((c) => c.id === id && isActiveStatus(c.status)),
-    }),
+    ugly: existingScores.filter((s) => s.inboxPercent < INBOX_THRESHOLD),
   });
 
   if (opts.fleetEmails.length < COPY_CANARY_FLEET_SIZE) {
@@ -120,6 +120,7 @@ export async function runIsolationTick(opts: {
   }
 
   for (const campaign of priority) {
+    throwIfAborted(opts.signal, "score_campaign");
     const canaries = duplicateCanaryTests(opts.tests, campaign.id);
     if (canaries.length > 1) {
       findings.push({
@@ -282,7 +283,7 @@ export async function runIsolationTick(opts: {
     const uglyScore = copyUgly.get(campaign.id) ?? senderUgly.get(campaign.id);
     if (!uglyScore) continue;
     const suspect = suspects.find((s) => s.campaignId === uglyScore.campaignId);
-    const run = latestBy.get(uglyScore.campaignId);
+    const run = await rememberRun(uglyScore.campaignId);
     if (!shouldQueueUglyScore({ score: uglyScore, suspect, run })) continue;
 
     queued += 1;
@@ -414,6 +415,9 @@ export async function runIsolationTick(opts: {
   }
 
   const allScores = scores.length ? scores : existingScores;
+  for (const score of allScores) {
+    if (score.inboxPercent < INBOX_THRESHOLD) await rememberRun(score.campaignId);
+  }
   const holes = uglyWithoutIsolation({
     scores: allScores,
     suspects: await opts.store.listSuspects(),

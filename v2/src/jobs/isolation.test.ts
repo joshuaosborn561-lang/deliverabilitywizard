@@ -210,6 +210,49 @@ describe("isolation worker", () => {
     assert.ok(result.findings.some((f) => f.kind === "below_launch_bar"));
   });
 
+  it("a weekday pass scores campaigns and flags 0% ugly", async () => {
+    const store = new MemoryStore();
+    const gate = new WriteGate(loadConfig({} as NodeJS.ProcessEnv), store);
+    const extras = Array.from({ length: 120 }, (_, i) => ({
+      id: 10_000 + i,
+      name: `Extra ${i}`,
+      status: "ACTIVE" as const,
+      clientId: 1,
+    }));
+    const result = await runIsolationTick({
+      book: {
+        fetchedAt: new Date().toISOString(),
+        campaigns: [
+          { id: 3847940, name: "SG MSP Engagers", status: "ACTIVE", clientId: 1 },
+          { id: 3921850, name: "Campaign 3921850", status: "ACTIVE", clientId: 1 },
+          ...extras,
+        ],
+        accounts: [],
+      },
+      tests: [
+        {
+          id: "548304",
+          name: "Canary copy: #3847940 SG MSP Engagers",
+          senders: [{ email: "unwarmed@copy.test", inbox: false, provider: "gmail" }],
+        },
+        {
+          id: "t-3921850",
+          name: "Canary copy: #3921850",
+          senders: [{ email: "unwarmed@copy.test", inbox: false, provider: "gmail" }],
+        },
+      ],
+      fleetEmails: ["living@canary.test"],
+      gate,
+      store,
+      config: loadConfig({} as NodeJS.ProcessEnv),
+      runQa: false,
+    });
+    assert.equal(result.scored, 2);
+    assert.ok(result.evaluated >= 1);
+    assert.ok(result.findings.some((f) => f.kind === "ugly_without_isolation" && f.campaignId === 3847940));
+    assert.ok(result.findings.some((f) => f.kind === "ugly_without_isolation" && f.campaignId === 3921850));
+  });
+
   it("failed listTests is an error, not an empty board", async () => {
     await assert.rejects(
       async () => {

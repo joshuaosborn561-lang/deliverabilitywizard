@@ -238,7 +238,7 @@ export const CANON_CATALOG: readonly CanonRule[] = [
   { d: 254, title: "POC fills refuse other-client off-week", job: 1, status: "implemented", note: "intended attach refuses foreign client and off-week locked POD" },
   { d: 255, title: "Insight sequences get %signature%", job: 5, status: "implemented", note: "insightSequenceIllegal" },
   { d: 256, title: "TechEvo min-floor 30; PowerGRYD not a never-generics", job: 1, status: "implemented", note: "minFloorForClient" },
-  { d: 257, title: "Smartlead limiter 150/min", job: "process", status: "implemented", note: "account budget 150/min concurrency 2; v2 shadow uses D278 20/min so it cannot starve the old wizard" },
+  { d: 257, title: "Smartlead limiter 150/min", job: "process", status: "implemented", note: "account budget 150/min concurrency 2; v2 shadow uses D284 60/min so it cannot starve the old wizard" },
   { d: 258, title: "live client_id wins over stale pool", job: 2, status: "implemented", note: "foreignClient" },
   { d: 259, title: "shortfall ceils; staffable floors", job: 1, status: "implemented", note: "displayShortfall" },
   { d: 260, title: "domain-lifecycle continues past refusal", job: 7, status: "omitted", note: "NICE" },
@@ -259,11 +259,12 @@ export const CANON_CATALOG: readonly CanonRule[] = [
   { d: 275, title: "plain text only; tracking off", job: 5, status: "implemented", note: "no HTML; DONT_TRACK_*; intended sequence/settings write" },
   { d: 276, title: "quiet hours weekdays 6am–8pm CT", job: "process", status: "implemented", note: "no scheduled job or Slack post outside the window" },
   { d: 277, title: "word-hunt substitutes never AirPods/tickets/TJ/free POC", job: 4, status: "implemented", note: "isBannedCopySwap; supersedes keep-the-gift-noun for those phrases" },
-  { d: 278, title: "v2 Smartlead courtesy cap 20/min", job: "process", status: "implemented", note: "Postgres-shared 20/min concurrency 1; 429 backoff+retry; staff inventory every 30m with page delays" },
+  { d: 278, title: "v2 Smartlead courtesy cap (20/min, raised to 60 by D284)", job: "process", status: "implemented", note: "Postgres-shared concurrency 1; 429 backoff+retry; staff inventory every 30m with page delays" },
   { d: 279, title: "v2 shadow finds old-wizard holes; floor-deficit attaches; stampOk clears overdue", job: "process", status: "implemented", note: "membership hydrate; fillFloor short-pending; pending dedupe; placement_scores (campaign_id, source); stage ok log" },
   { d: 280, title: "v2 workers boot-tick; copy-canary scores; per-campaign findings; purge stale attaches", job: "process", status: "implemented", note: "all roles bind /health; skip reasons logged; idempotent placement_scores unique; unwarmed copy-canary counts; unknown settings not flagged; pending attach purge on staff boot" },
   { d: 281, title: "v2 tick timeout + abort + TTL lease; health-only workers; isolation off Smartlead limiter", job: "process", status: "implemented", note: "staff 10m / isolation 8m AbortController; lease and rate-slot TTL; progress logs; page/hydrate/sequence caps; createHealthApp" },
   { d: 282, title: "Insight 582890 Josh-only senders; never backfill", job: 1, status: "implemented", note: "isInsightJoshAllowedSender; skip min40/understaffed; insight_non_josh_sender flag only" },
+  { d: 284, title: "v2 tick deadline races work; 60/min token bucket; quiet-hours skip before I/O", job: "process", status: "implemented", note: "raceDeadline/withTickDeadline/capWaitMs; Retry-After capped to remaining; isolation scores fetched tests on abort" },
 ];
 
 export function catalogByD(d: number): CanonRule | undefined {

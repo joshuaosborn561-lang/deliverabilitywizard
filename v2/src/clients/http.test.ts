@@ -49,4 +49,13 @@ describe("Smartlead 429 retry-after", () => {
     );
     assert.ok(Date.now() - started < 500);
   });
+
+  it("times out even when fetch ignores AbortSignal", async () => {
+    globalThis.fetch = (() => new Promise(() => undefined)) as typeof fetch;
+    const started = Date.now();
+    await assert.rejects(
+      () => requestJson("https://server.smartlead.ai/api/v1/campaigns", { timeoutMs: 30 }),
+    );
+    assert.ok(Date.now() - started < 500);
+  });
 });

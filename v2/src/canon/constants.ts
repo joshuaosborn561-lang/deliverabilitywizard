@@ -66,21 +66,29 @@ export const SMARTLEAD_MAX_PER_MIN = 150;
 export const SMARTLEAD_CONCURRENCY = 2;
 export const SMARTLEAD_MIN_GAP_MS = 150;
 /**
- * D278 — v2 shares the old wizard's Smartlead key. Stay well under the
+ * D278 — v2 shares the old wizard's Smartlead key. Stay under the
  * D257 150/min account budget so shadow pulls cannot 429 production.
+ * D284 — 60/min token bucket (was 20): enough to score a weekday pass
+ * inside 30 minutes, still ~140/min headroom for the old wizard under
+ * Smartlead's 200/min account cap.
  */
-export const V2_SMARTLEAD_MAX_PER_MIN = 20;
+export const V2_SMARTLEAD_MAX_PER_MIN = 60;
 export const V2_SMARTLEAD_CONCURRENCY = 1;
-export const V2_SMARTLEAD_MIN_GAP_MS = 3_000;
-export const V2_SMARTLEAD_PAGE_DELAY_MS = 2_500;
+export const V2_SMARTLEAD_MIN_GAP_MS = 1_000;
+export const V2_SMARTLEAD_PAGE_DELAY_MS = 500;
 export const V2_SMARTLEAD_429_MAX_ATTEMPTS = 4;
+/** Backstop when a call has no tick deadline — never sleep a Retry-After of hours. */
+export const V2_SMARTLEAD_429_MAX_WAIT_MS = 30_000;
 export const V2_INVENTORY_MAX_AGE_MS = 30 * 60 * 1000;
 /**
  * D281 — a hung boot tick left staff/isolation in_flight forever.
  * Hard timeout per role; every fetch aborts; leases expire by TTL.
- * Isolation SmartDelivery does not consume the Smartlead 20/min limiter.
- * Staff budgets pages so 20/min × 10 minutes cannot overrun the clock.
+ * Isolation SmartDelivery does not consume the Smartlead limiter.
+ * D284 — the deadline is a Promise.race, not only AbortSignal on fetch
+ * (429 Retry-After and pagination were ignoring abort).
  */
+/** After abort, in-memory scoring may still finish; then the lease is released. */
+export const V2_TICK_ABORT_GRACE_MS = 15_000;
 export const V2_STAFF_TICK_TIMEOUT_MS = 10 * 60 * 1000;
 export const V2_ISOLATION_TICK_TIMEOUT_MS = 8 * 60 * 1000;
 export const V2_FETCH_TIMEOUT_MS = 20_000;

@@ -127,14 +127,8 @@ describe("staff email-account inventory paging", () => {
   it("returns pages already fetched when the tick aborts mid-pagination", async () => {
     let pages = 0;
     const ac = new AbortController();
-    globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
-      if (init?.signal?.aborted) {
-        throw Object.assign(new Error("Aborted"), { name: "AbortError" });
-      }
+    globalThis.fetch = (async () => {
       pages += 1;
-      if (pages === 1) {
-        queueMicrotask(() => ac.abort());
-      }
       const rows = Array.from({ length: 100 }, (_, i) => ({
         id: pages * 100 + i,
         from_email: `a${pages}-${i}@x.test`,
@@ -147,6 +141,9 @@ describe("staff email-account inventory paging", () => {
     const accounts = await new SmartleadReader("LIVESECRET", (fn) => fn(), 0).listAccounts({
       signal: ac.signal,
       maxPages: 10,
+      onProgress: (info) => {
+        if ((info.page ?? 0) >= 2) ac.abort();
+      },
     });
     assert.equal(pages, 1);
     assert.equal(accounts.length, 100);

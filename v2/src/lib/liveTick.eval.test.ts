@@ -26,14 +26,14 @@ const SMARTLEAD_KEY = process.env.SMARTLEAD_API_KEY ?? "";
 const SMARTDELIVERY_KEY = process.env.SMARTDELIVERY_API_KEY ?? SMARTLEAD_KEY;
 
 describe("D281 live read-only ticks (skipped without keys)", () => {
-  it("constants fit 20/min inside the hard timeouts", () => {
+  it("constants fit 60/min inside the hard timeouts", () => {
     assert.equal(V2_STAFF_TICK_TIMEOUT_MS, 10 * 60 * 1000);
     assert.equal(V2_ISOLATION_TICK_TIMEOUT_MS, 8 * 60 * 1000);
     const staffRequests =
       1 + 40 + V2_STAFF_MEMBER_HYDRATE_CAP + V2_STAFF_SEQUENCE_CAP;
     const isolationRequests =
       15 + V2_ISOLATION_SENDER_HYDRATE_CAP + V2_ISOLATION_PROVIDER_HYDRATE_CAP;
-    assert.ok(staffRequests * 3_000 < V2_STAFF_TICK_TIMEOUT_MS);
+    assert.ok(staffRequests * 1_000 < V2_STAFF_TICK_TIMEOUT_MS);
     assert.ok(isolationRequests * 1_000 < V2_ISOLATION_TICK_TIMEOUT_MS);
   });
 
@@ -43,7 +43,7 @@ describe("D281 live read-only ticks (skipped without keys)", () => {
       return;
     }
     const tick = startTick(V2_STAFF_TICK_TIMEOUT_MS);
-    const limiter = new SharedSmartleadLimiter(undefined, 1, 20, 3_000);
+    const limiter = new SharedSmartleadLimiter(undefined, 1, 60, 1_000);
     const smartlead = new SmartleadReader(SMARTLEAD_KEY, (fn, signal) =>
       limiter.schedule(fn, signal),
     );

@@ -280,7 +280,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D272 | Live | Freeze/restart follow-up after D271: stringify time-slices via setTimeout(0) and emits flushed slices (saveHot included); indexAccountsByCampaign yields on inner campaign ids; campaign-audit pauses CPU while health is live. Watchdog thresholds unchanged. |
 | D282 | Live — understaffed/min40 silence superseded by D285; no-generics stays | Insight (Smartlead client 582890) campaigns may only send from Josh Osborn inboxes on SalesGlider or Insight domains; no generics / other named senders; Josh-only seats count toward the POD floor; `insight_non_josh_sender` flags existing violations; POD shortfalls still page Josh daily (D285) |
 | D283 | Live — never-generics onto PowerGRYD superseded by D285; freed-seat ownership stays | Onboarding-freed Smartlead `client_id=null` is authoritative over a stale PowerGRYD / `powergryd_dedicated` pool row (one-time cleanup of those generic-domain seats); those freed seats must not flip back onto 592842. CornerStone 574088 and unexpired HOLD-UNTIL never attach (`addEmailAccountsToCampaign` hard-reject, same shape as D282); leftover HOLD-UNTIL still does not pull; never START / unpause STOPPED. PowerGRYD otherwise takes generics (D285). |
-| D285 | Live | Min-40 is per POD owned inventory, never per campaign. POD A and POD B each hold >=40 warm seats the client owns (TechEvo 30). Borrowed seats never count. When under, rotate free warm generics in; never skip the off-week POD. Insight 582890 is the only client that never gets generics; alert Josh daily while under. PowerGRYD takes generics. LOCKED core canon — Josh-only; PRs that change the locked section must never auto-merge. |
+| D285 | Live — Generics Ledger fields / per-seat swap / new findings added by D286 | Min-40 is per POD owned inventory, never per campaign. POD A and POD B each hold >=40 warm seats the client owns (TechEvo 30). Borrowed seats never count. When under, rotate free warm generics in; never skip the off-week POD. Insight 582890 is the only client that never gets generics; alert Josh daily while under. PowerGRYD takes generics. LOCKED core canon — Josh-only; PRs that change the locked section must never auto-merge. |
+| D286 | Live | Generics Ledger: one row per generic (email, ESP, warmup on/off, assigned client, POD, assigned_at, covering_for). All generics warm continuously; seeder re-enables warmup the same day. Assigned only to fill one client's POD to 40 (TechEvo 30), one client + one POD, never moves PODs. Branded-preferred per-seat swap via covering_for + `returnGenericToUntaggedPool`; headcount is fallback for unlinked seats. No assign/release outside the ledger. Insight never receives generics; every other client including PowerGRYD does. CornerStone-domain inboxes are never generics. Findings `generic_outside_ledger` / `generic_not_warming` / `generic_on_insight` / `pod_short_no_free_generic` page Josh the same day. Optional upsert-only `wizard.generic_ledger` Supabase mirror. |
 
 ---
 
@@ -10105,6 +10106,77 @@ present and unaltered; min40 counts both PODs; no
 `if (pod !== onWeek) continue`; named fill is POD inventory not
 per campaign. CODEOWNERS + CI `locked-canon` block auto-merge
 when the locked section changes vs base.
+
+---
+
+## D286 — Generics Ledger (LOCKED)
+
+**Date.** 2026-10-17 (Josh, approved 3:38pm CT).
+
+**Decision.** Every generic inbox we own has exactly one ledger
+row in `state.genericSeats`: email, ESP, warmup on/off,
+assigned client (blank = free pool), assigned POD (A/B),
+assigned_at, and covering_for (the specific branded seats of
+that client it stands in for, each with its 21-day warm-ready
+date). Wizard state is source of truth. An optional upsert-only
+Supabase mirror (`wizard.generic_ledger`) writes when
+`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are present; if
+they are not, the mirror stays off behind that env check and
+does not invent keys.
+
+1. **Warm continuously.** The 30-minute seeder fills
+   `warmupEnabled` from Smartlead and turns warmup back on the
+   same day when a generic is off (once per seat per day via
+   `warmupEnsuredAt`).
+2. **One client, one POD.** A generic is assigned only to fill
+   one client's POD to 40 (TechEvo 30). Never moves PODs. Never
+   Insight. PowerGRYD takes generics. CornerStone-domain inboxes
+   are never generics and never in the pool (`excluded`).
+3. **covering_for.** On assignment the seeder links the
+   soonest-warming uncovered branded seats in that client POD.
+   When a covered branded seat's `warmReadyAt` passes, attach it
+   (on-week only) and release its linked generic via
+   `returnGenericToUntaggedPool` the same day. Never drop a POD
+   below floor. Headcount oldest/worst is only the fallback for
+   unlinked seats. Deep Roots / Peterson are not restaffed by
+   this swap.
+4. **No ad-hoc assign/release.** Every generic found on a live
+   campaign gets a ledger row (e.g. marekbrooks@meetconnectbox.com
+   on PowerGRYD #4005226). Unassigned seats have POD/POC tags
+   stripped.
+5. **Findings** fold into `/health` and the existing Josh
+   weekday alert: `generic_outside_ledger`, `generic_not_warming`,
+   `generic_on_insight`, `pod_short_no_free_generic`.
+6. **One-time cleanup** (first seeder pass after deploy,
+   idempotent, not at boot — D122): release Insight-tagged
+   generics to the free pool; permanently exclude CornerStone-
+   domain inboxes; strip stale POD tags from unassigned
+   generics; drop leftover "PowerGRYD no generics" findings.
+   Never touch STOPPED. Never START/PAUSE. Canaries locked.
+
+**Why.** Josh (2026-10-17): the generics table was assignment-
+only. We need a real ledger — warmup, who each generic covers,
+and a same-day branded swap — locked so a later session cannot
+quietly undo it.
+
+**Rejected.** A second assign/release path. Inventing Supabase
+keys. Boot-time Smartlead writes (D122). Insight generics.
+CornerStone in the pool. Headcount-only swap when covering_for
+exists. Auto-merging this locked-canon PR.
+
+**Supersedes / amends.** Amends D231 (row shape adds
+`warmupEnabled` + `coveringFor`). Amends D230 named-warm swap
+to per-seat covering_for, with headcount as fallback. Amends
+D285 LOCKED section (adds the Generics Ledger sentence). Does
+not reverse D40, D122, D228, D234, D256, D282 no-generics for
+Insight, or D4.
+
+**Guards.** `src/guards/lockedCanon.test.ts` +
+`src/guards/genericsLedger.test.ts`: locked sentence present;
+`state.genericSeats` has warmupEnabled / coveringFor; seeder
+re-enables warmup; swap uses covering_for then headcount;
+findings named; cleanup idempotent; never STOPPED / START /
+PAUSE.
 
 ---
 

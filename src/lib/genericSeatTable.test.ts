@@ -68,12 +68,21 @@ describe("D231 generic seat table assign/release", () => {
     assert.equal(assigned.seat.assignedAt, "2026-10-03T12:00:00.000Z");
     assert.deepEqual(assigned.seat.assignedCampaignIds, [10]);
 
-    const released = applyReleaseGenericSeat(assigned.seat, {
-      now: new Date("2026-10-04T12:00:00.000Z"),
-      reason: "surplus_return",
-    });
+    const released = applyReleaseGenericSeat(
+      {
+        ...assigned.seat,
+        coveringFor: [
+          { email: "n@techevolution.com", warmReadyAt: "2026-10-20T00:00:00.000Z" },
+        ],
+      },
+      {
+        now: new Date("2026-10-04T12:00:00.000Z"),
+        reason: "surplus_return",
+      },
+    );
     assert.equal(released.assignedClientId, null);
     assert.equal(released.assignedPod, null);
+    assert.deepEqual(released.coveringFor, []);
     assert.equal(released.releasedAt, "2026-10-04T12:00:00.000Z");
     assert.equal(released.releaseHistory.length, 1);
     assert.deepEqual(released.releaseHistory[0], {

@@ -35,8 +35,10 @@ import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import type { StateStore } from "../state/store.js";
 import {
   dropMembership,
+  recordMembership,
   type InventorySnapshot,
 } from "./inventory.js";
+import { onWeekCohort } from "../lib/restCohort.js";
 
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 200;
 
@@ -94,7 +96,12 @@ export async function returnSurplusGenerics(input: {
     SmartleadClient,
     "removeEmailAccountsFromCampaign" | "updateEmailAccount"
   > &
-    Partial<Pick<SmartleadClient, "ensureTag" | "removeTags">>;
+    Partial<
+      Pick<
+        SmartleadClient,
+        "ensureTag" | "removeTags" | "addEmailAccountsToCampaign"
+      >
+    >;
   state: StateStore;
   inventory: InventorySnapshot;
   dryRun?: boolean;
@@ -194,6 +201,8 @@ export async function returnSurplusGenerics(input: {
     try {
       if (!dryRun) {
         for (const campaignId of campaignIds) {
+          const campaign = campaignById.get(campaignId);
+          if (String(campaign?.status ?? "").toUpperCase() === "STOPPED") continue;
           await input.smartlead.removeEmailAccountsFromCampaign(campaignId, [
             account.id,
           ]);
@@ -214,6 +223,30 @@ export async function returnSurplusGenerics(input: {
           continue;
         }
         await sleep(WRITE_GAP_MS);
+        const onWeek = onWeekCohort(now);
+        if (
+          pick.via === "covering_for" &&
+          pick.pod === onWeek &&
+          pick.attachBranded?.length &&
+          input.smartlead.addEmailAccountsToCampaign
+        ) {
+          for (const branded of pick.attachBranded) {
+            const named = accountByEmail.get(branded);
+            if (!named || typeof named.id !== "number") continue;
+            for (const campaign of input.inventory.campaigns) {
+              if (campaign.client_id !== pick.clientId) continue;
+              if (!campaignIsActive(campaign)) continue;
+              if (String(campaign.status ?? "").toUpperCase() === "STOPPED") {
+                continue;
+              }
+              await input.smartlead.addEmailAccountsToCampaign(campaign.id, [
+                named.id,
+              ]);
+              recordMembership(named, campaign.id);
+              await sleep(WRITE_GAP_MS);
+            }
+          }
+        }
       } else {
         unlinked.push(...campaignIds);
       }

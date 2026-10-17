@@ -5,6 +5,7 @@ import {
   LOCKED_CANON_APPROVAL_NOTE,
   LOCKED_CANON_HEADING,
   LOCKED_POD_40_RULE,
+  LOCKED_GENERICS_LEDGER_RULE,
   extractLockedCanonSection,
   lockedCanonSectionBody,
 } from "../lib/lockedCanon.js";
@@ -100,6 +101,13 @@ describe("owner intent — D285 LOCKED POD-40 canon", () => {
       stop(
         "POD-40 is LOCKED core canon (D285).",
         "CANON.md lost or altered the exact POD-40 sentence.",
+      ),
+    );
+    assert.ok(
+      canon.includes(LOCKED_GENERICS_LEDGER_RULE),
+      stop(
+        "Generics Ledger is LOCKED core canon (D286).",
+        "CANON.md lost or altered the exact Generics Ledger sentence.",
       ),
     );
     assert.ok(
@@ -272,8 +280,8 @@ describe("owner intent — D285 LOCKED POD-40 canon", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D285\*\*/,
-      stop("CANON is dated D285.", "CANON.md header is not D285."),
+      /Canon as of \*\*D286\*\*/,
+      stop("CANON is dated D286.", "CANON.md header is not D286."),
     );
   });
 });

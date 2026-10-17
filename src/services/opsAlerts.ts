@@ -208,6 +208,10 @@ const FINDING_LABEL: Record<string, string> = {
   merge_tag_blank: "merge tags sending blank",
   generic_idle: "generic assigned but not needed for POD 40",
   generic_multi_client: "generic assigned to more than one client",
+  generic_outside_ledger: "generic on a live campaign without a ledger row",
+  generic_not_warming: "generic warmup is off",
+  generic_on_insight: "generic tagged to Insight",
+  pod_short_no_free_generic: "POD under floor with no free warm generic",
 };
 
 /**

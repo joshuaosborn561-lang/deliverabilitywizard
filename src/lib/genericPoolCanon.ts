@@ -8,7 +8,7 @@ import {
   isLockedCanarySeat,
 } from "./canaryLock.js";
 import { isClientInbox, isGenericMailbox } from "./clientInbox.js";
-import { owesWarmup } from "../services/warmupGate.js";
+import { owesWarmup, warmupClockStartedAt } from "../services/warmupGate.js";
 import { isRealNamedClientId } from "./dedicatedGeneric.js";
 import { realignStalePoolAssignment } from "./genericPoolRealign.js";
 import { assignClientCohorts } from "./restCohort.js";
@@ -19,6 +19,18 @@ import { mailboxStaffableWeight, roundStaffableWeight } from "./mailboxType.js";
 import { isGabeFollowUpCampaign } from "./pocClient.js";
 import { pickWeightedGenericReturns } from "./namedWarmSwap.js";
 import { yieldEventLoop } from "./stringifyYielding.js";
+import { mailboxWarmupIsOn } from "./mailboxSendSettings.js";
+import {
+  alreadyCoveredEmails,
+  freeWarmGenericCount,
+  isCornerstoneGenericDomain,
+  isInsightClientId,
+  linkCoveringFor,
+  podShortNoFreeGeneric,
+  warmReadyAtFromClock,
+  type WarmingBrandedSeat,
+} from "./genericLedger.js";
+import { INSIGHT_CLIENT_ID } from "./insightCampaigns.js";
 import {
   GENERIC_ASSIGN_REASON_POD_TOP_UP,
   GENERIC_ASSIGN_REASON_POC_ENGAGEMENT,
@@ -102,6 +114,9 @@ export function validateGenericPool(input: {
   powerGrydClientId?: number;
   pocEngagementClientIds?: Iterable<number>;
   idleExemptEmails?: Iterable<string>;
+  minFloorByClient?: Readonly<Record<number, number>>;
+  now?: Date;
+  insightClientId?: number;
 }): GenericPoolFinding[] {
   const powerId = input.powerGrydClientId ?? GENERIC_POOL_POWERGRYD_CLIENT_ID;
   const pocIds = new Set(
@@ -155,6 +170,19 @@ export function validateGenericPool(input: {
         email,
         detail: `${email} assigned outside the generics table`,
       });
+      push({
+        kind: "generic_outside_ledger",
+        email,
+        detail: `${email} on a live campaign without a ledger row`,
+      });
+    }
+    const insightId = input.insightClientId ?? INSIGHT_CLIENT_ID;
+    if (clients.includes(insightId) || tableClients.includes(insightId)) {
+      push({
+        kind: "generic_on_insight",
+        email,
+        detail: `${email} tagged to Insight ${insightId}`,
+      });
     }
   }
 
@@ -166,6 +194,11 @@ export function validateGenericPool(input: {
       kind: "generic_outside_table",
       email: key,
       detail: `${key} assigned outside the generics table`,
+    });
+    push({
+      kind: "generic_outside_ledger",
+      email: key,
+      detail: `${key} on a live campaign without a ledger row`,
     });
   }
 
@@ -273,6 +306,67 @@ export function validateGenericPool(input: {
     );
   }
 
+  const now = input.now ?? new Date();
+  const freeWarm = freeWarmGenericCount(input.seats, now);
+  for (const rows of byEmail.values()) {
+    const seat = rows[0]!;
+    if (seat.excluded) continue;
+    if (seat.warmupEnabled === false) {
+      push({
+        kind: "generic_not_warming",
+        email: seat.email,
+        detail: `${seat.email} warmup is off`,
+      });
+    }
+    if (isInsightClientId(seat.assignedClientId)) {
+      push({
+        kind: "generic_on_insight",
+        email: seat.email,
+        detail: `${seat.email} tagged to Insight ${seat.assignedClientId}`,
+      });
+    }
+  }
+
+  const pods: GenericAssignedPod[] = ["A", "B"];
+  const clientIdsForShort = new Set<number>([
+    ...[...input.namedStaffableByClientPod.keys()]
+      .map((key) => Number(key.split(":")[0]))
+      .filter((id) => Number.isFinite(id) && id > 0),
+    ...[...assignedByClientPod.keys()].map((key) => Number(key.split(":")[0])),
+  ]);
+  for (const clientId of clientIdsForShort) {
+    if (input.clientHasActiveCampaign?.get(clientId) === false) continue;
+    for (const pod of pods) {
+      const key = clientPodKey(clientId, pod);
+      if (
+        !input.namedStaffableByClientPod.has(key) &&
+        !assignedByClientPod.has(key)
+      ) {
+        continue;
+      }
+      const named =
+        input.namedStaffableByClientPod.get(key) ?? 0;
+      const assignedWeight = (
+        assignedByClientPod.get(clientPodKey(clientId, pod)) ?? []
+      ).reduce((sum, seat) => sum + seatStaffableWeight(seat), 0);
+      if (
+        podShortNoFreeGeneric({
+          namedStaffable: named,
+          assignedWeight,
+          freeWarm,
+          clientId,
+          minFloorByClient: input.minFloorByClient,
+        })
+      ) {
+        push({
+          kind: "pod_short_no_free_generic",
+          email: `client-${clientId}-pod-${pod}`,
+          detail: `client ${clientId} POD ${pod} under floor with no free warm generic`,
+        });
+      }
+    }
+  }
+
   return findings.sort((a, b) => {
     if (a.kind !== b.kind) return a.kind.localeCompare(b.kind);
     return a.email.localeCompare(b.email);
@@ -312,6 +406,9 @@ export interface GenericPoolSyncResult {
   clientHasActiveCampaign: Map<number, boolean>;
   campaignClientById: Map<number, number | null>;
   liveClientIdsByEmail: Map<string, number[]>;
+  warmupOffEmails: string[];
+  unassignedWithPodTags: string[];
+  warmingBranded: WarmingBrandedSeat[];
 }
 
 function liveClientsForAccount(
@@ -397,6 +494,9 @@ export async function syncGenericSeatsFromInventory(
   const liveClientIdsByEmail = new Map<string, number[]>();
   const nextSeats: GenericSeatRecord[] = [];
   const accountByEmail = new Map<string, (typeof input.accounts)[number]>();
+  const warmingBranded: WarmingBrandedSeat[] = [];
+  const warmupOffEmails: string[] = [];
+  const unassignedWithPodTags: string[] = [];
 
   let seeded = 0;
   for (const account of input.accounts) {
@@ -407,33 +507,77 @@ export async function syncGenericSeatsFromInventory(
     accountByEmail.set(email, account);
     if (isLockedCanarySeat(account, email, input.state)) continue;
     const withCampaigns = account as SmartleadAccountWithCampaigns;
+    const existingExcluded = existingByEmail.get(genericSeatKey(email));
+    if (isCornerstoneGenericDomain(email) || existingExcluded?.excluded) {
+      nextSeats.push(
+        mergeSeededGenericSeat(
+          existingExcluded,
+          emptyGenericSeat(email, {
+            slAccountId:
+              typeof account.id === "number"
+                ? account.id
+                : existingExcluded?.slAccountId ?? null,
+            provider: genericProviderFromAccountType(account.type),
+            excluded: true,
+            warmupEnabled: mailboxWarmupIsOn(account),
+            reason: existingExcluded?.reason ?? "cornerstone_never_generic",
+          }),
+          now,
+        ),
+      );
+      continue;
+    }
     const generic = isGenericMailbox(account, email, input.config, input.state);
     if (!generic) {
+      const clientId =
+        typeof account.client_id === "number" &&
+        isRealNamedClientId(account.client_id, isMarker)
+          ? account.client_id
+          : null;
+      const tagged = podFromMailboxTags(account.tags);
+      const warming = owesWarmup(
+        account as SmartleadAccountWithCampaigns,
+        email,
+        {
+          campaignMinWarmupDays: input.config.campaignMinWarmupDays ?? 21,
+          freshInboxWarmupDays: input.config.freshInboxWarmupDays ?? 21,
+          prewarmedDomains: input.config.prewarmedDomains,
+          extraGenericMailboxes: input.config.extraGenericMailboxes,
+        },
+        input.state,
+      );
+      if (
+        clientId != null &&
+        tagged &&
+        warming &&
+        isClientInbox(account, email, input.config, input.state) &&
+        !isGabeVmReserved(account)
+      ) {
+        warmingBranded.push({
+          email,
+          clientId,
+          pod: tagged,
+          warmReadyAt: warmReadyAtFromClock(
+            warmupClockStartedAt(
+              account as SmartleadAccountWithCampaigns,
+              email,
+              input.state,
+            ),
+            input.config.campaignMinWarmupDays ?? 21,
+            now,
+          ),
+        });
+      }
       if (
         !isClientInbox(account, email, input.config, input.state) ||
         isGabeVmReserved(account) ||
         !isStaffableSender(account, {
           copyCanary: Boolean(input.state.isCopyCanary?.(email)),
         }) ||
-        owesWarmup(
-          account as SmartleadAccountWithCampaigns,
-          email,
-          {
-            campaignMinWarmupDays: input.config.campaignMinWarmupDays ?? 21,
-            freshInboxWarmupDays: input.config.freshInboxWarmupDays ?? 21,
-            prewarmedDomains: input.config.prewarmedDomains,
-            extraGenericMailboxes: input.config.extraGenericMailboxes,
-          },
-          input.state,
-        )
+        warming
       ) {
         continue;
       }
-      const clientId =
-        typeof account.client_id === "number" &&
-        isRealNamedClientId(account.client_id, isMarker)
-          ? account.client_id
-          : null;
       if (clientId == null) continue;
       const list = namedByClient.get(String(clientId)) ?? [];
       list.push({
@@ -441,7 +585,6 @@ export async function syncGenericSeatsFromInventory(
         type: account.type,
       });
       namedByClient.set(String(clientId), list);
-      const tagged = podFromMailboxTags(account.tags);
       if (tagged) {
         const key = clientPodKey(clientId, tagged);
         namedStaffableByClientPod.set(
@@ -511,19 +654,28 @@ export async function syncGenericSeatsFromInventory(
       existing?.warmReadyAt ??
       (typeof pool?.availableAt === "string" ? pool.availableAt : null) ??
       (typeof pool?.warmedAt === "string" ? pool.warmedAt : null);
-
+    const warmupEnabled = mailboxWarmupIsOn(account);
+    if (warmupEnabled === false) warmupOffEmails.push(email);
+    if (assignedClientId == null && taggedPod != null) {
+      unassignedWithPodTags.push(email);
+    }
+    const insightBlocked = isInsightClientId(assignedClientId);
     const seat = emptyGenericSeat(email, {
       slAccountId: typeof account.id === "number" ? account.id : existing?.slAccountId ?? null,
       provider: genericProviderFromAccountType(account.type),
       warmReadyAt,
-      assignedClientId,
-      assignedCampaignIds,
-      assignedPod,
-      assignedAt,
-      reason: assignedReason(existing, assignedClientId, powerId, pocIds),
+      assignedClientId: insightBlocked ? null : assignedClientId,
+      assignedCampaignIds: insightBlocked ? [] : assignedCampaignIds,
+      assignedPod: insightBlocked ? null : assignedPod,
+      assignedAt: insightBlocked ? null : assignedAt,
+      reason: insightBlocked
+        ? null
+        : assignedReason(existing, assignedClientId, powerId, pocIds),
       releasedAt: existing?.releasedAt ?? null,
       releaseHistory: existing?.releaseHistory ?? [],
       staffableWeight: mailboxStaffableWeight(account),
+      warmupEnabled,
+      coveringFor: existing?.coveringFor ?? [],
     });
     const cleared =
       assignedClientId == null
@@ -562,6 +714,37 @@ export async function syncGenericSeatsFromInventory(
     }
   }
 
+  const seenEmails = new Set(nextSeats.map((row) => row.email));
+  for (const existing of existingByEmail.values()) {
+    if (!existing.excluded || seenEmails.has(existing.email)) continue;
+    nextSeats.push(
+      emptyGenericSeat(existing.email, {
+        ...existing,
+        assignedClientId: null,
+        assignedCampaignIds: [],
+        assignedPod: null,
+        assignedAt: null,
+        coveringFor: [],
+        excluded: true,
+      }),
+    );
+  }
+
+  const covered = alreadyCoveredEmails(nextSeats);
+  for (const seat of nextSeats) {
+    if (seat.excluded || seat.assignedClientId == null || !seat.assignedPod) {
+      seat.coveringFor = [];
+      continue;
+    }
+    seat.coveringFor = linkCoveringFor({
+      seat,
+      warming: warmingBranded,
+      alreadyCovered: covered,
+      now,
+    });
+    for (const row of seat.coveringFor) covered.add(row.email);
+  }
+
   nextSeats.sort((a, b) => a.email.localeCompare(b.email));
   return {
     seats: nextSeats,
@@ -569,6 +752,9 @@ export async function syncGenericSeatsFromInventory(
     clientHasActiveCampaign,
     campaignClientById,
     liveClientIdsByEmail,
+    warmupOffEmails,
+    unassignedWithPodTags,
+    warmingBranded,
   };
 }
 
@@ -578,7 +764,11 @@ export function genericPoolCanonCompliant(findings: string[]): boolean {
     return (
       kind === "generic_idle" ||
       kind === "generic_multi_client" ||
-      kind === "generic_outside_table"
+      kind === "generic_outside_table" ||
+      kind === "generic_outside_ledger" ||
+      kind === "generic_not_warming" ||
+      kind === "generic_on_insight" ||
+      kind === "pod_short_no_free_generic"
     );
   });
 }

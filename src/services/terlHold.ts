@@ -577,6 +577,8 @@ export class TerlHoldService {
           releaseHistory: seat.releaseHistory,
           tags: account.tags,
           assignedPod: seat.assignedPod,
+          excluded: seat.excluded,
+          email,
         })
       ) {
         continue;

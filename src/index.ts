@@ -692,7 +692,12 @@ async function main(): Promise<void> {
   );
   const genericCleanup = new GenericCleanupService(config, smartlead, state);
   const endPoc = new EndPocService(config, smartlead, state);
-  const genericPoolCanon = new GenericPoolCanonService(config, state, slack);
+  const genericPoolCanon = new GenericPoolCanonService(
+    config,
+    state,
+    slack,
+    smartlead,
+  );
   const mailboxTypeTags = new MailboxTypeTagService(
     config,
     smartlead,

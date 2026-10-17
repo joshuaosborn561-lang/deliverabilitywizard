@@ -663,6 +663,8 @@ export class CampaignTopUpService {
                       releaseHistory: seat.releaseHistory,
                       tags: poolAccount.tags,
                       assignedPod: seat.assignedPod,
+                      excluded: seat.excluded,
+                      email: key,
                     })
                   ) {
                     return true;

@@ -29,6 +29,17 @@ export const GENERIC_POOL_CORE_KINDS = [
   "generic_idle",
   "generic_multi_client",
   "generic_outside_table",
+  "generic_outside_ledger",
+  "generic_not_warming",
+  "generic_on_insight",
+  "pod_short_no_free_generic",
+] as const;
+
+export const GENERIC_LEDGER_CORE_KINDS = [
+  "generic_outside_ledger",
+  "generic_not_warming",
+  "generic_on_insight",
+  "pod_short_no_free_generic",
 ] as const;
 
 export const GENERIC_RELEASE_HISTORY_CAP = 50;
@@ -49,6 +60,11 @@ export interface GenericReleaseEvent {
   reason: string | null;
 }
 
+export interface GenericCoveringFor {
+  email: string;
+  warmReadyAt: string | null;
+}
+
 export interface GenericSeatRecord {
   email: string;
   slAccountId: number | null;
@@ -63,6 +79,12 @@ export interface GenericSeatRecord {
   releaseHistory: GenericReleaseEvent[];
   /** D232 — Azure 0.1, everything else 1. */
   staffableWeight: number;
+  /** D286 — Smartlead warmup on/off. Null until the seeder reads it. */
+  warmupEnabled: boolean | null;
+  /** D286 — branded seats this generic stands in for. */
+  coveringFor: GenericCoveringFor[];
+  /** D286 — CornerStone-domain seats never re-enter the pool. */
+  excluded: boolean;
 }
 
 export function isGenericPoolCoreKind(kind: string): kind is GenericPoolCoreKind {
@@ -201,6 +223,7 @@ export function normalizeGenericSeat(raw: unknown): GenericSeatRecord | null {
         .filter((id) => Number.isFinite(id) && id > 0)
     : [];
   const releasedAtRaw = (row as { released_at?: unknown }).released_at ?? row.releasedAt;
+  const warmupRaw = (row as { warmup_enabled?: unknown }).warmup_enabled ?? row.warmupEnabled;
   return {
     email,
     slAccountId: Number.isFinite(slAccountId) && slAccountId > 0 ? slAccountId : null,
@@ -229,7 +252,34 @@ export function normalizeGenericSeat(raw: unknown): GenericSeatRecord | null {
       (row as { release_history?: unknown }).release_history ?? row.releaseHistory,
     ),
     staffableWeight: normalizeStaffableWeight(row.staffableWeight),
+    warmupEnabled:
+      warmupRaw === true || warmupRaw === false ? warmupRaw : null,
+    coveringFor: normalizeCoveringFor(
+      (row as { covering_for?: unknown }).covering_for ?? row.coveringFor,
+    ),
+    excluded: Boolean((row as { excluded?: unknown }).excluded),
   };
+}
+
+export function normalizeCoveringFor(raw: unknown): GenericCoveringFor[] {
+  if (!Array.isArray(raw)) return [];
+  const out: GenericCoveringFor[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Partial<GenericCoveringFor>;
+    const email = genericSeatKey(String(row.email ?? ""));
+    if (!email.includes("@") || seen.has(email)) continue;
+    seen.add(email);
+    const ready =
+      typeof row.warmReadyAt === "string" && row.warmReadyAt.trim()
+        ? row.warmReadyAt
+        : typeof (row as { warm_ready_at?: unknown }).warm_ready_at === "string"
+          ? String((row as { warm_ready_at?: unknown }).warm_ready_at)
+          : null;
+    out.push({ email, warmReadyAt: ready });
+  }
+  return out;
 }
 
 function normalizeStaffableWeight(raw: unknown): number {
@@ -283,6 +333,9 @@ export function emptyGenericSeat(
     releasedAt: extras.releasedAt ?? null,
     releaseHistory: extras.releaseHistory ?? [],
     staffableWeight: extras.staffableWeight ?? 1,
+    warmupEnabled: extras.warmupEnabled ?? null,
+    coveringFor: extras.coveringFor ?? [],
+    excluded: extras.excluded ?? false,
   };
 }
 
@@ -296,6 +349,7 @@ export function clearGenericAssignment(
     assignedPod: null,
     assignedAt: null,
     reason: null,
+    coveringFor: [],
   };
 }
 
@@ -306,6 +360,7 @@ export interface AssignGenericSeatInput {
   reason: string;
   campaignIds?: number[];
   slAccountId?: number | null;
+  coveringFor?: GenericCoveringFor[];
   now?: Date;
 }
 
@@ -361,6 +416,7 @@ export function applyAssignGenericSeat(
       assignedPod: nextPod,
       assignedAt: existing.assignedAt ?? nowIso,
       reason: existing.reason ?? input.reason,
+      coveringFor: input.coveringFor ?? existing.coveringFor,
     },
   };
 }
@@ -375,6 +431,7 @@ export function applyReleaseGenericSeat(
       assignedCampaignIds: [],
       assignedAt: null,
       reason: null,
+      coveringFor: [],
     };
   }
   const releasedAt = (opts.now ?? new Date()).toISOString();
@@ -391,6 +448,7 @@ export function applyReleaseGenericSeat(
     assignedPod: null,
     assignedAt: null,
     reason: null,
+    coveringFor: [],
     releasedAt,
     releaseHistory: [...existing.releaseHistory, event].slice(
       -GENERIC_RELEASE_HISTORY_CAP,

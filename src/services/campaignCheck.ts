@@ -19,7 +19,14 @@ import {
   type CampaignFinding,
 } from "../lib/campaignCheck.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
-import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
+import {
+  isRealNamedClientId,
+  resolveDedicatedGenericClientId,
+} from "../lib/dedicatedGeneric.js";
+import {
+  countOwnedClientPods,
+  formatPodUnderstaffedDetail,
+} from "../lib/podOwnedInventory.js";
 import {
   canonStaffableVerdict,
   formatCanonStaffFloorDetail,
@@ -42,7 +49,6 @@ import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import {
   INSIGHT_MAILBOX_SIGNATURE_BLANK,
   insightDualSignatureMismatch,
-  insightExemptFromSenderTopUp,
   insightSenderEmail,
   isInsightCampaign,
   isInsightJoshAllowedSender,
@@ -654,6 +660,15 @@ export class CampaignCheckService {
       }
     }
 
+    if (mode !== "first") {
+      this.applyNamedPodUnderstaffed({
+        campaigns: campaigns as SmartleadCampaign[],
+        accounts: accounts as SmartleadAccountWithCampaigns[],
+        clients: clients as SmartleadClientRecord[],
+        result,
+      });
+    }
+
     if (sigFixed.length && this.slack) {
       const brands = [...new Set(sigFixed.map((row) => row.brand).filter(Boolean))];
       await this.slack.notifyActionResult(
@@ -697,6 +712,116 @@ export class CampaignCheckService {
       `[campaign-check] mode=${mode} examined=${result.examined} firstSeen=${result.firstSeen} firstChecked=${result.firstChecked} firstPassed=${result.firstPassed} swept=${result.swept} blocked=${result.blocked.length} deferred=${result.deferred}`,
     );
     return result;
+  }
+
+  /**
+   * D285 — named-client understaffed is per POD owned inventory, never
+   * per campaign. Attach one finding per short POD on the client's
+   * first ACTIVE campaign; strip leftover campaign-level understaffed.
+   * Insight and PowerGRYD are counted, not silenced.
+   */
+  private applyNamedPodUnderstaffed(input: {
+    campaigns: SmartleadCampaign[];
+    accounts: SmartleadAccountWithCampaigns[];
+    clients: SmartleadClientRecord[];
+    result: CampaignCheckResult;
+  }): void {
+    const endedIds = this.state.listEndedPocClientIds();
+    const clientsById = new Map(input.clients.map((client) => [client.id, client]));
+    const firstActive = new Map<number, SmartleadCampaign>();
+    const namedClientIds: number[] = [];
+    for (const campaign of input.campaigns) {
+      if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") continue;
+      if (isAnyShellCampaign(campaign)) continue;
+      if (isGabeFollowUpCampaign(campaign)) continue;
+      if (
+        isCallerFollowUpCampaign(
+          campaign,
+          callerFollowUpPolicyFromConfig(this.config),
+        )
+      ) {
+        continue;
+      }
+      if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) continue;
+      const clientId =
+        typeof campaign.client_id === "number" ? campaign.client_id : null;
+      if (clientId == null || !isRealNamedClientId(clientId, (id) => this.state.isMarkerClientId(id))) {
+        continue;
+      }
+      const client = clientsById.get(clientId);
+      const clientName = clientDisplayName(client ?? { id: clientId });
+      if (
+        isPocEngagementClient({
+          clientId,
+          hay: clientName,
+          name: client?.name,
+          logo: client?.logo,
+          patterns: this.config.pocClientNamePatterns,
+          endedIds,
+        })
+      ) {
+        continue;
+      }
+      if (!firstActive.has(clientId)) {
+        firstActive.set(clientId, campaign);
+        namedClientIds.push(clientId);
+      }
+    }
+    const owned = countOwnedClientPods({
+      accounts: input.accounts,
+      campaigns: input.campaigns,
+      config: this.config,
+      state: this.state,
+      clientIds: namedClientIds,
+    });
+    const detailsByClient = new Map<number, string[]>();
+    for (const row of owned) {
+      if (row.shortBy <= 1e-9) continue;
+      const client = clientsById.get(row.clientId);
+      const clientName = clientDisplayName(client ?? { id: row.clientId });
+      const list = detailsByClient.get(row.clientId) ?? [];
+      list.push(formatPodUnderstaffedDetail(row, clientName));
+      detailsByClient.set(row.clientId, list);
+    }
+    const campaignById = new Map(input.campaigns.map((row) => [row.id, row]));
+    const carrierIds = new Set(
+      [...firstActive.values()].map((campaign) => campaign.id),
+    );
+    const namedCampaign = (campaignId: number): boolean => {
+      const campaign = campaignById.get(campaignId);
+      const clientId =
+        typeof campaign?.client_id === "number" ? campaign.client_id : null;
+      return clientId != null && firstActive.has(clientId);
+    };
+    for (const entry of input.result.findings) {
+      if (!namedCampaign(entry.campaignId)) continue;
+      entry.findings = entry.findings.filter((finding) => finding.kind !== "understaffed");
+      const live = campaignById.get(entry.campaignId);
+      const clientId = typeof live?.client_id === "number" ? live.client_id : null;
+      const carrier = clientId != null ? firstActive.get(clientId) : undefined;
+      if (carrier && carrier.id === entry.campaignId) {
+        for (const detail of detailsByClient.get(clientId!) ?? []) {
+          entry.findings.push({ kind: "understaffed", detail });
+        }
+      }
+      entry.passed = firstCheckPassed(entry.findings);
+      const record = this.state.getCampaignCheck(entry.campaignId);
+      if (record) {
+        this.state.upsertCampaignCheck({
+          ...record,
+          findings: entry.findings.map(formatFinding),
+        });
+      }
+    }
+    for (const row of this.state.listCampaignChecks()) {
+      if (carrierIds.has(row.campaignId)) continue;
+      if (!namedCampaign(row.campaignId)) continue;
+      const next = (row.findings ?? []).filter(
+        (finding) => !finding.startsWith("understaffed"),
+      );
+      if (next.length === (row.findings ?? []).length) continue;
+      this.state.upsertCampaignCheck({ ...row, findings: next });
+    }
   }
 
   /**
@@ -1366,8 +1491,7 @@ export class CampaignCheckService {
       !isCallerFollowUpCampaign(
         campaign,
         callerFollowUpPolicyFromConfig(this.config),
-      ) &&
-      !insightExemptFromSenderTopUp(campaign)
+      )
     ) {
       const pocEngagement = isPocEngagementClient({
         clientId: campaign.client_id,
@@ -1390,8 +1514,10 @@ export class CampaignCheckService {
           return sum + mailboxStaffableWeight(account);
         }, 0),
       );
+      // D285 — named min-40 is POD inventory, never per campaign.
+      // POC 60 stays campaign-level. Insight is counted, not silenced.
       const shortBy = Math.max(0, floor - staffableWeight);
-      if (input.depth === "hourly" && shortBy > 1e-9) {
+      if (input.depth === "hourly" && pocEngagement && shortBy > 1e-9) {
         findings.push({
           kind: "understaffed",
           detail: formatCanonStaffFloorDetail({

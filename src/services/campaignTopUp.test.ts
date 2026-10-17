@@ -141,6 +141,8 @@ function fakeState(
       if (result.ok) seats.set(result.seat.email, result.seat);
       return result;
     },
+    listEndedPocClientIds: () => [],
+    isMarkerClientId: () => false,
     save: async () => undefined,
   } as unknown as StateStore;
   return { state, current: () => current };
@@ -161,7 +163,7 @@ describe("CampaignTopUpService safety", () => {
     let addCalls = 0;
     const smartlead = {
       listCampaigns: async () => [
-        { id: 2, name: "Goliath Thin", status: "ACTIVE", client_id: 2 },
+        { id: 2, name: "Deep Roots Thin", status: "ACTIVE", client_id: 597783 },
       ],
       listAllEmailAccounts: async () => [
         {
@@ -194,7 +196,7 @@ describe("CampaignTopUpService safety", () => {
           campaign_ids: [],
         })),
       ],
-      listClients: async () => [{ id: 2, name: "Client B" }],
+      listClients: async () => [{ id: 597783, name: "Deep Roots", logo: "Deep Roots" }],
       addEmailAccountsToCampaign: async () => {
         addCalls += 1;
       },
@@ -211,9 +213,9 @@ describe("CampaignTopUpService safety", () => {
     const result = await service.run();
     assert.equal(addCalls, 1);
     assert.equal(result.assigned.length, 1);
-    // D217: live floor is 40 on-week staffable, not half of ~100 named.
-    // 0 staffable + 1 placed ⇒ short 39.
-    assert.equal(result.unfilled[0]?.shortBy, 39);
+    // D285 — named min-40 is POD inventory; campaign-top-up only fills
+    // POC engagement to 60. 0 staffable + 1 placed ⇒ short 59.
+    assert.equal(result.unfilled[0]?.shortBy, 59);
   });
 
   it("rolls back donor and target membership before retrying a failed move", async () => {

@@ -97,7 +97,7 @@ describe("D258 PowerGRYD empty-by-design", () => {
     );
   });
 
-  it("D283: never staff any generic onto PowerGRYD", () => {
+  it("D283: Onboarding-freed seats cannot flip back onto PowerGRYD; free-pool may", () => {
     assert.equal(
       genericBlockedOnPowerGrydStaffing({
         account: {
@@ -112,8 +112,28 @@ describe("D258 PowerGRYD empty-by-design", () => {
         emptyByDesign: false,
         mailboxClientId: null,
         assignedClientId: 592842,
+        assignedReason: "powergryd_dedicated",
       }),
       true,
+      "freed SL-null leftover PowerGRYD owner must not restaff onto 592842",
+    );
+    assert.equal(
+      genericBlockedOnPowerGrydStaffing({
+        account: {
+          id: 900,
+          from_email: "spare@crosslaunchco.com",
+          from_name: "Harmony Norris",
+          signature: "",
+          client_id: null,
+        } as SmartleadAccountWithCampaigns,
+        email: "spare@crosslaunchco.com",
+        targetClientId: 592842,
+        emptyByDesign: false,
+        mailboxClientId: null,
+        assignedClientId: null,
+      }),
+      false,
+      "PowerGRYD may take a free-pool generic (D285)",
     );
   });
 });

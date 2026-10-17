@@ -12,22 +12,30 @@ import { POWERGRYD_CLIENT_ID } from "./namedClientIds.js";
 import {
   brandFromClientDisplayName,
   clientBrandList,
+  findForeignBrand,
 } from "./clientBrand.js";
 import { isClientNamedDomain } from "./clientNamedDomain.js";
 import { isGenericMailbox } from "./clientInbox.js";
+import {
+  isRealNamedClientId,
+  preferredGenericOwnerId,
+} from "./dedicatedGeneric.js";
 import { emailDomainOf } from "./isolationDomain.js";
+import { isFreedPowerGrydAttachBlocked } from "./powerGrydFreedCleanup.js";
+import { signatureHay } from "./signatureQa.js";
 import { isStaffableSender } from "./staffableSender.js";
 import { owesWarmup } from "../services/warmupGate.js";
 
 /**
- * D258 / D283 — PowerGRYD branded-warming / empty-by-design, plus
- * the hard rule: never staff fleet-pool generics onto PowerGRYD.
+ * D258 / D285 — PowerGRYD branded-warming / empty-by-design.
  *
- * Empty-by-design is ON when no named PowerGRYD seat is staffable
- * yet (they are still warming, or none exist). D283 forbids every
- * generic attach onto 592842 — branded or free-pool — so Onboarding-
- * freed seats cannot flip back. Named PowerGRYD seats still fan-out
- * onto PowerGRYD campaigns.
+ * ON when no named PowerGRYD seat is staffable yet (they are still
+ * warming, or none exist). While ON, staffing must not put a
+ * foreign-signature / foreign-client generic onto a PowerGRYD
+ * ACTIVE campaign. This is not a never-generics rule (D256/D285):
+ * PowerGRYD takes free-pool generics like any named client.
+ * D283 still blocks Onboarding-freed seats (SL-null leftover
+ * `powergryd_dedicated`) from flipping back onto 592842.
  */
 
 export function isPowerGrydNamedSeat(
@@ -113,13 +121,45 @@ export function genericBlockedOnPowerGrydStaffing(input: {
   allBrands?: string[];
   mailboxClientId?: number | null;
   assignedClientId?: number | null;
+  assignedReason?: string | null;
+  releaseHistory?: Array<{ reason?: string | null }>;
   isMarkerClientId?: (id: number | null | undefined) => boolean;
 }): boolean {
   const powerId = input.powerGrydClientId ?? POWERGRYD_CLIENT_ID;
   if (input.targetClientId !== powerId) return false;
-  // D283 — never staff generics onto PowerGRYD, including a stale
-  // powergryd_dedicated pool row whose live Smartlead client_id is null.
-  return true;
+  if (
+    isFreedPowerGrydAttachBlocked({
+      mailboxClientId: input.mailboxClientId ?? input.account.client_id,
+      assignedClientId: input.assignedClientId,
+      assignedReason: input.assignedReason,
+      releaseHistory: input.releaseHistory,
+      powerGrydClientId: powerId,
+    })
+  ) {
+    return true;
+  }
+  const liveOwner = preferredGenericOwnerId({
+    mailboxClientId: input.mailboxClientId ?? input.account.client_id,
+    assignedClientId: input.assignedClientId,
+    assignedReason: input.assignedReason,
+    isMarkerClientId: input.isMarkerClientId,
+  });
+  if (
+    liveOwner != null &&
+    liveOwner !== powerId &&
+    isRealNamedClientId(liveOwner, input.isMarkerClientId)
+  ) {
+    return true;
+  }
+  if (!input.emptyByDesign) return false;
+  const brand = String(input.powerGrydBrand ?? "PowerGRYD").trim();
+  const brands = input.allBrands ?? [];
+  if (!brand || brands.length === 0) return false;
+  const hay = signatureHay({
+    fromName: input.account.from_name,
+    signature: input.account.signature,
+  });
+  return findForeignBrand(hay, brand, brands) != null;
 }
 
 export function powerGrydBrandFromClients(

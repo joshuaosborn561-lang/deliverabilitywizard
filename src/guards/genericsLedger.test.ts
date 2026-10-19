@@ -180,12 +180,28 @@ describe("owner intent — D286 Generics Ledger", () => {
       /saveHotWanted/,
       stop("Overlapping saveHot coalesces (D288).", "store.ts lost saveHot coalescing."),
     );
-    assert.match(
+    assert.doesNotMatch(
       inventory,
       /if \(isInsightJoshAllowedSender\(input\.account\)\) \{\s*return INSIGHT_CLIENT_ID;/,
       stop(
-        "Josh seats count for Insight even unlinked (D288).",
-        "podOwnedInventory.ts still gates Insight remap on campaign membership.",
+        "D288 unlinked salesglider* remap is retired (D291).",
+        "podOwnedInventory.ts still remaps every Josh sender to Insight.",
+      ),
+    );
+    assert.match(
+      inventory,
+      /isInsightNamedSendingDomain/,
+      stop(
+        "Insight-named domains remap to Insight (D291).",
+        "podOwnedInventory.ts lost isInsightNamedSendingDomain.",
+      ),
+    );
+    assert.match(
+      inventory,
+      /seatSitsOnInsightJoshCampaign/,
+      stop(
+        "Leftover Insight-campaign Josh seats still remap (D287/D291).",
+        "podOwnedInventory.ts lost seatSitsOnInsightJoshCampaign.",
       ),
     );
     assert.match(
@@ -313,6 +329,40 @@ describe("owner intent — D286 Generics Ledger", () => {
       stop(
         "Insight matcher accepts Joshua Osborn (D290).",
         "insightCampaigns.ts lost the Joshua from-name regex.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D291 — /,
+      stop("The ledger records D291.", "DECISIONS.md has no D291 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D291 \|/m,
+      stop("The status index lists D291 (D127).", "DECISIONS.md status index has no D291 row."),
+    );
+    assert.match(
+      canon,
+      /SalesGlider's own/,
+      stop(
+        "CANON keeps SalesGlider's own salesglider* Josh seats (D291).",
+        "CANON.md lost the SalesGlider salesglider* owned-count split.",
+      ),
+    );
+    assert.match(
+      canon,
+      /never Insight/,
+      stop(
+        "CANON forbids counting SG salesglider* Josh as Insight (D291).",
+        "CANON.md lost never-Insight for SalesGlider's own Josh seats.",
+      ),
+    );
+    assert.match(
+      insight,
+      /export function isInsightNamedSendingDomain/,
+      stop(
+        "Insight-named domain helper exists (D291).",
+        "insightCampaigns.ts lost isInsightNamedSendingDomain.",
       ),
     );
   });

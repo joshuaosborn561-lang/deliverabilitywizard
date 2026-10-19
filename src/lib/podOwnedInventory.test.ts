@@ -29,6 +29,8 @@ function namedSeat(input: {
   pod?: "A" | "B";
   campaignIds?: number[];
   fromName?: string;
+  createdAt?: string;
+  warmupCreatedAt?: string;
 }) {
   return {
     id: input.id,
@@ -39,7 +41,10 @@ function namedSeat(input: {
     is_smtp_success: true,
     is_imap_success: true,
     message_per_day: 30,
-    created_at: warmedAt,
+    created_at: input.createdAt ?? warmedAt,
+    warmup_details: input.warmupCreatedAt
+      ? { status: "ACTIVE", warmup_created_at: input.warmupCreatedAt }
+      : undefined,
     campaign_ids: input.campaignIds ?? [],
     tags: input.pod ? [{ tag_name: `POD-${input.pod}` }] : [],
   };
@@ -378,6 +383,58 @@ describe("podOwnedInventory (D285)", () => {
     assert.equal(insightA?.named, 1);
     assert.equal(insightA?.owned, 1);
     assert.equal(sgA?.owned ?? 0, 0);
+  });
+
+  it("D290: PowerGRYD branded *powergryd.info still warming does not count; warm unlinked seats do", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const config = loadConfig({});
+    const warming = namedSeat({
+      id: 1,
+      email: "kstanton@propowergryd.info",
+      clientId: POWERGRYD_CLIENT_ID,
+      pod: "A",
+      campaignIds: [],
+      fromName: "Kyle Stanton",
+      createdAt: "2026-10-17T00:43:23.061Z",
+      warmupCreatedAt: "2026-10-17T00:45:12.730Z",
+    });
+    const warm = namedSeat({
+      id: 2,
+      email: "older@getpowergryd.info",
+      clientId: POWERGRYD_CLIENT_ID,
+      pod: "B",
+      campaignIds: [],
+      fromName: "Ada Lovelace",
+    });
+    const rows = await countOwnedClientPods({
+      accounts: [warming, warm],
+      campaigns: [
+        {
+          id: 4005226,
+          name: "PowerGRYD A",
+          status: "ACTIVE",
+          client_id: POWERGRYD_CLIENT_ID,
+        },
+      ],
+      config,
+      state,
+      clientIds: [POWERGRYD_CLIENT_ID],
+      now: new Date("2026-10-19T18:53:36.000Z"),
+    });
+    const podA = rows.find(
+      (row) => row.clientId === POWERGRYD_CLIENT_ID && row.pod === "A",
+    );
+    const podB = rows.find(
+      (row) => row.clientId === POWERGRYD_CLIENT_ID && row.pod === "B",
+    );
+    assert.equal(
+      podA?.owned,
+      0,
+      "Oct 17 branded PowerGRYD seat still owes warmup and must not fill POD-A",
+    );
+    assert.equal(podB?.named, 1);
+    assert.equal(podB?.owned, 1);
   });
 
   it("D287: PowerGRYD dedicated generics without a POD tag still count", async () => {

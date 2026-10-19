@@ -226,13 +226,9 @@ describe("D283 stall fix — book-only guards, no PowerGRYD pool walk", () => {
       `Onboarding-freed seats must not flip back onto PowerGRYD: ${JSON.stringify(attached)}`,
     );
     assert.equal(
-      one.restored.some(
-        (row) =>
-          row.campaignId === 5486 &&
-          freed.some((seat) => seat.from_email === row.email),
-      ),
+      attached.some((row) => row[0] === 5486 && row[1].some((id) => freedIds.has(id))),
       false,
-      `one-client must not dump Onboarding-freed seats onto Goliath: ${JSON.stringify(one)}`,
+      `freed seats must not dump onto Goliath: ${JSON.stringify(attached)} ${JSON.stringify(one)}`,
     );
     assert.ok(ticks > 0, `event loop must breathe (ticks=${ticks} elapsed=${elapsed}ms)`);
     assert.ok(

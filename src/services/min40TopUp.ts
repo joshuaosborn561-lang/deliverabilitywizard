@@ -262,12 +262,7 @@ export class Min40TopUpService {
       powerGrydClientId: this.config.powerGrydClientId,
       pocEngagementClientIds: pocIds,
     });
-    // D290 — always apply the inventory seed in memory. Dry-run used
-    // to skip this, so fillShortPods read an empty persisted ledger
-    // and assigned nothing. Persist still waits for !dryRun below.
-    // Supabase `wizard.generic_ledger` is upsert-only; a skipped
-    // copy does not empty the in-process ledger.
-    this.state.replaceGenericSeats(seeded.seats);
+    if (!dryRun) this.state.replaceGenericSeats(seeded.seats);
     console.log(
       `[min40-topup] ledger seats=${seeded.seats.length} freeWarm=${freeWarmGenericCount(seeded.seats, now)} dryRun=${dryRun}`,
     );
@@ -815,25 +810,21 @@ export class Min40TopUpService {
     email: string,
     clientId: number,
     targetPod: "A" | "B",
-    opts?: { allowFreedPowerGrydSupply?: boolean },
   ): boolean {
     const seat = this.state.getGenericSeat(email);
     if (!seat) return false;
+    const pool = this.state.getPoolMailbox(email);
     return genericEligibleForClientPod({
       clientId,
       targetPod,
       mailboxClientId: typeof account.client_id === "number" ? account.client_id : null,
-      // D290 — ledger assignedClientId is the lock. A leftover pool
-      // assignedClientId on a free ledger seat must not bind the seat
-      // to that old client (that zeroed D287 rotation).
-      assignedClientId: seat.assignedClientId ?? null,
+      assignedClientId: seat.assignedClientId ?? pool?.assignedClientId ?? null,
       assignedReason: seat.reason,
       releaseHistory: seat.releaseHistory,
       tags: account.tags,
       assignedPod: seat.assignedPod ?? null,
       excluded: seat.excluded,
       email,
-      allowFreedPowerGrydSupply: opts?.allowFreedPowerGrydSupply,
     });
   }
 
@@ -1501,11 +1492,7 @@ export class Min40TopUpService {
             continue;
           }
           if (
-            !this.genericMayTakePod(original, seat.email, clientId, pod, {
-              allowFreedPowerGrydSupply:
-                clientId !== this.config.powerGrydClientId &&
-                !this.neverGenericClient(clientId),
-            })
+            !this.genericMayTakePod(original, seat.email, clientId, pod)
           ) {
             rejected.add(key);
             continue;

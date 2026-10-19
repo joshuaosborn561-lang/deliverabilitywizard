@@ -259,7 +259,7 @@ Caps ramp manually (35 on Oct 12).
   client 582890** (D192 / **D282**). Insight campaigns may only send
   from **Josh Osborn** / **Joshua Osborn** inboxes on a
   `salesglider*` or Insight (`insight` / `joshosborn*` /
-  `joshuaosborn*`) domain. No generics and no other named
+  `joshuaosborn*`) domain (D290). No generics and no other named
   senders (Owen Sanchez, …), even when Insight PODs sit under 40.
   Insight's floor is whatever Josh-seats exist; never backfill
   (`insightExemptFromSenderTopUp`). Insight is still counted
@@ -274,9 +274,8 @@ Caps ramp manually (35 on Oct 12).
   onto EMCOR or TechEvo. Leftover HOLD-UNTIL still does not
   *pull* (D51/D128). Guards read the shared account book
   (`client_id` / tags already on the seat) — never a per-seat
-  Smartlead GET.   Onboarding-freed PowerGRYD seats stay freed
-  and must not flip back onto 592842; they are free-pool
-  supply for every other named client (D290). PowerGRYD otherwise
+  Smartlead GET. Onboarding-freed PowerGRYD seats stay freed
+  and must not flip back onto 592842; PowerGRYD otherwise
   takes generics (D285). Never START or unpause STOPPED
   campaigns.
   **SalesGlider stays 345263** (`salesglider*` only). Insight ≠ SG.
@@ -403,18 +402,20 @@ Caps ramp manually (35 on Oct 12).
   `joshuaosborn*` / `joshosborn*` / `salesglider*` (D290); a
   short POD pages Josh daily (D282/D285). PowerGRYD 592842
   takes generics like any named client; dedicated generic
-  seats without a POD tag still count (A/B split). Peterson
+  seats without a POD tag still count when they are warm
+  (A/B split). Branded `*powergryd.info` seats still owing
+  the 21-day clock do not count (prod 2026-10-19: 76+ seats
+  created Oct 16–17, 0 campaign links — empty-by-design 0
+  owned is correct, D290). Peterson
   548610 is counted but its under-floor alerts are suppressed
   (winding down, D287). `marekbrooks@meetconnectbox.com`
   stays in the generics ledger and is never re-linked to
-  PowerGRYD #4005226.   The ledger assigns free warm generics
+  PowerGRYD #4005226. The ledger assigns free warm generics
   into every under-floor POD (retire-pending domains last;
-  CornerStone never). Leftover Smartlead `client_id` or pool
-  `assignedClientId` on a seat with no live named-client
-  campaigns is not an assignment — those seats are free-pool
-  (D290). The in-memory seed always lands before pick (dry-run
-  included); the Supabase `wizard.generic_ledger` copy is
-  upsert-only and a skip does not empty the ledger.   isolation-buy-resume yields and skips
+  CornerStone never). A min40 pass that assigns 0 because
+  every free generic still owes warmup is correct canon
+  (D290 — 1:53pm CT 2026-10-19, 122 free still warming).
+  Never assign unwarmed generics.   isolation-buy-resume yields and skips
   an idle full-state stringify (D287). **D288:** `saveHot`
   writes stamps + `isolationPrune.goneIds` +
   `poolPrune.goneEmails` only — never the isolation
@@ -422,10 +423,7 @@ Caps ramp manually (35 on Oct 12).
   overlapping saveHot calls coalesce; min40 covering_for
   walks yield and do not stringify per seat. **D289:**
   owned-count and covering relink time-slice on a 514×1690
-  fleet; covering_for indexes warming branded seats once.
-  **D290:** min40 actually rotates those free-warm ledger seats
-  into under-floor non-Insight PODs (Onboarding-freed seats
-  included, except back onto PowerGRYD). Same-client
+  fleet; covering_for indexes warming branded seats once. Same-client
   generics share so a client with <40 named seats can still
   staff every campaign.
   Operational inventory floor is max(half-client-named-per-pod
@@ -472,7 +470,8 @@ Caps ramp manually (35 on Oct 12).
   TechEvo 521881 or Insight 582890 `client_id`. **D283 / D285:**
   Onboarding-freed seats (SL-null leftover `powergryd_dedicated`)
   stay freed and must not flip back onto PowerGRYD 592842;
-  they rotate into under-floor non-Insight PODs (D290).
+  they stay idle — not min40 / campaign-top-up / TERRL pool
+  supply (D283).
   PowerGRYD otherwise takes fleet-pool generics. `genericBlockedOnPowerGrydStaffing`
   blocks foreign-owner / foreign-sig (empty-by-design) and
   those freed seats, not every generic onto 592842. **D256:** a client may override the 40 floor via

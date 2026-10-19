@@ -273,16 +273,6 @@ describe("owner intent — D286 Generics Ledger", () => {
       stop("CANON names the fleet-size min40 yield (D289).", "CANON.md lost the 514×1690 yield rule."),
     );
     assert.match(
-      min40,
-      /replaceGenericSeats\(seeded\.seats\)/,
-      stop("min40 always seeds the in-memory ledger (D290).", "min40TopUp.ts lost replaceGenericSeats(seeded.seats)."),
-    );
-    assert.match(
-      seeder,
-      /pool\?\.status === "available" && liveClients\.length === 0/,
-      stop("Seed treats pool-available leftover client_id as free (D290).", "genericPoolCanon.ts lost the D290 free-seed rule."),
-    );
-    assert.match(
       decisions,
       /## D290 — /,
       stop("The ledger records D290.", "DECISIONS.md has no D290 entry."),
@@ -296,6 +286,34 @@ describe("owner intent — D286 Generics Ledger", () => {
       canon,
       /Joshua Osborn/,
       stop("CANON names production Insight from-name (D290).", "CANON.md lost Joshua Osborn."),
+    );
+    assert.match(
+      canon,
+      /122 free still warming/,
+      stop(
+        "CANON records the empty warm pool (D290).",
+        "CANON.md lost the 122-free-still-warming rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Never assign unwarmed generics/,
+      stop(
+        "CANON forbids assigning unwarmed generics (D290).",
+        "CANON.md lost the never-assign-unwarmed rule.",
+      ),
+    );
+    const insight = await readFile(
+      new URL("../lib/insightCampaigns.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      insight,
+      /INSIGHT_JOSH_FROM_NAME = \/\^josh\(ua\)\?\\s\+osborn\$\/i/,
+      stop(
+        "Insight matcher accepts Joshua Osborn (D290).",
+        "insightCampaigns.ts lost the Joshua from-name regex.",
+      ),
     );
   });
 });

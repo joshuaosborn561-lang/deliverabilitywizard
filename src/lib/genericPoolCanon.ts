@@ -613,17 +613,11 @@ export async function syncGenericSeatsFromInventory(
         : null;
     const liveAssigned =
       liveClients.length === 1 ? liveClients[0]! : null;
-    const pool = input.state.getPoolMailbox(email);
     // D283 — live Smartlead null is authoritative for Onboarding-freed
     // PowerGRYD generics. Do not re-own them from leftover campaign links.
-    // D290 — pool-available + no live named-client campaigns is the free
-    // pool, even with leftover Smartlead client_id. Off-week assigned
-    // generics (pool status assigned, campaigns empty) stay owned (D228).
     const assignedClientId =
-      pool?.status === "available" && liveClients.length === 0
-        ? null
-        : mailboxClient ??
-          (liveAssigned === powerId ? null : liveAssigned);
+      mailboxClient ??
+      (liveAssigned === powerId ? null : liveAssigned);
     const assignedCampaignIds = campaignIdsOf(withCampaigns).filter((id) => {
       const clientId = campaignClientById.get(id);
       return assignedClientId != null && clientId === assignedClientId;
@@ -637,10 +631,8 @@ export async function syncGenericSeatsFromInventory(
         : existing?.assignedClientId === assignedClientId && existing.assignedAt
           ? existing.assignedAt
           : now.toISOString();
-    if (
-      mailboxClient != null &&
-      !(pool?.status === "available" && liveClients.length === 0)
-    ) {
+    const pool = input.state.getPoolMailbox(email);
+    if (mailboxClient != null) {
       realignStalePoolAssignment(input.state, email, mailboxClient, now);
     } else if (
       pool?.assignedClientId === powerId ||
@@ -658,20 +650,10 @@ export async function syncGenericSeatsFromInventory(
         });
       }
     }
-    let warmReadyAt =
+    const warmReadyAt =
       existing?.warmReadyAt ??
       (typeof pool?.availableAt === "string" ? pool.availableAt : null) ??
       (typeof pool?.warmedAt === "string" ? pool.warmedAt : null);
-    // D290 — pool-available already served warmup. Do not keep a
-    // future ledger ready-at that would hide the seat from pick.
-    if (pool?.status === "available" && warmReadyAt) {
-      const at = Date.parse(warmReadyAt);
-      if (Number.isFinite(at) && at > now.getTime()) {
-        warmReadyAt =
-          (typeof pool.availableAt === "string" ? pool.availableAt : null) ??
-          now.toISOString();
-      }
-    }
     const warmupEnabled = mailboxWarmupIsOn(account);
     if (warmupEnabled === false) warmupOffEmails.push(email);
     if (assignedClientId == null && taggedPod != null) {

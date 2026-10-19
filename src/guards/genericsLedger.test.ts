@@ -196,5 +196,81 @@ describe("owner intent — D286 Generics Ledger", () => {
         "min40TopUp.ts warmingBrandedSeats lost its yield.",
       ),
     );
+    const freeze = await readFile(
+      new URL("../lib/freezeWatchdog.ts", import.meta.url),
+      "utf8",
+    );
+    const yielding = await readFile(
+      new URL("../lib/stringifyYielding.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      inventory,
+      /export async function countOwnedClientPods/,
+      stop(
+        "Owned-count yields (D289).",
+        "podOwnedInventory.ts countOwnedClientPods is no longer async.",
+      ),
+    );
+    assert.match(
+      inventory,
+      /scan:countOwnedClientPods/,
+      stop(
+        "Owned-count is a named stall op (D289).",
+        "podOwnedInventory.ts lost scan:countOwnedClientPods.",
+      ),
+    );
+    assert.match(
+      inventory,
+      /createLoopYielder/,
+      stop(
+        "Owned-count time-slices every account (D289).",
+        "podOwnedInventory.ts lost createLoopYielder.",
+      ),
+    );
+    assert.match(
+      seeder,
+      /warmingSeatsByClientPod/,
+      stop(
+        "Covering relink indexes warming seats once (D289).",
+        "genericPoolCanon.ts lost warmingSeatsByClientPod.",
+      ),
+    );
+    assert.match(
+      yielding,
+      /export function createLoopYielder/,
+      stop("Loop yielder exists (D289).", "stringifyYielding.ts lost createLoopYielder."),
+    );
+    assert.match(
+      freeze,
+      /EVENT_LOOP_REPEAT_MS = 3_000/,
+      stop(
+        "Watchdog 3s repeat stays (D289).",
+        "freezeWatchdog.ts widened EVENT_LOOP_REPEAT_MS.",
+      ),
+    );
+    assert.match(
+      freeze,
+      /EVENT_LOOP_REPEAT_COUNT = 3/,
+      stop(
+        "Watchdog 3-strikes stays (D289).",
+        "freezeWatchdog.ts widened EVENT_LOOP_REPEAT_COUNT.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D289 — /,
+      stop("The ledger records D289.", "DECISIONS.md has no D289 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D289 \|/m,
+      stop("The status index lists D289 (D127).", "DECISIONS.md status index has no D289 row."),
+    );
+    assert.match(
+      canon,
+      /514-campaign × 1690-account/,
+      stop("CANON names the fleet-size min40 yield (D289).", "CANON.md lost the 514×1690 yield rule."),
+    );
   });
 });

@@ -89,7 +89,7 @@ describe("podOwnedInventory (D285)", () => {
       pod: "A",
       campaignIds: [20],
     });
-    const rows = countOwnedClientPods({
+    const rows = await countOwnedClientPods({
       accounts: [borrowed, owned],
       campaigns: [
         { id: 20, name: "TechEvo A", status: "ACTIVE", client_id: TECHEVO_CLIENT_ID },
@@ -134,7 +134,7 @@ describe("podOwnedInventory (D285)", () => {
       pod: "B",
       campaignIds: [99],
     });
-    const rows = countOwnedClientPods({
+    const rows = await countOwnedClientPods({
       accounts: [mine, foreign],
       campaigns: [
         { id: 10, name: "BCP live", status: "ACTIVE", client_id: BCP_CLIENT_ID },
@@ -169,7 +169,7 @@ describe("podOwnedInventory (D285)", () => {
       campaignIds: [3921647],
       fromName: "Owen Sanchez",
     });
-    const rows = countOwnedClientPods({
+    const rows = await countOwnedClientPods({
       accounts: [josh, owen],
       campaigns: [
         {
@@ -207,7 +207,7 @@ describe("podOwnedInventory (D285)", () => {
         campaignIds: [20],
       }),
     );
-    const rows = countOwnedClientPods({
+    const rows = await countOwnedClientPods({
       accounts: named,
       campaigns: [
         { id: 20, name: "TechEvo A", status: "ACTIVE", client_id: TECHEVO_CLIENT_ID },
@@ -254,7 +254,7 @@ describe("podOwnedInventory (D285)", () => {
       }),
       INSIGHT_CLIENT_ID,
     );
-    const rows = countOwnedClientPods({
+    const rows = await countOwnedClientPods({
       accounts: [unlinked, onSgOnly],
       campaigns: [
         {
@@ -302,7 +302,7 @@ describe("podOwnedInventory (D285)", () => {
       campaignIds: [3921647],
       fromName: "Josh Osborn",
     });
-    const rows = countOwnedClientPods({
+    const rows = await countOwnedClientPods({
       accounts: [josh],
       campaigns: [
         {
@@ -335,7 +335,7 @@ describe("podOwnedInventory (D285)", () => {
         campaignIds: [4005226],
       }),
     );
-    const rows = countOwnedClientPods({
+    const rows = await countOwnedClientPods({
       accounts: dedicated,
       campaigns: [
         {
@@ -371,7 +371,7 @@ describe("podOwnedInventory (D285)", () => {
       }),
       client_id: null,
     };
-    const rows = countOwnedClientPods({
+    const rows = await countOwnedClientPods({
       accounts: [seat],
       campaigns: [
         {

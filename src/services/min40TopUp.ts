@@ -85,6 +85,7 @@ import {
   pickFreeWarmGenericsForPod,
   suppressPodFloorAlert,
   warmReadyAtFromClock,
+  warmingSeatsByClientPod,
   type WarmingBrandedSeat,
 } from "../lib/genericLedger.js";
 import {
@@ -100,7 +101,7 @@ import { accountOnBounceHold } from "../lib/bounceHold.js";
 import { sleep } from "../lib/http.js";
 import { dropGhostPoolSeats } from "../lib/poolInventoryReconcile.js";
 import { findReassignablePoolMailboxYielding } from "../lib/poolPick.js";
-import { yieldEventLoop } from "../lib/stringifyYielding.js";
+import { createLoopYielder, createTimeSlicer, yieldEventLoop } from "../lib/stringifyYielding.js";
 import type { PoolMailboxRecord } from "../state/store.js";
 import {
   INSIGHT_MAILBOX_SIGNATURE_BLANK,
@@ -315,7 +316,7 @@ export class Min40TopUpService {
       accounts as SmartleadAccountWithCampaigns[],
       opts.signal,
     );
-    const namedOnWeek = this.namedOnWeekEmails(
+    const namedOnWeek = await this.namedOnWeekEmails(
       seatIndex.seats,
       campaigns as SmartleadCampaign[],
       clients,
@@ -471,7 +472,7 @@ export class Min40TopUpService {
       });
     }
 
-    this.reportPodShortfalls({
+    await this.reportPodShortfalls({
       now,
       accounts: accounts as SmartleadAccountWithCampaigns[],
       campaigns: campaigns as SmartleadCampaign[],
@@ -529,6 +530,7 @@ export class Min40TopUpService {
     const seats: IndexedSeat[] = [];
     const byCampaign = new Map<number, IndexedSeat[]>();
     let n = 0;
+    const slice = createTimeSlicer();
     for (const account of accounts) {
       if (signal?.aborted) break;
       const email = accountEmail(account);
@@ -554,6 +556,7 @@ export class Min40TopUpService {
       }
       n += 1;
       if (n % 64 === 0) await yieldEventLoop();
+      else await slice();
     }
     return { seats, byCampaign };
   }
@@ -569,6 +572,7 @@ export class Min40TopUpService {
   ): Promise<Map<number, IndexedSeat[]>> {
     const byClient = new Map<number, IndexedSeat[]>();
     let n = 0;
+    const slice = createTimeSlicer();
     for (const seat of seats) {
       if (signal?.aborted) break;
       const ids = new Set<number>();
@@ -622,20 +626,23 @@ export class Min40TopUpService {
       }
       n += 1;
       if (n % 64 === 0) await yieldEventLoop();
+      else await slice();
     }
     return byClient;
   }
 
-  private namedOnWeekEmails(
+  private async namedOnWeekEmails(
     seats: IndexedSeat[],
     campaigns: SmartleadCampaign[],
     clients: SmartleadClientRecord[],
     onWeek: "A" | "B",
-  ): Map<number, Set<string>> {
+  ): Promise<Map<number, Set<string>>> {
     const byClient = new Map<number, Array<{ email: string; type?: string | null }>>();
     const taggedByEmail = new Map<string, "A" | "B">();
     const campaignClient = new Map(campaigns.map((c) => [c.id, c.client_id]));
+    const yieldSeat = createLoopYielder(MIN40_SEAT_YIELD_EVERY);
     for (const seat of seats) {
+      await yieldSeat();
       if (seat.generic) continue;
       const account = seat.account;
       const clientId =
@@ -1381,9 +1388,10 @@ export class Min40TopUpService {
       input.campaignById,
       input.now,
     );
+    const warmingByPod = warmingSeatsByClientPod(warmingBranded);
     let covered = alreadyCoveredEmails(this.state.listGenericSeats());
     const owned = ownedPodMap(
-      countOwnedClientPods({
+      await countOwnedClientPods({
         accounts: input.accounts,
         campaigns: input.campaigns,
         config: this.config,
@@ -1413,10 +1421,9 @@ export class Min40TopUpService {
         const row = owned.get(clientPodKey(clientId, pod));
         let need = row?.shortBy ?? floor;
         const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
-        let espN = 0;
+        const yieldEsp = createLoopYielder(MIN40_SEAT_YIELD_EVERY);
         for (const seat of input.seats) {
-          espN += 1;
-          if (espN % MIN40_SEAT_YIELD_EVERY === 0) await yieldEventLoop();
+          await yieldEsp();
           const account = seat.account;
           const assignedHere =
             typeof account.client_id === "number" &&
@@ -1441,10 +1448,9 @@ export class Min40TopUpService {
           retirePendingDomains: retirePending,
           now: input.now,
         });
-        let pickedN = 0;
+        const yieldPicked = createLoopYielder(MIN40_SEAT_YIELD_EVERY);
         for (const seat of ledgerPicks) {
-          pickedN += 1;
-          if (pickedN % MIN40_SEAT_YIELD_EVERY === 0) await yieldEventLoop();
+          await yieldPicked();
           if (need <= 1e-9) break;
           if (input.signal?.aborted) {
             input.result.errors.push("aborted: stopped remaining POD fills");
@@ -1497,6 +1503,7 @@ export class Min40TopUpService {
               assignedPod: pod,
             },
             warming: warmingBranded,
+            warmingByPod,
             alreadyCovered: covered,
             now: input.now,
           });
@@ -1582,9 +1589,11 @@ export class Min40TopUpService {
     const out: WarmingBrandedSeat[] = [];
     const isMarker = this.state.isMarkerClientId?.bind(this.state);
     let scanned = 0;
+    const slice = createTimeSlicer();
     for (const account of accounts) {
       scanned += 1;
       if (scanned % MIN40_SEAT_YIELD_EVERY === 0) await yieldEventLoop();
+      else await slice();
       const email = accountEmail(account)?.toLowerCase();
       if (!email) continue;
       if (isGenericMailbox(account, email, this.config, this.state)) continue;
@@ -1624,14 +1633,13 @@ export class Min40TopUpService {
     result: Min40TopUpResult;
     signal?: AbortSignal;
   }): Promise<void> {
-    let n = 0;
+    const yieldSeat = createLoopYielder(MIN40_SEAT_YIELD_EVERY);
     for (const [clientId, clientActive] of input.activeByClient) {
       if (input.signal?.aborted) break;
       if (input.pocIds.includes(clientId)) continue;
       if (this.neverGenericClient(clientId)) continue;
       for (const seat of input.seats) {
-        n += 1;
-        if (n % MIN40_SEAT_YIELD_EVERY === 0) await yieldEventLoop();
+        await yieldSeat();
         if (!seat.generic) continue;
         if (!this.belongsToClient(seat.account, seat.email, clientId, input.campaignById)) {
           continue;
@@ -1678,7 +1686,7 @@ export class Min40TopUpService {
    * `reportOnWeekPodShortfalls` is this walk; it no longer skips the
    * off-week POD.
    */
-  private reportPodShortfalls(input: {
+  private async reportPodShortfalls(input: {
     now: Date;
     accounts: SmartleadAccountWithCampaigns[];
     campaigns: SmartleadCampaign[];
@@ -1686,8 +1694,8 @@ export class Min40TopUpService {
     clientsById: Map<number, SmartleadClientRecord>;
     pocIds: number[];
     result: Min40TopUpResult;
-  }): void {
-    const rows = countOwnedClientPods({
+  }): Promise<void> {
+    const rows = await countOwnedClientPods({
       accounts: input.accounts,
       campaigns: input.campaigns,
       config: this.config,

@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D289** (2026-10-19). One page of current truth. When a new
+Canon as of **D290** (2026-10-19). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -257,8 +257,9 @@ Caps ramp manually (35 on Oct 12).
   `Josh Osborn` / `Strategic Account Executive` / `Insight`.
   **Insight is Smartlead
   client 582890** (D192 / **D282**). Insight campaigns may only send
-  from **Josh Osborn** inboxes on a `salesglider*` or Insight
-  (`insight` / `joshosborn`) domain. No generics and no other named
+  from **Josh Osborn** / **Joshua Osborn** inboxes on a
+  `salesglider*` or Insight (`insight` / `joshosborn*` /
+  `joshuaosborn*`) domain (D290). No generics and no other named
   senders (Owen Sanchez, …), even when Insight PODs sit under 40.
   Insight's floor is whatever Josh-seats exist; never backfill
   (`insightExemptFromSenderTopUp`). Insight is still counted
@@ -397,16 +398,24 @@ Caps ramp manually (35 on Oct 12).
   still counted per POD; Josh-only seats fill Insight even
   when Smartlead still shows SalesGlider 345263 and even
   when they are not currently linked to an Insight campaign
-  (D287/D288); a
+  (D287/D288); production from-name is **Joshua Osborn** on
+  `joshuaosborn*` / `joshosborn*` / `salesglider*` (D290); a
   short POD pages Josh daily (D282/D285). PowerGRYD 592842
   takes generics like any named client; dedicated generic
-  seats without a POD tag still count (A/B split). Peterson
+  seats without a POD tag still count when they are warm
+  (A/B split). Branded `*powergryd.info` seats still owing
+  the 21-day clock do not count (prod 2026-10-19: 76+ seats
+  created Oct 16–17, 0 campaign links — empty-by-design 0
+  owned is correct, D290). Peterson
   548610 is counted but its under-floor alerts are suppressed
   (winding down, D287). `marekbrooks@meetconnectbox.com`
   stays in the generics ledger and is never re-linked to
   PowerGRYD #4005226. The ledger assigns free warm generics
   into every under-floor POD (retire-pending domains last;
-  CornerStone never).   isolation-buy-resume yields and skips
+  CornerStone never). A min40 pass that assigns 0 because
+  every free generic still owes warmup is correct canon
+  (D290 — 1:53pm CT 2026-10-19, 122 free still warming).
+  Never assign unwarmed generics.   isolation-buy-resume yields and skips
   an idle full-state stringify (D287). **D288:** `saveHot`
   writes stamps + `isolationPrune.goneIds` +
   `poolPrune.goneEmails` only — never the isolation
@@ -460,7 +469,9 @@ Caps ramp manually (35 on Oct 12).
   pool `assignedClientId=592842` does not override a live
   TechEvo 521881 or Insight 582890 `client_id`. **D283 / D285:**
   Onboarding-freed seats (SL-null leftover `powergryd_dedicated`)
-  stay freed and must not flip back onto PowerGRYD 592842.
+  stay freed and must not flip back onto PowerGRYD 592842;
+  they stay idle — not min40 / campaign-top-up / TERRL pool
+  supply (D283).
   PowerGRYD otherwise takes fleet-pool generics. `genericBlockedOnPowerGrydStaffing`
   blocks foreign-owner / foreign-sig (empty-by-design) and
   those freed seats, not every generic onto 592842. **D256:** a client may override the 40 floor via

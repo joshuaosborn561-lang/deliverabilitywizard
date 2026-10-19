@@ -272,5 +272,48 @@ describe("owner intent — D286 Generics Ledger", () => {
       /514-campaign × 1690-account/,
       stop("CANON names the fleet-size min40 yield (D289).", "CANON.md lost the 514×1690 yield rule."),
     );
+    assert.match(
+      decisions,
+      /## D290 — /,
+      stop("The ledger records D290.", "DECISIONS.md has no D290 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D290 \|/m,
+      stop("The status index lists D290 (D127).", "DECISIONS.md status index has no D290 row."),
+    );
+    assert.match(
+      canon,
+      /Joshua Osborn/,
+      stop("CANON names production Insight from-name (D290).", "CANON.md lost Joshua Osborn."),
+    );
+    assert.match(
+      canon,
+      /122 free still warming/,
+      stop(
+        "CANON records the empty warm pool (D290).",
+        "CANON.md lost the 122-free-still-warming rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Never assign unwarmed generics/,
+      stop(
+        "CANON forbids assigning unwarmed generics (D290).",
+        "CANON.md lost the never-assign-unwarmed rule.",
+      ),
+    );
+    const insight = await readFile(
+      new URL("../lib/insightCampaigns.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      insight,
+      /INSIGHT_JOSH_FROM_NAME = \/\^josh\(ua\)\?\\s\+osborn\$\/i/,
+      stop(
+        "Insight matcher accepts Joshua Osborn (D290).",
+        "insightCampaigns.ts lost the Joshua from-name regex.",
+      ),
+    );
   });
 });

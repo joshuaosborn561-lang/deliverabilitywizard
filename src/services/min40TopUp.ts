@@ -80,6 +80,7 @@ import {
 import { genericMayLinkToCampaigns, mailboxPodOf } from "../lib/podInventory.js";
 import {
   alreadyCoveredEmails,
+  freeWarmGenericCount,
   linkCoveringFor,
   pendingRetireDomains,
   pickFreeWarmGenericsForPod,
@@ -262,6 +263,9 @@ export class Min40TopUpService {
       pocEngagementClientIds: pocIds,
     });
     if (!dryRun) this.state.replaceGenericSeats(seeded.seats);
+    console.log(
+      `[min40-topup] ledger seats=${seeded.seats.length} freeWarm=${freeWarmGenericCount(seeded.seats, now)} dryRun=${dryRun}`,
+    );
     const policy = holdPolicyFromConfig(this.config);
     const todayYmd = chicagoWallClock(now, this.config.canonOpsTimezone).ymd;
     const onWeek = onWeekCohort(now);
@@ -1487,7 +1491,9 @@ export class Min40TopUpService {
             rejected.add(key);
             continue;
           }
-          if (!this.genericMayTakePod(original, seat.email, clientId, pod)) {
+          if (
+            !this.genericMayTakePod(original, seat.email, clientId, pod)
+          ) {
             rejected.add(key);
             continue;
           }

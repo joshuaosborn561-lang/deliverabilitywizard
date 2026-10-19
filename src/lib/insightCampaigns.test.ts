@@ -402,7 +402,7 @@ describe("D282 Insight Josh-only senders", () => {
     assert.equal(isSalesGliderOrInsightSendingDomain("techevolution.com"), false);
   });
 
-  it("rejects generics, Owen Sanchez, Joshua Osborn, and off-brand domains", () => {
+  it("rejects generics, Owen Sanchez, and off-brand domains", () => {
     assert.equal(
       isInsightJoshAllowedSender({
         from_name: "Owen Sanchez",
@@ -420,7 +420,7 @@ describe("D282 Insight Josh-only senders", () => {
     assert.equal(
       isInsightJoshAllowedSender({
         from_name: "Joshua Osborn",
-        from_email: "joshua@salesglidertop.org",
+        from_email: "josh@gmail.com",
       }),
       false,
     );
@@ -431,6 +431,32 @@ describe("D282 Insight Josh-only senders", () => {
       }),
       false,
     );
+  });
+
+  it("D290: Joshua Osborn on joshuaosborn* / salesglider* is an Insight Josh seat", () => {
+    assert.equal(
+      isInsightJoshAllowedSender({
+        from_name: "Joshua Osborn",
+        from_email: "joshua@joshuaosbornco.info",
+      }),
+      true,
+    );
+    assert.equal(
+      isInsightJoshAllowedSender({
+        from_name: "Joshua Osborn",
+        from_email: "joshua@joshuaosbornsales.info",
+      }),
+      true,
+    );
+    assert.equal(
+      isInsightJoshAllowedSender({
+        from_name: "Joshua Osborn",
+        from_email: "joshua@salesglidertop.org",
+      }),
+      true,
+    );
+    assert.equal(isSalesGliderOrInsightSendingDomain("joshuaosbornco.info"), true);
+    assert.equal(isSalesGliderOrInsightSendingDomain("joshosbornhq.info"), true);
   });
 
   it("classifies client 582890 and named Insight ids; exempts them from min40", () => {

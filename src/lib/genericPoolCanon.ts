@@ -18,7 +18,7 @@ import { displayStaffedSenders } from "./displaySenderCount.js";
 import { mailboxStaffableWeight, roundStaffableWeight } from "./mailboxType.js";
 import { isGabeFollowUpCampaign } from "./pocClient.js";
 import { pickWeightedGenericReturns } from "./namedWarmSwap.js";
-import { yieldEventLoop } from "./stringifyYielding.js";
+import { createLoopYielder } from "./stringifyYielding.js";
 import { mailboxWarmupIsOn } from "./mailboxSendSettings.js";
 import {
   alreadyCoveredEmails,
@@ -28,6 +28,7 @@ import {
   linkCoveringFor,
   podShortNoFreeGeneric,
   warmReadyAtFromClock,
+  warmingSeatsByClientPod,
   type WarmingBrandedSeat,
 } from "./genericLedger.js";
 import { INSIGHT_CLIENT_ID } from "./insightCampaigns.js";
@@ -498,10 +499,9 @@ export async function syncGenericSeatsFromInventory(
   const warmupOffEmails: string[] = [];
   const unassignedWithPodTags: string[] = [];
 
-  let seeded = 0;
+  const yieldSeed = createLoopYielder(GENERIC_SYNC_YIELD_EVERY);
   for (const account of input.accounts) {
-    seeded += 1;
-    if (seeded % GENERIC_SYNC_YIELD_EVERY === 0) await yieldEventLoop();
+    await yieldSeed();
     const email = accountEmail(account);
     if (!email) continue;
     accountByEmail.set(email, account);
@@ -731,7 +731,10 @@ export async function syncGenericSeatsFromInventory(
   }
 
   const covered = alreadyCoveredEmails(nextSeats);
+  const warmingByPod = warmingSeatsByClientPod(warmingBranded);
+  const yieldCovering = createLoopYielder(GENERIC_SYNC_YIELD_EVERY);
   for (const seat of nextSeats) {
+    await yieldCovering();
     if (seat.excluded || seat.assignedClientId == null || !seat.assignedPod) {
       seat.coveringFor = [];
       continue;
@@ -739,6 +742,7 @@ export async function syncGenericSeatsFromInventory(
     seat.coveringFor = linkCoveringFor({
       seat,
       warming: warmingBranded,
+      warmingByPod,
       alreadyCovered: covered,
       now,
     });

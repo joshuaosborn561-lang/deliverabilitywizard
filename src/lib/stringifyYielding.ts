@@ -60,6 +60,25 @@ export function createTimeSlicer(
 }
 
 /**
+ * D289 — yield on a time budget every item. Count-based `every N`
+ * alone is not enough: 8 expensive accounts can still pin the loop
+ * past the freeze watchdog's 3s repeat. Call once per item.
+ */
+export function createLoopYielder(
+  every = STRINGIFY_YIELD_EVERY,
+  sliceMs = STRINGIFY_SLICE_MS,
+): () => Promise<void> {
+  const slice = createTimeSlicer(sliceMs);
+  const cadence = Math.max(1, every);
+  let n = 0;
+  return async () => {
+    n += 1;
+    if (n % cadence === 0) await yieldEventLoop();
+    else await slice();
+  };
+}
+
+/**
  * D252 / D272 — assemble already-flushed slices. Never `out +=` across
  * the whole dump (immutable strings copy on each concat).
  */

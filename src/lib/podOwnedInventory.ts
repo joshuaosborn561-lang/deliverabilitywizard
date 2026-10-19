@@ -43,6 +43,12 @@ import { minFloorForClient } from "./minFloorByClient.js";
 import { mailboxPodOf, podInventoryNeed } from "./podInventory.js";
 import { assignClientCohorts } from "./restCohort.js";
 import { owesWarmup } from "../services/warmupGate.js";
+import { runWithStallScopeAsync } from "./eventLoopAttribution.js";
+import { createLoopYielder } from "./stringifyYielding.js";
+
+/** D289 — time-slice so a 1690-seat owned count cannot pin the loop 14–18s. */
+export const OWNED_COUNT_YIELD_EVERY = 8;
+export const OWNED_COUNT_SLICE_MS = 8;
 
 export interface OwnedPodCount {
   clientId: number;
@@ -207,8 +213,11 @@ export function formatPodFloorAlert(
  * Weighted owned staffable seats per named-client POD (D285).
  * Named Insight seats are Josh-only. Borrowed seats (on another
  * named client's campaigns) are ignored.
+ * D289 — yields on a time budget. A 514×1690 fleet walk is otherwise
+ * a 14–18s sync stall (prod 2026-10-19 1:03–1:22pm CT, attributed to
+ * leftover `fs.streamResponseToFile` because this pass had no named op).
  */
-export function countOwnedClientPods(input: {
+export async function countOwnedClientPods(input: {
   accounts: SmartleadAccountWithCampaigns[];
   campaigns: Iterable<SmartleadCampaign>;
   config: Pick<
@@ -232,7 +241,8 @@ export function countOwnedClientPods(input: {
   >;
   clientIds: Iterable<number>;
   now?: Date;
-}): OwnedPodCount[] {
+}): Promise<OwnedPodCount[]> {
+  return runWithStallScopeAsync("scan:countOwnedClientPods", async () => {
   const now = input.now ?? new Date();
   const isMarker = input.state.isMarkerClientId?.bind(input.state);
   const campaignById = new Map<number, SmartleadCampaign>();
@@ -253,7 +263,9 @@ export function countOwnedClientPods(input: {
     pod: GenericAssignedPod | null;
   }> = [];
 
+  const yieldItem = createLoopYielder(OWNED_COUNT_YIELD_EVERY, OWNED_COUNT_SLICE_MS);
   for (const account of input.accounts) {
+    await yieldItem();
     const email = accountEmail(account)?.toLowerCase();
     if (!email) continue;
     if (
@@ -409,9 +421,11 @@ export function countOwnedClientPods(input: {
       });
     }
   }
+  await yieldItem();
   return out.sort(
     (a, b) => a.clientId - b.clientId || a.pod.localeCompare(b.pod),
   );
+  });
 }
 
 export function ownedPodMap(

@@ -284,13 +284,15 @@ export class CampaignAuditService {
           }),
       ),
     ];
-    const podUnderstaffed = countOwnedClientPods({
-      accounts: accounts as SmartleadAccountWithCampaigns[],
-      campaigns: campaigns as SmartleadCampaign[],
-      config: this.config,
-      state: this.state,
-      clientIds: namedClientIds,
-    }).filter((row) => row.shortBy > 1e-9);
+    const podUnderstaffed = (
+      await countOwnedClientPods({
+        accounts: accounts as SmartleadAccountWithCampaigns[],
+        campaigns: campaigns as SmartleadCampaign[],
+        config: this.config,
+        state: this.state,
+        clientIds: namedClientIds,
+      })
+    ).filter((row) => row.shortBy > 1e-9);
     const signatureIssues = await this.auditSignatures({
       campaigns: campaigns as SmartleadCampaign[],
       accounts: accounts as SmartleadAccountWithCampaigns[],

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile, unlink } from "node:fs/promises";
 import { describe, it } from "node:test";
-import { stringifyYielding, stringifyYieldingToFile } from "./stringifyYielding.js";
+import {
+  createLoopYielder,
+  stringifyYielding,
+  stringifyYieldingToFile,
+} from "./stringifyYielding.js";
 
 describe("stringifyYielding (D249)", () => {
   it("matches JSON.stringify for nested objects and skips undefined", async () => {
@@ -96,6 +100,27 @@ describe("stringifyYielding (D249)", () => {
     assert.ok(
       ticks > 0,
       "time-sliced stringify must let setInterval fire without a count-based yield",
+    );
+  });
+
+  it("D289: loop yielder time-slices even when the count cadence never fires", async () => {
+    const yieldItem = createLoopYielder(1_000_000, 4);
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+    }, 1);
+    timer.unref?.();
+    for (let i = 0; i < 80; i += 1) {
+      const until = Date.now() + 5;
+      while (Date.now() < until) {
+        // burn ~5ms so a count-based every-1M never yields
+      }
+      await yieldItem();
+    }
+    clearInterval(timer);
+    assert.ok(
+      ticks > 0,
+      "createLoopYielder must let setInterval fire without a count-based yield",
     );
   });
 });

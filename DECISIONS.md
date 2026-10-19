@@ -283,7 +283,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D285 | Live — Generics Ledger fields / per-seat swap / new findings added by D286 | Min-40 is per POD owned inventory, never per campaign. POD A and POD B each hold >=40 warm seats the client owns (TechEvo 30). Borrowed seats never count. When under, rotate free warm generics in; never skip the off-week POD. Insight 582890 is the only client that never gets generics; alert Josh daily while under. PowerGRYD takes generics. LOCKED core canon — Josh-only; PRs that change the locked section must never auto-merge. |
 | D286 | Live | Generics Ledger: one row per generic (email, ESP, warmup on/off, assigned client, POD, assigned_at, covering_for). All generics warm continuously; seeder re-enables warmup the same day. Assigned only to fill one client's POD to 40 (TechEvo 30), one client + one POD, never moves PODs. Branded-preferred per-seat swap via covering_for + `returnGenericToUntaggedPool`; headcount is fallback for unlinked seats. No assign/release outside the ledger. Insight never receives generics; every other client including PowerGRYD does. CornerStone-domain inboxes are never generics. Findings `generic_outside_ledger` / `generic_not_warming` / `generic_on_insight` / `pod_short_no_free_generic` page Josh the same day. Optional upsert-only `wizard.generic_ledger` Supabase mirror. |
 | D287 | Live — saveHot maps / Insight unlinked count amended by D288 | Old-wizard fix: ledger assigns free warm generics into every under-floor POD (A and B) with covering_for; retire-pending domains last; CornerStone never; Insight still no generics. Owned-seat count includes Insight Josh seats (even SL 345263), PowerGRYD dedicated generics without a POD tag, and Peterson named-domain fallback. Peterson under-floor alerts suppressed (winding down). marekbrooks@meetconnectbox.com stays in the ledger and never re-links to PowerGRYD #4005226. isolation-buy-resume yields and skips idle full-state stringify. 0% canary-copy scores start isolation within 30 min; isolation never hold-pauses. Never START / PAUSE / touch STOPPED; never buy. LOCKED section unchanged. |
-| D288 | Live | Old-wizard fix: `saveHot` sidecar is stamps + goneIds + pool goneEmails only (never isolation score/suspect/canary maps); overlapping saveHot coalesces; nothing stringifies big state inside per-seat loops. Insight Josh seats count for Insight even when unlinked / leftover on SalesGlider 345263. Insight still gets no generics and a daily Josh alert. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
+| D288 | Live — min40 covering/owned-count yield amended by D289 | Old-wizard fix: `saveHot` sidecar is stamps + goneIds + pool goneEmails only (never isolation score/suspect/canary maps); overlapping saveHot coalesces; nothing stringifies big state inside per-seat loops. Insight Josh seats count for Insight even when unlinked / leftover on SalesGlider 345263. Insight still gets no generics and a daily Josh alert. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
+| D289 | Live | Old-wizard fix: min40 owned-count, covering_for relink, and seat-index walks time-slice so a 514×1690 fleet pass cannot pin the event loop 6–18s after Smartlead pages stream to disk. Watchdog 3× ≥3s / 120s stays. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
 
 ---
 
@@ -10295,6 +10296,68 @@ D282 no-generics, D285 POD-40, or the LOCKED text.
 **Guards.** `src/state/store.isolation.test.ts` sidecar has no
 placementScores/copySuspects/copyCanaries. `src/lib/podOwnedInventory.test.ts`
 unlinked Josh + leftover SG campaign still count for Insight.
+`src/guards/lockedCanon.test.ts` LOCKED section unchanged.
+
+---
+
+## D289 — min40 fleet walks yield; freeze watchdog stays
+
+**Date.** 2026-10-19 (Josh).
+
+**Decision.** Production after D288 (deploy 3068a9b0, main
+773753f9) still freeze-killed at 13:08:30, 13:13:15, and
+13:22:21 CT. Each boot logged `[min40-topup] start
+campaigns=514 accounts=1690`, a burst of
+`named-op fs.streamResponseToFile`, then event-loop delays
+of 3.6s / 6.4s / 7.8s and 14–18s (`stage=canonOps:min40-topup`,
+`op=fs.streamResponseToFile`, `elu=1.00`), then
+`[watchdog] freeze — event loop delayed 3 times ≥3000ms
+within 120s`. The 13:13 boot logged the under-floor list
+(Parlay B 39/40, TechEvo B 25/30, Nutter, EMCOR, Insight,
+PowerGRYD) right before the kill — the plan computed, assign
+never ran. min40 / powergryd-watch / generic-cleanup /
+mailbox-type-tags have not completed since 9:29am CT.
+Fix the old wizard on main. Do not change the LOCKED canon
+section. Never START, pause, or touch STOPPED. Never buy.
+Do not widen freeze-watchdog thresholds.
+
+1. **Yield the post-stream CPU.** After Smartlead pages stream
+   to disk, min40 still did a long synchronous pass:
+   `countOwnedClientPods` (1690 accounts, no yield, called
+   twice — fill then report), `syncGenericSeatsFromInventory`
+   covering_for relink (filter+sort every warming branded
+   seat per generic), and seat-index / named-on-week walks
+   that only yielded every 8–64 items. `fs.streamResponseToFile`
+   was the last named op, not the stall. Those walks now
+   time-slice via `setTimeout(0)` (~8ms) every item
+   (`createLoopYielder`). Covering_for indexes warming seats
+   by client+POD once. Attribution is `scan:countOwnedClientPods`.
+2. **Watchdog stays.** 3× ≥3s inside 120s is still an exit.
+   A known-long canonOps pass must yield, not hide behind a
+   looser watchdog.
+
+**Why.** D288 stopped `json.stringify:hot`. The next stall was
+the owned-count / covering walk over the live 514×1690 book.
+Count-based yield-every-N still lets 8 expensive accounts pin
+the loop past 3s. Production evidence: 1:03–1:22pm CT 10/19
+Railway logs + `/health` (understaffed 37, esp_mix 50, min40
+lastOk 14:29Z).
+
+**Rejected.** Widening freeze-watchdog thresholds. Changing the
+LOCKED section. Giving Insight generics. Starting / pausing /
+touching STOPPED. Buying anything. Touching v2.
+
+**Supersedes / amends.** Amends D250/D252/D269/D272/D288 yield
+coverage (owned-count + covering relink + per-item time-slice).
+Does not reverse D40, D4, D122, D228, D234, D256, D282
+no-generics, D285 POD-40, D247/D257 watchdog thresholds, or
+the LOCKED text.
+
+**Guards.** `src/services/min40TopUp.yield.test.ts` fleet-size
+514×1690 min40 dry-run stays under `EVENT_LOOP_REPEAT_MS`.
+`src/lib/stringifyYielding.test.ts` loop yielder time-slices
+when the count cadence never fires. `src/lib/podOwnedInventory.ts`
+`countOwnedClientPods` is async and named `scan:countOwnedClientPods`.
 `src/guards/lockedCanon.test.ts` LOCKED section unchanged.
 
 ---

@@ -661,7 +661,7 @@ export class CampaignCheckService {
     }
 
     if (mode !== "first") {
-      this.applyNamedPodUnderstaffed({
+      await this.applyNamedPodUnderstaffed({
         campaigns: campaigns as SmartleadCampaign[],
         accounts: accounts as SmartleadAccountWithCampaigns[],
         clients: clients as SmartleadClientRecord[],
@@ -720,12 +720,12 @@ export class CampaignCheckService {
    * first ACTIVE campaign; strip leftover campaign-level understaffed.
    * Insight and PowerGRYD are counted, not silenced.
    */
-  private applyNamedPodUnderstaffed(input: {
+  private async applyNamedPodUnderstaffed(input: {
     campaigns: SmartleadCampaign[];
     accounts: SmartleadAccountWithCampaigns[];
     clients: SmartleadClientRecord[];
     result: CampaignCheckResult;
-  }): void {
+  }): Promise<void> {
     const endedIds = this.state.listEndedPocClientIds();
     const clientsById = new Map(input.clients.map((client) => [client.id, client]));
     const firstActive = new Map<number, SmartleadCampaign>();
@@ -767,7 +767,7 @@ export class CampaignCheckService {
         namedClientIds.push(clientId);
       }
     }
-    const owned = countOwnedClientPods({
+    const owned = await countOwnedClientPods({
       accounts: input.accounts,
       campaigns: input.campaigns,
       config: this.config,

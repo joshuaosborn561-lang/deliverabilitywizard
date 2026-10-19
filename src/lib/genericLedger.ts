@@ -79,6 +79,34 @@ export interface WarmingBrandedSeat {
   warmReadyAt: string | null;
 }
 
+function sortWarmingSoonestFirst(
+  a: WarmingBrandedSeat,
+  b: WarmingBrandedSeat,
+): number {
+  const aAt = Date.parse(a.warmReadyAt ?? "") || Number.POSITIVE_INFINITY;
+  const bAt = Date.parse(b.warmReadyAt ?? "") || Number.POSITIVE_INFINITY;
+  if (aAt !== bAt) return aAt - bAt;
+  return a.email.localeCompare(b.email);
+}
+
+/**
+ * D289 — index warming branded seats once so covering_for relink is
+ * O(need) per generic, not O(warming) filter+sort on every seat.
+ */
+export function warmingSeatsByClientPod(
+  warming: Iterable<WarmingBrandedSeat>,
+): Map<string, WarmingBrandedSeat[]> {
+  const out = new Map<string, WarmingBrandedSeat[]>();
+  for (const row of warming) {
+    const key = clientPodKey(row.clientId, row.pod);
+    const list = out.get(key);
+    if (list) list.push(row);
+    else out.set(key, [row]);
+  }
+  for (const list of out.values()) list.sort(sortWarmingSoonestFirst);
+  return out;
+}
+
 /**
  * Link a generic to the soonest-warming uncovered branded seats in
  * that client POD. One branded seat per staffable weight (usually 1).
@@ -88,13 +116,17 @@ export function linkCoveringFor(input: {
   warming: WarmingBrandedSeat[];
   alreadyCovered: Iterable<string>;
   now?: Date;
+  /** Pre-indexed, already sorted. Skip the O(warming) filter+sort. */
+  warmingByPod?: ReadonlyMap<string, readonly WarmingBrandedSeat[]>;
 }): GenericCoveringFor[] {
   const clientId = input.seat.assignedClientId;
   const pod = input.seat.assignedPod;
   if (clientId == null || pod == null) return [];
+  const indexed = input.warmingByPod?.get(clientPodKey(clientId, pod));
   const keep = (input.seat.coveringFor ?? []).filter((row) => {
     if (coveringForIsReady(row, input.now)) return false;
-    return input.warming.some(
+    const pool = indexed ?? input.warming;
+    return pool.some(
       (named) =>
         genericSeatKey(named.email) === row.email &&
         named.clientId === clientId &&
@@ -106,19 +138,16 @@ export function linkCoveringFor(input: {
     ...keep.map((row) => row.email),
   ]);
   const need = Math.max(1, Math.ceil(seatStaffableWeight(input.seat)));
-  const open = input.warming
-    .filter(
-      (row) =>
-        row.clientId === clientId &&
-        row.pod === pod &&
-        !covered.has(genericSeatKey(row.email)),
-    )
-    .sort((a, b) => {
-      const aAt = Date.parse(a.warmReadyAt ?? "") || Number.POSITIVE_INFINITY;
-      const bAt = Date.parse(b.warmReadyAt ?? "") || Number.POSITIVE_INFINITY;
-      if (aAt !== bAt) return aAt - bAt;
-      return a.email.localeCompare(b.email);
-    });
+  const open = indexed
+    ? indexed.filter((row) => !covered.has(genericSeatKey(row.email)))
+    : input.warming
+        .filter(
+          (row) =>
+            row.clientId === clientId &&
+            row.pod === pod &&
+            !covered.has(genericSeatKey(row.email)),
+        )
+        .sort(sortWarmingSoonestFirst);
   const next = [...keep];
   for (const row of open) {
     if (next.length >= need) break;

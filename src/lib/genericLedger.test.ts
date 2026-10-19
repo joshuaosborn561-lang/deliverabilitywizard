@@ -16,6 +16,7 @@ import {
   seatCoveringReady,
   suppressPodFloorAlert,
   warmReadyAtFromClock,
+  warmingSeatsByClientPod,
 } from "./genericLedger.js";
 import { INSIGHT_CLIENT_ID } from "./insightCampaigns.js";
 import {
@@ -70,6 +71,36 @@ describe("D286 generics ledger helpers", () => {
     assert.deepEqual(linked, [
       { email: "soon@techevolution.com", warmReadyAt: "2026-10-20T00:00:00.000Z" },
     ]);
+    const warming = [
+      {
+        email: "later@techevolution.com",
+        clientId: 77,
+        pod: "A" as const,
+        warmReadyAt: "2026-11-01T00:00:00.000Z",
+      },
+      {
+        email: "soon@techevolution.com",
+        clientId: 77,
+        pod: "A" as const,
+        warmReadyAt: "2026-10-20T00:00:00.000Z",
+      },
+      {
+        email: "otherpod@techevolution.com",
+        clientId: 77,
+        pod: "B" as const,
+        warmReadyAt: "2026-10-18T00:00:00.000Z",
+      },
+    ];
+    const indexed = linkCoveringFor({
+      seat: emptyGenericSeat("gen@getintroduced.info", {
+        assignedClientId: 77,
+        assignedPod: "A",
+      }),
+      warming,
+      warmingByPod: warmingSeatsByClientPod(warming),
+      alreadyCovered: [],
+    });
+    assert.deepEqual(indexed, linked);
   });
 
   it("swaps the linked generic when coveringFor is ready and never drops below floor", () => {

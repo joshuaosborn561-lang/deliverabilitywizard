@@ -61,5 +61,16 @@ describe("podInventory (D228)", () => {
       false,
       "untagged leftovers still follow D205 cleanup",
     );
+    assert.equal(
+      keepAssignedGenericForPodInventory({
+        email: "lag@getintroduced.info",
+        tags: [{ tag_name: "GENERIC" }],
+        idleEmails: [],
+        assignedClientId: 548610,
+        assignedPod: "B",
+      }),
+      true,
+      "D293: ledger assigned+POD stays assigned when Smartlead tags lag",
+    );
   });
 });

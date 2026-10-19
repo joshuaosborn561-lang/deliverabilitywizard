@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { pauseWhileHealthLive } from "./healthCpuPause.js";
+import {
+  isOverdueCanonOpsExclusive,
+  pauseWhileHealthLive,
+  pauseWhileOverdueCanonOps,
+  setOverdueCanonOpsExclusive,
+} from "./healthCpuPause.js";
 
 describe("D272 pauseWhileHealthLive", () => {
   it("returns immediately when health is not live", async () => {
@@ -25,5 +30,24 @@ describe("D272 pauseWhileHealthLive", () => {
     const started = Date.now();
     await pauseWhileHealthLive(undefined);
     assert.ok(Date.now() - started < 20);
+  });
+
+  it("D293: health CPU waits while overdue canon-ops is exclusive", async () => {
+    setOverdueCanonOpsExclusive(true);
+    assert.equal(isOverdueCanonOpsExclusive(), true);
+    setTimeout(() => setOverdueCanonOpsExclusive(false), 40);
+    const started = Date.now();
+    await pauseWhileOverdueCanonOps({ label: "health:client-rest" });
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed >= 30, `expected to wait ~40ms, waited ${elapsed}ms`);
+    assert.equal(isOverdueCanonOpsExclusive(), false);
+  });
+
+  it("D293: min40 walks skip the overdue pause", async () => {
+    setOverdueCanonOpsExclusive(true);
+    const started = Date.now();
+    await pauseWhileOverdueCanonOps({ skip: true });
+    assert.ok(Date.now() - started < 20);
+    setOverdueCanonOpsExclusive(false);
   });
 });

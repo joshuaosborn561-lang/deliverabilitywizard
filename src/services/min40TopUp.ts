@@ -51,7 +51,6 @@ import {
 import {
   brandsFromClients,
   genericBlockedOnPowerGrydStaffing,
-  isPowerGrydEmptyByDesign,
   powerGrydBrandFromClients,
 } from "../lib/powerGrydEmptyByDesign.js";
 import {
@@ -215,8 +214,6 @@ export class Min40TopUpService {
     private readonly state: StateStore,
   ) {}
 
-  /** D258 — PowerGRYD branded-warming empty-by-design for this pass. */
-  private powerGrydEmptyByDesign = false;
   private powerGrydBrand = "PowerGRYD";
   private allClientBrands: string[] = [];
 
@@ -304,22 +301,11 @@ export class Min40TopUpService {
         brandFromClientDisplayName(clientDisplayName(client)),
       );
     }
-    this.powerGrydEmptyByDesign = isPowerGrydEmptyByDesign({
-      accounts: accounts as SmartleadAccountWithCampaigns[],
-      config: this.config,
-      state: this.state,
-      clientId: this.config.powerGrydClientId,
-    });
     this.powerGrydBrand = powerGrydBrandFromClients(
       clients,
       this.config.powerGrydClientId,
     );
     this.allClientBrands = brandsFromClients(clients);
-    if (this.powerGrydEmptyByDesign) {
-      console.log(
-        `[min40-topup] PowerGRYD empty-by-design (branded seats still warming) — refuse foreign-signature / foreign-client generics`,
-      );
-    }
     const seatIndex = await this.indexSeats(
       accounts as SmartleadAccountWithCampaigns[],
       opts.signal,
@@ -524,6 +510,9 @@ export class Min40TopUpService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(`save: ${message}`);
+    }
+    for (const message of result.errors) {
+      console.warn(`[min40-topup] error: ${message}`);
     }
     console.log(
       `[min40-topup] assigned=${result.assigned.length} asked=${result.asked.length} unfilled=${result.unfilled.length} returned=${result.returned.length} alerts=${result.alerts.length} errors=${result.errors.length}`,
@@ -871,7 +860,7 @@ export class Min40TopUpService {
       account,
       email,
       targetClientId: clientId,
-      emptyByDesign: this.powerGrydEmptyByDesign,
+      emptyByDesign: false,
       powerGrydClientId: this.config.powerGrydClientId,
       powerGrydBrand: this.powerGrydBrand,
       allBrands: this.allClientBrands,
@@ -893,7 +882,7 @@ export class Min40TopUpService {
     pod: "A" | "B",
     dryRun: boolean,
     coveringFor?: ReturnType<typeof linkCoveringFor>,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const table = this.state.getGenericSeat(email);
     const ledgerFree = table?.assignedClientId == null && table?.assignedPod == null;
     const leftoverTag = lockedGenericPod({ tags: account.tags });
@@ -910,7 +899,7 @@ export class Min40TopUpService {
       console.warn(
         `[min40] D234 refuse POD retag ${email} has=POD-${locked} want=POD-${pod}`,
       );
-      return;
+      return false;
     }
     if (
       ledgerFree &&
@@ -939,7 +928,7 @@ export class Min40TopUpService {
       await sleep(WRITE_GAP_MS);
     }
     account.tags = stampMailboxPodTag(account.tags, pod);
-    if (dryRun) return;
+    if (dryRun) return true;
     if (!this.state.getGenericSeat(email)) {
       this.state.ensureGenericSeat({
         email,
@@ -959,7 +948,9 @@ export class Min40TopUpService {
       console.warn(
         `[min40] refused generic table assign ${email}: ${assigned.error}`,
       );
+      return false;
     }
+    return true;
   }
 
   private async stampPocReservation(
@@ -1449,7 +1440,9 @@ export class Min40TopUpService {
       const pods: Array<"A" | "B"> = onWeek === "B" ? ["B", "A"] : ["A", "B"];
       for (const pod of pods) {
         if (input.signal?.aborted) {
-          input.result.errors.push("aborted: stopped remaining POD fills");
+          input.result.errors.push(
+            `aborted: stopped ${brand} POD-${pod} fill`,
+          );
           break;
         }
         const row = owned.get(clientPodKey(clientId, pod));
@@ -1507,11 +1500,17 @@ export class Min40TopUpService {
         });
         const yieldPicked = createLoopYielder(MIN40_SEAT_YIELD_EVERY);
         let rejectedWrongEsp = 0;
+        const rejectReasons = new Map<string, number>();
+        const noteReject = (reason: string): void => {
+          rejectReasons.set(reason, (rejectReasons.get(reason) ?? 0) + 1);
+        };
         for (const seat of ledgerPicks) {
           await yieldPicked();
           if (need <= 1e-9) break;
           if (input.signal?.aborted) {
-            input.result.errors.push("aborted: stopped remaining POD fills");
+            input.result.errors.push(
+              `aborted: stopped ${brand} POD-${pod} fill (need=${need})`,
+            );
             break;
           }
           const key = seat.email.toLowerCase();
@@ -1519,6 +1518,7 @@ export class Min40TopUpService {
           const original = input.accountByEmail.get(key);
           if (!original || typeof original.id !== "number") {
             rejected.add(key);
+            noteReject("missing-account");
             continue;
           }
           // D292 — ledger membership is enough. isPoolGenericSeat also
@@ -1526,6 +1526,7 @@ export class Min40TopUpService {
           // silently dropped every GENERIC-tag-only free seat.
           if (!isGenericMailbox(original, seat.email, this.config, this.state)) {
             rejected.add(key);
+            noteReject("not-generic");
             continue;
           }
           const neededNow = espFillOrder(
@@ -1541,10 +1542,12 @@ export class Min40TopUpService {
               : null);
           if (neededNow.length === 1 && slot && slot !== neededNow[0]) {
             rejectedWrongEsp += 1;
+            noteReject(`wrong-esp:${slot}`);
             continue;
           }
           if (this.powerGrydStaffingBlocked(original, seat.email, clientId)) {
             rejected.add(key);
+            noteReject("powergryd-blocked");
             continue;
           }
           if (
@@ -1553,6 +1556,7 @@ export class Min40TopUpService {
             original.client_id !== clientId
           ) {
             rejected.add(key);
+            noteReject("poc-reserved");
             continue;
           }
           // D292 — leftover Smartlead POD tags are not a lock on a
@@ -1562,6 +1566,7 @@ export class Min40TopUpService {
             !this.genericMayTakePod(original, seat.email, clientId, pod)
           ) {
             rejected.add(key);
+            noteReject("may-not-take-pod");
             continue;
           }
           const pool =
@@ -1601,7 +1606,7 @@ export class Min40TopUpService {
                   assignedAt: new Date().toISOString(),
                 });
               }
-              await this.stampGenericPod(
+              const stamped = await this.stampGenericPod(
                 original,
                 seat.email,
                 clientId,
@@ -1609,6 +1614,11 @@ export class Min40TopUpService {
                 input.dryRun,
                 covering,
               );
+              if (!stamped) {
+                rejected.add(key);
+                noteReject("stamp-refused");
+                continue;
+              }
               if (pod === onWeek) {
                 for (const campaign of clientActive) {
                   if (campaignIdsOf(original).includes(campaign.id)) continue;
@@ -1623,7 +1633,7 @@ export class Min40TopUpService {
                 }
               }
             } else {
-              await this.stampGenericPod(
+              const stamped = await this.stampGenericPod(
                 original,
                 seat.email,
                 clientId,
@@ -1631,6 +1641,11 @@ export class Min40TopUpService {
                 true,
                 covering,
               );
+              if (!stamped) {
+                rejected.add(key);
+                noteReject("stamp-refused");
+                continue;
+              }
             }
             selected.add(key);
             for (const row of covering) covered.add(row.email);
@@ -1646,13 +1661,18 @@ export class Min40TopUpService {
             if (placedSlot) espCounts[placedSlot] += 1;
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            input.result.errors.push(`${seat.email} POD ${pod}: ${message}`);
-            break;
+            input.result.errors.push(`${seat.email} ${brand} POD-${pod}: ${message}`);
+            rejected.add(key);
+            noteReject(`error:${message.slice(0, 80)}`);
+            continue;
           }
         }
         if (askedNeed > 1e-9) {
+          const reasons = [...rejectReasons.entries()]
+            .map(([reason, n]) => `${reason}=${n}`)
+            .join(",") || "none";
           console.log(
-            `[min40-topup] ${brand} POD-${pod} need=${askedNeed} picks=${ledgerPicks.length} assignedNow=${askedNeed - need} rejected=${rejected.size} wrongEsp=${rejectedWrongEsp}`,
+            `[min40-topup] ${brand} POD-${pod} need=${askedNeed} picks=${ledgerPicks.length} assignedNow=${askedNeed - need} rejected=${rejected.size} wrongEsp=${rejectedWrongEsp} reasons=${reasons}`,
           );
         }
       }

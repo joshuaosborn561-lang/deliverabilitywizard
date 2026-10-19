@@ -12,7 +12,6 @@ import { POWERGRYD_CLIENT_ID } from "./namedClientIds.js";
 import {
   brandFromClientDisplayName,
   clientBrandList,
-  findForeignBrand,
 } from "./clientBrand.js";
 import { isClientNamedDomain } from "./clientNamedDomain.js";
 import { isGenericMailbox } from "./clientInbox.js";
@@ -22,7 +21,6 @@ import {
 } from "./dedicatedGeneric.js";
 import { emailDomainOf } from "./isolationDomain.js";
 import { isFreedPowerGrydAttachBlocked } from "./powerGrydFreedCleanup.js";
-import { signatureHay } from "./signatureQa.js";
 import { isStaffableSender } from "./staffableSender.js";
 import { owesWarmup } from "../services/warmupGate.js";
 
@@ -151,19 +149,13 @@ export function genericBlockedOnPowerGrydStaffing(input: {
   ) {
     return true;
   }
-  if (!input.emptyByDesign) return false;
-  // D292 — leftover foreign signatures on a FREE ledger seat are
-  // rewritten to PowerGRYD on assign. Empty-by-design must not refuse
-  // rotating those in. A live foreign owner still blocks above.
-  if (input.assignedClientId == null && liveOwner == null) return false;
-  const brand = String(input.powerGrydBrand ?? "PowerGRYD").trim();
-  const brands = input.allBrands ?? [];
-  if (!brand || brands.length === 0) return false;
-  const hay = signatureHay({
-    fromName: input.account.from_name,
-    signature: input.account.signature,
-  });
-  return findForeignBrand(hay, brand, brands) != null;
+  // D293 — PowerGRYD takes free-pool generics like any named client
+  // (D285). Insight is the only no-generics client. Empty-by-design
+  // must not refuse leftover foreign signatures; assign rewrites them.
+  void input.emptyByDesign;
+  void input.powerGrydBrand;
+  void input.allBrands;
+  return false;
 }
 
 export function powerGrydBrandFromClients(

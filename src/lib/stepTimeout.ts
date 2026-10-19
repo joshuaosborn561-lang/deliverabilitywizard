@@ -14,6 +14,8 @@ export const STEP_TIMEOUT_MS: Record<string, number> = {
   inventory: 5 * 60 * 1000,
   "campaign-check-first": 20 * 60 * 1000,
   "scan-backfill": 20 * 60 * 1000,
+  /** D293 — a 514×1690 fill with Smartlead writes runs past 10m. */
+  "min40-topup": 20 * 60 * 1000,
 };
 
 export function stepTimeoutMs(name: string): number {

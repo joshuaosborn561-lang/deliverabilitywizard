@@ -142,6 +142,11 @@ import {
 } from "./lib/inFlightLock.js";
 import { startEventLoopAttribution } from "./lib/eventLoopAttribution.js";
 import { startFreezeWatchdog } from "./lib/freezeWatchdog.js";
+import {
+  HEALTH_CPU_PAUSE_MS,
+  setOverdueCanonOpsExclusive,
+} from "./lib/healthCpuPause.js";
+import { yieldEventLoop } from "./lib/stringifyYielding.js";
 import { PodControlService } from "./services/podControls.js";
 import { IsolationRigService } from "./services/isolationRig.js";
 import { CopyIsolationService } from "./services/copyIsolation.js";
@@ -1326,13 +1331,22 @@ async function main(): Promise<void> {
     const shareLimiter = healthLive && overdue && !opts.force;
     if (shareLimiter) {
       console.log(canonOpsOverdueDespiteHealthLog());
-      smartlead.setExclusiveHealth(false);
     }
     const began = beginPass(canonOpsLock, canonOpsInFlight, "canon-ops");
     if (began.skipped) {
-      if (shareLimiter && healthLock.isLive()) smartlead.setExclusiveHealth(true);
       console.log(canonOpsSkipLog("already-running"));
       return { skipped: true as const, reason: "already-running" };
+    }
+    if (shareLimiter) {
+      // D293 — pause health CPU walks, then run hold/min40. Sharing the
+      // Smartlead limiter stays (D292) so min40 is not queued behind a
+      // never-ending health sitting. Two fleet scans must not overlap.
+      setOverdueCanonOpsExclusive(true);
+      smartlead.setExclusiveHealth(false);
+      await yieldEventLoop();
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, HEALTH_CPU_PAUSE_MS * 2);
+      });
     }
     const token = began.token;
     const run = runWithPass(canonOpsLock, token, async () => {
@@ -1386,8 +1400,11 @@ async function main(): Promise<void> {
     });
     canonOpsInFlight = run.finally(() => {
       if (releasePass(canonOpsLock, token)) canonOpsInFlight = null;
-      // D292 — restore exclusive health only while that pass is still live.
-      if (shareLimiter && healthLock.isLive()) smartlead.setExclusiveHealth(true);
+      if (shareLimiter) {
+        setOverdueCanonOpsExclusive(false);
+        // D292 — restore exclusive health only while that pass is still live.
+        if (healthLock.isLive()) smartlead.setExclusiveHealth(true);
+      }
     });
     return run;
   };

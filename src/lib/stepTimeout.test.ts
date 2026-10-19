@@ -8,10 +8,11 @@ import {
 } from "./stepTimeout.js";
 
 describe("D247 step timeout", () => {
-  it("budgets inventory 5m, campaign-check-first 20m, scan-backfill 20m, else 10m", () => {
+  it("budgets inventory 5m, campaign-check-first 20m, scan-backfill 20m, min40-topup 20m, else 10m", () => {
     assert.equal(stepTimeoutMs("inventory"), 5 * 60 * 1000);
     assert.equal(stepTimeoutMs("campaign-check-first"), 20 * 60 * 1000);
     assert.equal(stepTimeoutMs("scan-backfill"), 20 * 60 * 1000);
+    assert.equal(stepTimeoutMs("min40-topup"), 20 * 60 * 1000);
     assert.equal(stepTimeoutMs("warmup-gate"), DEFAULT_STEP_TIMEOUT_MS);
     assert.equal(timeoutAfterMessage(10 * 60 * 1000), "timeout after 10m");
     assert.equal(timeoutAfterMessage(5 * 60 * 1000), "timeout after 5m");

@@ -460,4 +460,76 @@ describe("GenericCleanupService (D205/D235)", () => {
     assert.equal(state.getPoolMailbox("ada@goliathcybersecurityget.info"), undefined);
     assert.equal(state.getGenericSeat("ada@goliathcybersecurityget.info"), undefined);
   });
+
+  it("D293: does not return a ledger-assigned under-floor generic when POD tags lag", async () => {
+    const writes: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertGenericSeat(
+      emptyGenericSeat("fabian.iverson@fenmoreannex.info", {
+        slAccountId: 901,
+        assignedClientId: 548610,
+        assignedPod: "B",
+        assignedAt: "2026-10-19T21:44:00.000Z",
+        reason: "pod_top_up",
+      }),
+    );
+    const service = new GenericCleanupService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+          writes.push({ id, fields });
+        },
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      state,
+    );
+    const namedB = Array.from({ length: 28 }, (_, i) => ({
+      id: 200 + i,
+      from_email: `n${i}@petersonroofs.com`,
+      client_id: 548610,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "POD-B" }],
+      campaign_ids: [],
+      created_at: "2026-01-01T00:00:00.000Z",
+    }));
+    const result = await service.run({
+      dryRun: false,
+      now: WEEKDAY,
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 548610, name: "Kyle Peterson", logo: "Roofs by Peterson" }],
+        campaigns: [
+          { id: 9, name: "Roofs Live", status: "ACTIVE", client_id: 548610 },
+        ],
+        accounts: [
+          ...namedB,
+          {
+            id: 901,
+            from_email: "fabian.iverson@fenmoreannex.info",
+            client_id: 548610,
+            signature: "Fabian Iverson\nRoofs by Peterson",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [],
+          },
+        ],
+      },
+    });
+    assert.deepEqual(writes, []);
+    assert.equal(result.cleared.length, 0);
+    assert.equal(result.returned.length, 0);
+    assert.equal(
+      state.getGenericSeat("fabian.iverson@fenmoreannex.info")?.assignedClientId,
+      548610,
+    );
+    assert.equal(
+      state.getGenericSeat("fabian.iverson@fenmoreannex.info")?.assignedPod,
+      "B",
+    );
+  });
 });

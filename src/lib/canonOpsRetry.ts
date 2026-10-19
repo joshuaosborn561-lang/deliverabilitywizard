@@ -25,7 +25,7 @@ export function canonOpsSkipReason(opts: {
 }
 
 export function canonOpsOverdueDespiteHealthLog(): string {
-  return "[canon-ops] Health pass still running — starting overdue hold-enforcement/min40 anyway (D292)";
+  return "[canon-ops] Health pass still running — pausing health CPU and running overdue hold-enforcement/min40 (D293)";
 }
 
 export function canonOpsSkipLog(reason: CanonOpsSkipReason): string {

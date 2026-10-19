@@ -22,7 +22,12 @@ import {
   validateGenericPool,
   type GenericPoolSyncAccount,
 } from "../lib/genericPoolCanon.js";
-import { keepAssignedGenericForPodInventory } from "../lib/podInventory.js";
+import { keepAssignedGenericForPodInventory, mailboxPodOf } from "../lib/podInventory.js";
+import {
+  countOwnedClientPods,
+  ownedPodMap,
+} from "../lib/podOwnedInventory.js";
+import { clientPodKey } from "../lib/genericPool.js";
 import { returnGenericToUntaggedPool } from "../lib/genericReturn.js";
 import { returnSurplusGenerics } from "./genericSurplusReturn.js";
 
@@ -104,6 +109,36 @@ export class GenericCleanupService {
       powerGrydClientId: powerId,
       pocEngagementClientIds: pocIds,
     });
+    const livingClientIds = new Set<number>();
+    for (const campaign of campaigns as SmartleadCampaign[]) {
+      if (typeof campaign.client_id !== "number") continue;
+      if (campaignIsActive(campaign) || pocIds.includes(campaign.client_id)) {
+        livingClientIds.add(campaign.client_id);
+      }
+    }
+    for (const seat of synced.seats) {
+      if (seat.assignedClientId != null) livingClientIds.add(seat.assignedClientId);
+    }
+    const owned = ownedPodMap(
+      await countOwnedClientPods({
+        accounts: accounts as SmartleadAccountWithCampaigns[],
+        campaigns: campaigns as SmartleadCampaign[],
+        config: this.config,
+        state: this.state,
+        clientIds: livingClientIds,
+        now,
+      }),
+    );
+    const stillNeeded = new Set<string>();
+    for (const seat of synced.seats) {
+      if (seat.assignedClientId == null) continue;
+      const pod = seat.assignedPod;
+      if (pod !== "A" && pod !== "B") continue;
+      const row = owned.get(clientPodKey(seat.assignedClientId, pod));
+      if (row && row.owned <= row.floor + 1e-9) {
+        stillNeeded.add(seat.email.trim().toLowerCase());
+      }
+    }
     const idleEmails = validateGenericPool({
       seats: synced.seats,
       namedStaffableByClientPod: synced.namedStaffableByClientPod,
@@ -114,7 +149,8 @@ export class GenericCleanupService {
       pocEngagementClientIds: pocIds,
     })
       .filter((row) => row.kind === "generic_idle")
-      .map((row) => row.email);
+      .map((row) => row.email)
+      .filter((email) => !stillNeeded.has(email.trim().toLowerCase()));
 
     let examined = 0;
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
@@ -147,11 +183,16 @@ export class GenericCleanupService {
         return campaignIsActive(campaign);
       });
       if (stillSendingForClient) continue;
+      const table =
+        this.state.getGenericSeat(email) ??
+        synced.seats.find((row) => row.email === email.trim().toLowerCase());
       if (
         keepAssignedGenericForPodInventory({
           email,
           tags: account.tags,
           idleEmails,
+          assignedClientId: table?.assignedClientId ?? null,
+          assignedPod: table?.assignedPod ?? mailboxPodOf(account),
         })
       ) {
         continue;

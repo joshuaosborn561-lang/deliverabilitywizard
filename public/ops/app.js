@@ -321,8 +321,8 @@ async function loadPlacementPass(force = false, pass = 0) {
     banner.className = "muted";
   } else if (data.pending && data.morningPending) {
     banner.textContent = data.morningYmd
-      ? `Loading the morning placement run for ${data.morningYmd}. Earlier results stay hidden.`
-      : "Loading this morning's placement run. Earlier results stay hidden.";
+      ? `Loading the morning placement run for ${data.morningYmd}.`
+      : "Loading this morning's placement run.";
     banner.className = "muted";
   } else if (data.pending) {
     banner.textContent = state.placementRows.length
@@ -331,8 +331,8 @@ async function loadPlacementPass(force = false, pass = 0) {
     banner.className = "muted";
   } else if (data.morningPending) {
     banner.textContent = data.morningYmd
-      ? `The morning run for ${data.morningYmd} is not in yet. Earlier results are not shown.`
-      : "This morning's placement run is not in yet. Earlier results are not shown.";
+      ? `Still loading the morning run for ${data.morningYmd}.`
+      : "Still loading this morning's placement run.";
     banner.className = "muted";
   } else if (data.stale && state.placementRows.length) {
     banner.textContent =
@@ -356,7 +356,7 @@ async function loadPlacementPass(force = false, pass = 0) {
   const keepGoing =
     data.pending || (data.complete === false && !data.stale);
   if (keepGoing && Date.now() - state.placementPollSince < 4 * 60 * 1000) {
-    await new Promise((resolve) => setTimeout(resolve, data.pending ? 3_000 : 400));
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
     return loadPlacement(true, pass + 1);
   }
 }

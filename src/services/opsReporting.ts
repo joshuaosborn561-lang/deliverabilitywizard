@@ -263,17 +263,6 @@ function placementRowIsFilled(row: PlacementResultRow): boolean {
   return !placementRowNeedsScore(row) && !placementRowNeedsDate(row);
 }
 
-/** Drop percentages so a failed morning fetch cannot leave the previous run on screen. */
-function clearPlacementScores(row: PlacementResultRow): void {
-  row.providers = [];
-  row.inboxPercent = undefined;
-  row.tabPercent = undefined;
-  row.spamPercent = undefined;
-  row.googleInboxPercent = undefined;
-  row.microsoftInboxPercent = undefined;
-  row.totalSeeds = 0;
-}
-
 function placementDetailsRecord(raw: Record<string, unknown>): Record<string, unknown> {
   for (const key of ["data", "test", "spam_test"]) {
     const nested = raw[key];
@@ -396,34 +385,17 @@ export class PlacementResultsService {
     return pending.then((value) => this.forRefreshDay(value));
   }
 
-  /** Drop scores that are not the morning run of the refresh's Chicago day. */
+  /**
+   * Label the board with the Chicago day of this refresh. Keep the
+   * scores. Blanking every earlier stamp left the tab with tests and
+   * no percentages. A newer run replaces those scores when its report
+   * arrives; until then the latest completed run stays visible.
+   */
   private forRefreshDay(value: PlacementResults): PlacementResults {
-    const now = this.clock();
-    const morningYmd = placementRefreshDay(now);
-    let waiting = 0;
-    const rows = value.rows.map((row) => {
-      // No stamp yet: this pass has not dated the run. Keep the score.
-      // A stamp on another Chicago day is the last result, not this morning.
-      if (!row.createdAt || isPlacementRunOnRefreshDay(row.createdAt, now)) {
-        return row;
-      }
-      waiting += 1;
-      return {
-        ...row,
-        providers: [],
-        inboxPercent: undefined,
-        tabPercent: undefined,
-        spamPercent: undefined,
-        googleInboxPercent: undefined,
-        microsoftInboxPercent: undefined,
-        totalSeeds: 0,
-      };
-    });
     return {
       ...value,
-      rows,
-      morningYmd,
-      morningPending: value.rows.length > 0 && waiting > 0,
+      morningYmd: placementRefreshDay(this.clock()),
+      morningPending: false,
     };
   }
 
@@ -854,9 +826,9 @@ export class PlacementResultsService {
           if (gapMs) await sleep(gapMs);
         }
         if (skipProviders || budgetStopped) break;
-        // The saved percentages were another Chicago day, and the latest
-        // run is this morning. Fetch that run. A row that only just
-        // received a date is left alone so a scored board is not refetched.
+        // The latest run is this morning. Replace the saved percentages
+        // with that report. Do not clear them first: a failed fetch must
+        // leave the numbers on the row.
         if (
           !scoredThisPass &&
           wrongDay &&
@@ -866,9 +838,8 @@ export class PlacementResultsService {
             budgetStopped = true;
             break;
           }
-          if (placementRowHasResult(row)) clearPlacementScores(row);
           const scored = await this.raceBudget(
-            this.scorePlacementRow(row, this.callTimeout(deadline)),
+            this.scorePlacementRow(row, this.callTimeout(deadline), true),
             deadline,
           );
           if (scored === "budget") {
@@ -906,6 +877,10 @@ export class PlacementResultsService {
           ? fillCursor ?? previousSnapshot?.fillCursor
           : undefined,
       rateLimited: this.rateLimitedUntil > Date.now() || undefined,
+      // The tab polls while a pass stops early. pending makes that wait
+      // 3s. Without it the page asked again every 400ms and the board
+      // never settled.
+      pending: budgetStopped || undefined,
       complete:
         !budgetStopped &&
         membershipSettled &&
@@ -944,12 +919,13 @@ export class PlacementResultsService {
   private async scorePlacementRow(
     row: PlacementResultRow,
     timeoutMs: number,
+    replaceTotals = false,
   ): Promise<void> {
     const report = await this.smartDelivery.getProviderwiseReport(row.id, {
       retries: OPS_PLACEMENT_LIVE_RETRIES,
       timeoutMs,
     });
-    applyProviderwise(row, report);
+    applyProviderwise(row, report, replaceTotals);
     const stamped = latestPlacementAt(
       report as SpamTestSummary & { updated_at?: string },
       this.clock().getTime(),
@@ -1378,6 +1354,7 @@ function rotateFromCursor<T extends { id: string }>(
 function applyProviderwise(
   row: PlacementResultRow,
   report: { result?: ProviderwiseRow[] },
+  replaceTotals = false,
 ): void {
   const providers = (report.result ?? [])
     .map((provider) => ({
@@ -1401,15 +1378,17 @@ function applyProviderwise(
   row.microsoftInboxPercent = providers.find((provider) =>
     /office\s*365|outlook|microsoft|o365/i.test(provider.name),
   )?.inboxPercent;
-  applyProviderTotals(row, report);
+  applyProviderTotals(row, report, replaceTotals);
 }
 
 /** List rows carry the overall counts. Provider reports do too, and the catalog is often skipped. */
 function applyProviderTotals(
   row: PlacementResultRow,
   report: { result?: ProviderwiseRow[] },
+  replaceTotals = false,
 ): void {
   if (
+    !replaceTotals &&
     typeof row.inboxPercent === "number" &&
     typeof row.spamPercent === "number" &&
     row.totalSeeds > 0

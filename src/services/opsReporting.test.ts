@@ -1353,7 +1353,7 @@ describe("PlacementResultsService", () => {
     assert.equal(campaignReads, 1, "a second open waits for the call already in flight");
   });
 
-  it("hides an earlier day's scores and keeps the morning run of the refresh day", async () => {
+  it("keeps the latest scores on the board for the day being refreshed", async () => {
     const state = await stateFixture();
     const clock = () => new Date("2026-10-19T15:00:00.000Z");
     state.setPlacementResults({
@@ -1432,13 +1432,13 @@ describe("PlacementResultsService", () => {
     const result = await service.get(true);
     const yesterday = result.rows.find((row) => row.id === "201");
     const morning = result.rows.find((row) => row.id === "202");
-    assert.equal(yesterday?.inboxPercent, undefined);
-    assert.equal(yesterday?.googleInboxPercent, undefined);
-    assert.equal(yesterday?.totalSeeds, 0);
+    assert.equal(yesterday?.inboxPercent, 91);
+    assert.equal(yesterday?.googleInboxPercent, 90);
+    assert.equal(yesterday?.totalSeeds, 12);
     assert.equal(morning?.inboxPercent, 82);
     assert.equal(morning?.googleInboxPercent, 84);
     assert.equal(result.morningYmd, "2026-10-19");
-    assert.equal(result.morningPending, true);
+    assert.equal(result.morningPending, false);
   });
 
   it("replaces an earlier day when the latest run is the morning of the refresh", async () => {

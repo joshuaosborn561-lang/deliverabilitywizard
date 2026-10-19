@@ -168,7 +168,7 @@ export class SmartDeliveryClient {
    */
   async listTests(
     body: Record<string, unknown> = {},
-    request: Pick<RequestOptions, "retries"> = {},
+    request: Pick<RequestOptions, "retries" | "timeoutMs"> = {},
   ): Promise<SpamTestSummary[]> {
     if (body.limit !== undefined || body.offset !== undefined) {
       return this.request("spam-test/report",
@@ -234,8 +234,11 @@ export class SmartDeliveryClient {
     return out;
   }
 
-  getTestDetails(spamTestId: string | number): Promise<Record<string, unknown>> {
-    return this.request<Record<string, unknown>>(`spam-test/${spamTestId}`);
+  getTestDetails(
+    spamTestId: string | number,
+    request: Pick<RequestOptions, "retries" | "timeoutMs"> = {},
+  ): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>(`spam-test/${spamTestId}`, request);
   }
 
   createManualPlacement(
@@ -283,7 +286,7 @@ export class SmartDeliveryClient {
 
   getProviderwiseReport(
     spamTestId: string | number,
-    request: Pick<RequestOptions, "retries"> = {},
+    request: Pick<RequestOptions, "retries" | "timeoutMs"> = {},
   ): Promise<{ status?: string; result?: ProviderwiseRow[]; overallTotalCount?: number }> {
     return this.request(`spam-test/report/${spamTestId}/providerwise`,
       { method: "POST", body: {}, ...request },

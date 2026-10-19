@@ -16,6 +16,7 @@ import {
   isRateLimitNoise,
 } from "../lib/alertNoise.js";
 import type { StateStore } from "../state/store.js";
+import { chicagoWallClock } from "../lib/canonOpsHours.js";
 import { sleep } from "../lib/http.js";
 import type {
   ProviderwiseRow,
@@ -75,8 +76,20 @@ export interface PlacementResults {
   stale?: boolean;
   /** This pass stopped because SmartDelivery returned 429. The tab waits out the cooldown and continues. */
   rateLimited?: boolean;
+  /** Chicago calendar day the refresh is asking for. */
+  morningYmd?: string;
+  /**
+   * True when at least one row is not that morning's run.
+   * Those scores are omitted. Yesterday's board is not shown in their place.
+   */
+  morningPending?: boolean;
   /** False when the catalog walk 429'd or found fewer live tests than we know exist. */
   complete?: boolean;
+  /**
+   * A SmartDelivery call is still in flight past this pass's budget.
+   * The tab keeps polling; another pass does not start until it settles.
+   */
+  pending?: boolean;
   /**
    * Next `spam-test/report` offset. Newest pages are pod-control tests, so a
    * walk that stops early has to resume here instead of starting over.
@@ -100,6 +113,14 @@ export const OPS_PLACEMENT_LIVE_RETRIES = 0;
 export const OPS_PLACEMENT_LIST_RETRIES = 0;
 /** After SmartDelivery 429s the board, do not poke it again for this long. */
 export const OPS_PLACEMENT_RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
+/**
+ * One Placement-tab request has to answer inside Railway's 300s proxy.
+ * A pass that walks every live test (or waits on the shared Smartlead
+ * limiter) used to hold the HTTP call until the edge returned 502.
+ */
+export const OPS_PLACEMENT_PASS_BUDGET_MS = 20_000;
+/** One provider/details read. The default client timeout is 60s. */
+const OPS_PLACEMENT_CALL_TIMEOUT_MS = 15_000;
 
 export interface FleetSummary {
   generatedAt: string;
@@ -203,6 +224,26 @@ function placementDateIsStale(row: PlacementResultRow, now = Date.now()): boolea
   return now - parsed > OPS_PLACEMENT_STALE_DATE_MS;
 }
 
+/** Chicago calendar day for a placement refresh. */
+export function placementRefreshDay(now = new Date()): string {
+  return chicagoWallClock(now, "America/Chicago").ymd;
+}
+
+/**
+ * A run counts for the refresh when its stamp falls on that Chicago day.
+ * That is the morning's placement run for the day the tab is refreshed.
+ * An earlier day is the last result, and it is not shown as this refresh.
+ */
+export function isPlacementRunOnRefreshDay(
+  iso: string | undefined,
+  now = new Date(),
+): boolean {
+  if (!iso) return false;
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return false;
+  return chicagoWallClock(parsed, "America/Chicago").ymd === placementRefreshDay(now);
+}
+
 /** Google/Microsoft alone is not a finished row. Inbox, spam, seeds, date, and run are the rest of the table. */
 function placementRowNeedsScore(row: PlacementResultRow): boolean {
   return (
@@ -220,6 +261,17 @@ function placementRowNeedsDate(row: PlacementResultRow): boolean {
 function placementRowIsFilled(row: PlacementResultRow): boolean {
   if (String(row.status ?? "").toUpperCase() === "NOT FOUND") return true;
   return !placementRowNeedsScore(row) && !placementRowNeedsDate(row);
+}
+
+/** Drop percentages so a failed morning fetch cannot leave the previous run on screen. */
+function clearPlacementScores(row: PlacementResultRow): void {
+  row.providers = [];
+  row.inboxPercent = undefined;
+  row.tabPercent = undefined;
+  row.spamPercent = undefined;
+  row.googleInboxPercent = undefined;
+  row.microsoftInboxPercent = undefined;
+  row.totalSeeds = 0;
 }
 
 function placementDetailsRecord(raw: Record<string, unknown>): Record<string, unknown> {
@@ -285,6 +337,8 @@ export class PlacementResultsService {
     | { expiresAt: number; value: PlacementResults }
     | undefined;
   private inFlight: Promise<PlacementResults> | null = null;
+  /** A call we stopped waiting for. The next pass waits until it settles. */
+  private detached: Promise<void> | null = null;
   private rateLimitedUntil = 0;
   private readonly forceRefreshFloorMs = 30 * 1000;
 
@@ -294,10 +348,16 @@ export class PlacementResultsService {
     private readonly state: StateStore,
     private readonly cacheMs = 5 * 60 * 1000,
     private readonly rateLimitCooldownMs = OPS_PLACEMENT_RATE_LIMIT_COOLDOWN_MS,
+    private readonly passBudgetMs = OPS_PLACEMENT_PASS_BUDGET_MS,
+    private readonly clock: () => Date = () => new Date(),
   ) {}
 
   async get(force = false): Promise<PlacementResults> {
-    if (this.inFlight) return this.inFlight;
+    if (this.detached) return this.forRefreshDay(this.pendingSnapshot());
+    if (this.inFlight) {
+      const flight = this.inFlight;
+      return flight.then((value) => this.forRefreshDay(value));
+    }
     const now = Date.now();
     const fallback = this.cache?.value ?? this.fromPersisted();
     if (now < this.rateLimitedUntil && fallback) {
@@ -312,41 +372,182 @@ export class PlacementResultsService {
         expiresAt: Math.max(this.cache?.expiresAt ?? 0, this.rateLimitedUntil),
         value,
       };
-      return value;
+      return this.forRefreshDay(value);
     }
     if (
       this.cache &&
       this.snapshotLooksComplete(this.cache.value) &&
+      this.boardIsRefreshDay(this.cache.value) &&
       ((!force && this.cache.expiresAt > now) ||
         (force &&
           now - Date.parse(this.cache.value.generatedAt) <
             this.forceRefreshFloorMs))
     ) {
-      return force ? this.cache.value : this.quietView(this.cache.value);
+      const cached = force ? this.cache.value : this.quietView(this.cache.value);
+      return this.forRefreshDay(cached);
     }
 
-    const generatedAtMs = fallback ? Date.parse(fallback.generatedAt) : NaN;
-    const snapshotFresh =
-      Number.isFinite(generatedAtMs) && now - generatedAtMs < this.cacheMs;
-    if (
-      !force &&
-      fallback &&
-      snapshotFresh &&
-      this.snapshotLooksComplete(fallback)
-    ) {
-      const covered = await this.everyLiveCampaignHasRow(fallback);
-      if (this.inFlight) return this.inFlight;
-      if (covered) {
-        const value = this.quietView(fallback);
-        this.cache = { expiresAt: generatedAtMs + this.cacheMs, value };
-        return value;
-      }
-    }
-
-    this.inFlight = this.loadSafe(force).finally(() => {
-      this.inFlight = null;
+    // Claim the single flight before any await. Two tab opens used to
+    // both walk SmartDelivery and both sit until the proxy returned 502.
+    const pending = this.begin(force).finally(() => {
+      if (this.inFlight === pending) this.inFlight = null;
     });
-    return this.inFlight;
+    this.inFlight = pending;
+    return pending.then((value) => this.forRefreshDay(value));
+  }
+
+  /** Drop scores that are not the morning run of the refresh's Chicago day. */
+  private forRefreshDay(value: PlacementResults): PlacementResults {
+    const now = this.clock();
+    const morningYmd = placementRefreshDay(now);
+    let waiting = 0;
+    const rows = value.rows.map((row) => {
+      // No stamp yet: this pass has not dated the run. Keep the score.
+      // A stamp on another Chicago day is the last result, not this morning.
+      if (!row.createdAt || isPlacementRunOnRefreshDay(row.createdAt, now)) {
+        return row;
+      }
+      waiting += 1;
+      return {
+        ...row,
+        providers: [],
+        inboxPercent: undefined,
+        tabPercent: undefined,
+        spamPercent: undefined,
+        googleInboxPercent: undefined,
+        microsoftInboxPercent: undefined,
+        totalSeeds: 0,
+      };
+    });
+    return {
+      ...value,
+      rows,
+      morningYmd,
+      morningPending: value.rows.length > 0 && waiting > 0,
+    };
+  }
+
+  private boardIsRefreshDay(value: PlacementResults): boolean {
+    const now = this.clock();
+    if (!value.rows.length) return false;
+    return value.rows.every(
+      (row) =>
+        placementRowHasResult(row) &&
+        isPlacementRunOnRefreshDay(row.createdAt, now),
+    );
+  }
+
+  private begin(force: boolean): Promise<PlacementResults> {
+    return (async () => {
+      const now = Date.now();
+      const fallback = this.cache?.value ?? this.fromPersisted();
+      const generatedAtMs = fallback ? Date.parse(fallback.generatedAt) : NaN;
+      const snapshotFresh =
+        Number.isFinite(generatedAtMs) && now - generatedAtMs < this.cacheMs;
+      if (
+        !force &&
+        fallback &&
+        snapshotFresh &&
+        this.snapshotLooksComplete(fallback) &&
+        this.boardIsRefreshDay(fallback)
+      ) {
+        const covered = await this.raceBudget(
+          this.everyLiveCampaignHasRow(fallback),
+          now + this.passBudgetMs,
+        );
+        if (covered === "budget") return this.pendingSnapshot();
+        if (covered) {
+          const value = this.quietView(fallback);
+          this.cache = { expiresAt: generatedAtMs + this.cacheMs, value };
+          return value;
+        }
+      }
+      return this.loadSafe(force);
+    })();
+  }
+
+  /** Last saved rows, marked so the tab polls instead of starting another walk. */
+  private pendingSnapshot(): PlacementResults {
+    const fallback = this.cache?.value ?? this.fromPersisted();
+    if (!fallback?.rows.length) {
+      return {
+        generatedAt: new Date().toISOString(),
+        rows: [],
+        errors: [],
+        complete: false,
+        pending: true,
+      };
+    }
+    return {
+      ...fallback,
+      rows: fallback.rows.map((row) => ({
+        ...row,
+        providers: [...row.providers],
+      })),
+      errors: [],
+      stale: false,
+      complete: false,
+      pending: true,
+      rateLimited: undefined,
+    };
+  }
+
+  /**
+   * Stop waiting at `deadline`. The call keeps running so a limiter slot
+   * is not abandoned mid-flight, but this pass returns and will not
+   * queue another until it settles.
+   */
+  private async raceBudget<T>(
+    work: Promise<T>,
+    deadline: number,
+  ): Promise<T | "budget"> {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      this.noteDetached(work);
+      return "budget";
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<"budget">((resolve) => {
+      timer = setTimeout(() => resolve("budget"), remaining);
+    });
+    try {
+      const winner = await Promise.race([
+        work.then(
+          (value) => ({ kind: "value" as const, value }),
+          (error: unknown) => ({ kind: "error" as const, error }),
+        ),
+        timeout.then(() => ({ kind: "budget" as const })),
+      ]);
+      if (winner.kind === "budget") {
+        this.noteDetached(work);
+        return "budget";
+      }
+      if (winner.kind === "error") throw winner.error;
+      return winner.value;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  private noteDetached(work: Promise<unknown>): void {
+    const settled = work.then(
+      () => undefined,
+      () => undefined,
+    );
+    const current = this.detached;
+    const combined = current
+      ? Promise.all([current, settled]).then(() => undefined)
+      : settled;
+    this.detached = combined.finally(() => {
+      if (this.detached === combined) this.detached = null;
+    });
+  }
+
+  private callTimeout(deadline: number): number {
+    return Math.min(
+      OPS_PLACEMENT_CALL_TIMEOUT_MS,
+      Math.max(1_000, deadline - Date.now()),
+    );
   }
 
   private fromPersisted(): PlacementResults | null {
@@ -479,6 +680,7 @@ export class PlacementResultsService {
   }
 
   private async load(force: boolean): Promise<PlacementResults> {
+    const deadline = Date.now() + this.passBudgetMs;
     const errors: string[] = [];
     const previousById = new Map(
       (this.cache?.value ?? this.fromPersisted())?.rows.map((row) => [
@@ -489,9 +691,12 @@ export class PlacementResultsService {
 
     const liveById = new Map<number, { name: string }>();
     let campaignsLoaded = false;
+    let budgetStopped = false;
     try {
       // D132 — the board reads the shared account book, never its own fetch.
-      const campaigns = (await this.book.get()).campaigns;
+      const book = await this.raceBudget(this.book.get(), deadline);
+      if (book === "budget") return this.pendingSnapshot();
+      const campaigns = book.campaigns;
       campaignsLoaded = true;
       for (const campaign of campaigns) {
         const id = Number(campaign.id);
@@ -554,13 +759,16 @@ export class PlacementResultsService {
           errors,
           force,
           previousSnapshot?.listOffset ?? 0,
+          deadline,
         )
       : {
           tests: [] as SpamTestSummary[],
           truncated: false,
           exhausted: true,
           nextOffset: 0,
+          budget: false,
         };
+    if (listed.budget) budgetStopped = true;
 
     const listedLive = listed.tests.filter(isLive);
     const assembled = this.assembleLiveRows({
@@ -592,18 +800,81 @@ export class PlacementResultsService {
     // different hole: Google without Inbox, or a score without a date.
     // Start after the row the last pass stopped on. Every pass began at the
     // top, so the rows below the first 429 were never reached.
+    const onRefreshDay = (stamp: string | undefined) =>
+      Boolean(stamp) && isPlacementRunOnRefreshDay(stamp, this.clock());
     for (const row of rotateFromCursor(assembled, previousSnapshot?.fillCursor)) {
-      if (skipProviders) break;
-      if (!placementRowNeedsScore(row) && !placementRowNeedsDate(row)) continue;
+      if (skipProviders || budgetStopped) break;
+      const startedOnDay = onRefreshDay(row.createdAt);
+      // A stamp on another Chicago day is the previous run. Learn whether
+      // a later run landed this morning before spending a provider call.
+      const wrongDay = Boolean(row.createdAt) && !startedOnDay;
+      if (
+        !wrongDay &&
+        !placementRowNeedsScore(row) &&
+        !placementRowNeedsDate(row)
+      ) {
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        budgetStopped = true;
+        fillCursor = row.id;
+        break;
+      }
       fillCursor = row.id;
       try {
+        let scoredThisPass = false;
+        // Missing Google/Microsoft still needs a report, even when the
+        // catalog date is the day the test was created.
         if (placementRowNeedsScore(row)) {
-          await this.scorePlacementRow(row);
+          const scored = await this.raceBudget(
+            this.scorePlacementRow(row, this.callTimeout(deadline)),
+            deadline,
+          );
+          if (scored === "budget") {
+            budgetStopped = true;
+            break;
+          }
+          scoredThisPass = true;
           if (gapMs) await sleep(gapMs);
         }
-        if (skipProviders) break;
-        if (placementRowNeedsDate(row)) {
-          await this.refreshPlacementDate(row);
+        if (skipProviders || budgetStopped) break;
+        if (wrongDay || placementRowNeedsDate(row)) {
+          if (Date.now() >= deadline) {
+            budgetStopped = true;
+            break;
+          }
+          const dated = await this.raceBudget(
+            this.refreshPlacementDate(row, this.callTimeout(deadline)),
+            deadline,
+          );
+          if (dated === "budget") {
+            budgetStopped = true;
+            break;
+          }
+          if (gapMs) await sleep(gapMs);
+        }
+        if (skipProviders || budgetStopped) break;
+        // The saved percentages were another Chicago day, and the latest
+        // run is this morning. Fetch that run. A row that only just
+        // received a date is left alone so a scored board is not refetched.
+        if (
+          !scoredThisPass &&
+          wrongDay &&
+          onRefreshDay(row.createdAt)
+        ) {
+          if (Date.now() >= deadline) {
+            budgetStopped = true;
+            break;
+          }
+          if (placementRowHasResult(row)) clearPlacementScores(row);
+          const scored = await this.raceBudget(
+            this.scorePlacementRow(row, this.callTimeout(deadline)),
+            deadline,
+          );
+          if (scored === "budget") {
+            budgetStopped = true;
+            break;
+          }
           if (gapMs) await sleep(gapMs);
         }
       } catch (error) {
@@ -630,14 +901,23 @@ export class PlacementResultsService {
       rows: assembled,
       errors: uniqueErrors(force ? errors : []),
       listOffset: listed.nextOffset,
-      fillCursor: skipProviders ? fillCursor : undefined,
+      fillCursor:
+        skipProviders || budgetStopped
+          ? fillCursor ?? previousSnapshot?.fillCursor
+          : undefined,
       rateLimited: this.rateLimitedUntil > Date.now() || undefined,
       complete:
+        !budgetStopped &&
         membershipSettled &&
         !listed.truncated &&
         filled === assembled.length &&
         assembled.length > 0,
-      stale: (listed.truncated || filled < assembled.length) && assembled.length > 0,
+      // A budget stop is not a failed refresh. stale:true would stop the
+      // tab from polling, and the next open would start the same long walk.
+      stale: budgetStopped
+        ? false
+        : (listed.truncated || filled < assembled.length) &&
+          assembled.length > 0,
     };
     if (!assembled.length) {
       return {
@@ -661,17 +941,21 @@ export class PlacementResultsService {
     return value;
   }
 
-  private async scorePlacementRow(row: PlacementResultRow): Promise<void> {
+  private async scorePlacementRow(
+    row: PlacementResultRow,
+    timeoutMs: number,
+  ): Promise<void> {
     const report = await this.smartDelivery.getProviderwiseReport(row.id, {
       retries: OPS_PLACEMENT_LIVE_RETRIES,
+      timeoutMs,
     });
     applyProviderwise(row, report);
     const stamped = latestPlacementAt(
       report as SpamTestSummary & { updated_at?: string },
-      Date.now(),
+      this.clock().getTime(),
       false,
     );
-    if (stamped && placementDateIsStale(row)) {
+    if (stamped && placementDateIsStale(row, this.clock().getTime())) {
       const createdAt = laterPlacementAt(row.createdAt, stamped);
       if (createdAt) row.createdAt = createdAt;
     }
@@ -697,14 +981,20 @@ export class PlacementResultsService {
   }
 
   /** Last run time for a row whose saved date is the schedule's creation. */
-  private async refreshPlacementDate(row: PlacementResultRow): Promise<void> {
+  private async refreshPlacementDate(
+    row: PlacementResultRow,
+    timeoutMs: number,
+  ): Promise<void> {
     const readDetails = this.smartDelivery.getTestDetails?.bind(
       this.smartDelivery,
     );
     if (!readDetails) return;
-    const details = placementDetailsRecord(await readDetails(row.id));
+    const details = placementDetailsRecord(
+      await readDetails(row.id, { timeoutMs, retries: 0 }),
+    );
     const at = latestPlacementAt(
       details as SpamTestSummary & { updated_at?: string },
+      this.clock().getTime(),
     );
     const createdAt = laterPlacementAt(row.createdAt, at);
     if (createdAt) row.createdAt = createdAt;
@@ -868,11 +1158,13 @@ export class PlacementResultsService {
     errors: string[],
     force: boolean,
     startOffset: number,
+    deadline: number,
   ): Promise<{
     tests: SpamTestSummary[];
     truncated: boolean;
     exhausted: boolean;
     nextOffset: number;
+    budget?: boolean;
   }> {
     const all: SpamTestSummary[] = [];
     let offset = Math.max(0, Math.floor(startOffset));
@@ -882,15 +1174,40 @@ export class PlacementResultsService {
         String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")),
       );
     for (let page = 0; page < OPS_PLACEMENT_LIST_PAGES_PER_PASS; page += 1) {
+      if (Date.now() >= deadline) {
+        return {
+          tests: sorted(),
+          truncated: false,
+          exhausted: false,
+          nextOffset: offset,
+          budget: true,
+        };
+      }
       let raw: unknown;
       try {
-        raw = await this.smartDelivery.listTests(
-          {
-            limit: OPS_PLACEMENT_LIST_PAGE,
-            offset,
-          },
-          { retries: OPS_PLACEMENT_LIST_RETRIES },
+        const listed = await this.raceBudget(
+          this.smartDelivery.listTests(
+            {
+              limit: OPS_PLACEMENT_LIST_PAGE,
+              offset,
+            },
+            {
+              retries: OPS_PLACEMENT_LIST_RETRIES,
+              timeoutMs: this.callTimeout(deadline),
+            },
+          ),
+          deadline,
         );
+        if (listed === "budget") {
+          return {
+            tests: sorted(),
+            truncated: false,
+            exhausted: false,
+            nextOffset: offset,
+            budget: true,
+          };
+        }
+        raw = listed;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (isRateLimitNoise(message)) {

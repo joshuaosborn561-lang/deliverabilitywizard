@@ -9,6 +9,7 @@ import {
   PlacementResultsService,
   latestPlacementAt,
   newestPlacementTestId,
+  isPlacementRunOnRefreshDay,
   titleHasCanaryCopyPhrase,
   OPS_PLACEMENT_REPORT_CAP,
 } from "./opsReporting.js";
@@ -122,6 +123,10 @@ describe("PlacementResultsService", () => {
       bookOf(smartlead),
       state,
       1_000,
+      undefined,
+      undefined,
+      // The fixture run is 2026-08-01T00:00Z, which is still July 31 in Chicago.
+      () => new Date("2026-07-31T18:00:00.000Z"),
     );
     const result = await service.get();
 
@@ -272,6 +277,7 @@ describe("PlacementResultsService", () => {
           campaignId: 7,
           campaignName: "Campaign Seven",
           status: "COMPLETED",
+          createdAt: new Date().toISOString(),
           inboxPercent: 70,
           spamPercent: 20,
           googleInboxPercent: 75,
@@ -1279,6 +1285,248 @@ describe("PlacementResultsService", () => {
       second.rows.filter((row) => row.createdAt === oldDate).length,
       0,
       "every row now shows its latest run",
+    );
+  });
+
+  it("returns the saved board when the account book does not answer inside the pass budget", async () => {
+    const state = await stateFixture();
+    state.setPlacementResults({
+      generatedAt: new Date().toISOString(),
+      complete: false,
+      rows: [
+        {
+          id: "101",
+          name: "Auto: Campaign Seven",
+          campaignId: 7,
+          campaignName: "Campaign Seven",
+          status: "COMPLETED",
+          createdAt: new Date().toISOString(),
+          runNumber: 4,
+          inboxPercent: 91,
+          spamPercent: 4,
+          googleInboxPercent: 90,
+          microsoftInboxPercent: 88,
+          totalSeeds: 12,
+          providers: [],
+        },
+      ],
+    });
+    let campaignReads = 0;
+    const smartlead = {
+      listCampaigns: () => {
+        campaignReads += 1;
+        return new Promise(() => {});
+      },
+    } as unknown as SmartleadClient;
+    const smartDelivery = {
+      listTests: async () => {
+        throw new Error("catalog walk should not start");
+      },
+      getProviderwiseReport: async () => {
+        throw new Error("provider report should not start");
+      },
+    } as unknown as SmartDeliveryClient;
+    const service = new PlacementResultsService(
+      smartDelivery,
+      bookOf(smartlead),
+      state,
+      60_000,
+      60_000,
+      50,
+    );
+    const started = Date.now();
+    const first = await service.get(true);
+    assert.ok(
+      Date.now() - started < 500,
+      "the tab must answer before the proxy cuts the request",
+    );
+    assert.equal(first.pending, true);
+    assert.equal(first.complete, false);
+    assert.equal(first.rows[0]?.id, "101");
+    assert.equal(first.rows[0]?.googleInboxPercent, 90);
+    assert.equal(campaignReads, 1);
+
+    const again = Date.now();
+    const second = await service.get(true);
+    assert.ok(Date.now() - again < 50);
+    assert.equal(second.pending, true);
+    assert.equal(campaignReads, 1, "a second open waits for the call already in flight");
+  });
+
+  it("hides an earlier day's scores and keeps the morning run of the refresh day", async () => {
+    const state = await stateFixture();
+    const clock = () => new Date("2026-10-19T15:00:00.000Z");
+    state.setPlacementResults({
+      generatedAt: "2026-10-19T15:00:00.000Z",
+      complete: true,
+      rows: [
+        {
+          id: "201",
+          name: "Auto: Yesterday",
+          campaignId: 7,
+          campaignName: "Campaign Seven",
+          status: "COMPLETED",
+          createdAt: "2026-10-18T15:00:00.000Z",
+          runNumber: 3,
+          inboxPercent: 91,
+          spamPercent: 4,
+          googleInboxPercent: 90,
+          microsoftInboxPercent: 88,
+          totalSeeds: 12,
+          providers: [{ name: "Gmail", inboxPercent: 90 }],
+        },
+        {
+          id: "202",
+          name: "Auto: This morning",
+          campaignId: 8,
+          campaignName: "Campaign Eight",
+          status: "COMPLETED",
+          createdAt: "2026-10-19T14:00:00.000Z",
+          runNumber: 4,
+          inboxPercent: 82,
+          spamPercent: 6,
+          googleInboxPercent: 84,
+          microsoftInboxPercent: 80,
+          totalSeeds: 10,
+          providers: [],
+        },
+      ],
+    });
+    const smartDelivery = {
+      listTests: async () => {
+        throw new Error("refresh-day board should not walk SmartDelivery");
+      },
+      getProviderwiseReport: async () => ({
+        status: "COMPLETED",
+        updated_at: "2026-10-18T15:00:00.000Z",
+        result: [
+          {
+            provider_name: "G Suite",
+            inbox_count: 9,
+            spam_count: 1,
+            adjusted_total_email_count: 10,
+          },
+        ],
+      }),
+      getTestDetails: async () => ({
+        updated_at: "2026-10-18T15:00:00.000Z",
+        test_run_no: 3,
+        status: "COMPLETED",
+      }),
+    } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 7, name: "Campaign Seven", status: "ACTIVE" },
+        { id: 8, name: "Campaign Eight", status: "ACTIVE" },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new PlacementResultsService(
+      smartDelivery,
+      bookOf(smartlead),
+      state,
+      60_000,
+      60_000,
+      20_000,
+      clock,
+    );
+    const result = await service.get(true);
+    const yesterday = result.rows.find((row) => row.id === "201");
+    const morning = result.rows.find((row) => row.id === "202");
+    assert.equal(yesterday?.inboxPercent, undefined);
+    assert.equal(yesterday?.googleInboxPercent, undefined);
+    assert.equal(yesterday?.totalSeeds, 0);
+    assert.equal(morning?.inboxPercent, 82);
+    assert.equal(morning?.googleInboxPercent, 84);
+    assert.equal(result.morningYmd, "2026-10-19");
+    assert.equal(result.morningPending, true);
+  });
+
+  it("replaces an earlier day when the latest run is the morning of the refresh", async () => {
+    const state = await stateFixture();
+    const clock = () => new Date("2026-10-19T15:00:00.000Z");
+    state.setPlacementResults({
+      generatedAt: "2026-10-18T15:00:00.000Z",
+      complete: true,
+      rows: [
+        {
+          id: "101",
+          name: "Auto: Campaign Seven",
+          campaignId: 7,
+          campaignName: "Campaign Seven",
+          status: "COMPLETED",
+          createdAt: "2026-10-18T15:00:00.000Z",
+          runNumber: 7,
+          inboxPercent: 91,
+          spamPercent: 4,
+          googleInboxPercent: 90,
+          microsoftInboxPercent: 88,
+          totalSeeds: 12,
+          providers: [{ name: "Gmail", inboxPercent: 90 }],
+        },
+      ],
+    });
+    const smartDelivery = {
+      listTests: async () => {
+        throw new Error("the saved row already covers the live campaign");
+      },
+      getTestDetails: async () => ({
+        updated_at: "2026-10-19T14:00:00.000Z",
+        test_run_no: 8,
+        status: "COMPLETED",
+      }),
+      getProviderwiseReport: async () => ({
+        status: "COMPLETED",
+        updated_at: "2026-10-19T14:00:00.000Z",
+        result: [
+          {
+            provider_name: "G Suite",
+            inbox_count: 8,
+            spam_count: 2,
+            adjusted_total_email_count: 10,
+          },
+        ],
+      }),
+    } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 7, name: "Campaign Seven", status: "ACTIVE" },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new PlacementResultsService(
+      smartDelivery,
+      bookOf(smartlead),
+      state,
+      60_000,
+      60_000,
+      20_000,
+      clock,
+    );
+    const result = await service.get(true);
+    const row = result.rows.find((item) => item.id === "101");
+    assert.equal(row?.createdAt, "2026-10-19T14:00:00.000Z");
+    assert.equal(row?.runNumber, 8);
+    assert.equal(row?.googleInboxPercent, 80);
+    assert.equal(row?.inboxPercent, 80);
+    assert.equal(row?.totalSeeds, 10);
+    assert.equal(result.morningYmd, "2026-10-19");
+    assert.equal(result.morningPending, false);
+  });
+});
+
+describe("placement refresh day", () => {
+  it("uses the Chicago calendar day, including the evening before UTC midnight", () => {
+    const now = new Date("2026-10-19T15:00:00.000Z");
+    assert.equal(
+      isPlacementRunOnRefreshDay("2026-10-19T14:00:00.000Z", now),
+      true,
+    );
+    assert.equal(
+      isPlacementRunOnRefreshDay("2026-10-18T15:00:00.000Z", now),
+      false,
+    );
+    assert.equal(
+      isPlacementRunOnRefreshDay("2026-10-19T04:30:00.000Z", now),
+      false,
     );
   });
 });

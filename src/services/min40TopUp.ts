@@ -79,8 +79,18 @@ import {
 } from "../lib/genericAssign.js";
 import { genericMayLinkToCampaigns, mailboxPodOf } from "../lib/podInventory.js";
 import {
+  alreadyCoveredEmails,
+  linkCoveringFor,
+  pendingRetireDomains,
+  pickFreeWarmGenericsForPod,
+  suppressPodFloorAlert,
+  warmReadyAtFromClock,
+  type WarmingBrandedSeat,
+} from "../lib/genericLedger.js";
+import {
   countOwnedClientPods,
   formatPodFloorAlert,
+  ownedNamedClientIdForSeat,
   ownedPodMap,
   type OwnedPodCount,
 } from "../lib/podOwnedInventory.js";
@@ -99,7 +109,12 @@ import {
   isInsightClientId,
 } from "../lib/insightCampaigns.js";
 import type { StateStore } from "../state/store.js";
-import { activeHoldUntilDate, owesWarmup, tagNames } from "./warmupGate.js";
+import {
+  activeHoldUntilDate,
+  owesWarmup,
+  tagNames,
+  warmupClockStartedAt,
+} from "./warmupGate.js";
 import { espFillOrder, isExcluded } from "./campaignTopUp.js";
 import {
   dropMembership,
@@ -859,19 +874,25 @@ export class Min40TopUpService {
     clientId: number,
     pod: "A" | "B",
     dryRun: boolean,
+    coveringFor?: ReturnType<typeof linkCoveringFor>,
   ): Promise<void> {
     const locked = lockedGenericPod({
       tags: account.tags,
       assignedPod: this.state.getGenericSeat(email)?.assignedPod,
     });
-    if (locked === pod) return;
-    if (locked != null) {
+    if (locked != null && locked !== pod) {
       console.warn(
         `[min40] D234 refuse POD retag ${email} has=POD-${locked} want=POD-${pod}`,
       );
       return;
     }
-    if (!dryRun && typeof account.id === "number" && this.smartlead.ensureTag && this.smartlead.assignTags) {
+    if (
+      locked == null &&
+      !dryRun &&
+      typeof account.id === "number" &&
+      this.smartlead.ensureTag &&
+      this.smartlead.assignTags
+    ) {
       const tag = await this.smartlead.ensureTag(genericPodTagName(pod), genericPodTagColor(pod));
       await this.smartlead.assignTags([account.id], [tag.id]);
       await sleep(WRITE_GAP_MS);
@@ -891,6 +912,7 @@ export class Min40TopUpService {
       reason: GENERIC_ASSIGN_REASON_POD_TOP_UP,
       campaignIds: campaignIdsOf(account),
       slAccountId: typeof account.id === "number" ? account.id : null,
+      coveringFor,
     });
     if (!assigned.ok) {
       console.warn(
@@ -1350,6 +1372,15 @@ export class Min40TopUpService {
   }): Promise<void> {
     const poolMailboxes = input.poolMailboxes ?? this.state.listPoolMailboxes();
     const onWeek = onWeekCohort(input.now);
+    const retirePending = pendingRetireDomains({
+      actions: this.state.listIsolationActions(),
+      history: this.state.listDomainHistory(),
+    });
+    const warmingBranded = this.warmingBrandedSeats(
+      input.accounts,
+      input.campaignById,
+      input.now,
+    );
     const owned = ownedPodMap(
       countOwnedClientPods({
         accounts: input.accounts,
@@ -1402,61 +1433,72 @@ export class Min40TopUpService {
         await yieldEventLoop();
         if (skipGenerics) continue;
         const rejected = new Set<string>();
-        const probe = clientActive[0];
-        while (need > 1e-9 && probe) {
+        const ledgerPicks = pickFreeWarmGenericsForPod({
+          seats: this.state.listGenericSeats(),
+          need,
+          alreadyPicked: selected,
+          retirePendingDomains: retirePending,
+          now: input.now,
+        });
+        for (const seat of ledgerPicks) {
+          if (need <= 1e-9) break;
           if (input.signal?.aborted) {
             input.result.errors.push("aborted: stopped remaining POD fills");
             break;
           }
-          const platforms = espFillOrder(
-            espCounts,
-            floor,
-            Math.round(POD_ESP_MIX_MIN_FRACTION * 100),
-          );
-          const pool = await findReassignablePoolMailboxYielding(
-            poolMailboxes,
-            platforms,
-            (email) => {
-              const key = email.toLowerCase();
-              if (selected.has(key)) return false;
-              const account = input.accountByEmail.get(key);
-              if (!account) return false;
-              if (!isPoolGenericSeat(account, email, this.config, this.state)) {
-                return false;
-              }
-              if (!this.state.getGenericSeat(key)) return false;
-              const owner =
-                typeof account.client_id === "number" ? account.client_id : null;
-              if (owner != null && owner !== clientId) return false;
-              if (this.powerGrydStaffingBlocked(account, email, clientId)) {
-                return false;
-              }
-              if (hasPocReservationTag(account) && owner !== clientId) return false;
-              if (lockedGenericPod({ tags: account.tags }) === pod) return false;
-              if (!this.seatIsUsable(account, email, probe, input.campaignById)) {
-                return false;
-              }
-              return this.genericMayTakePod(account, email, clientId, pod);
-            },
-            {
-              rejected,
-              signal: input.signal,
-              isCopyCanary: (email) => this.state.isCopyCanary(email),
-              getRestingInbox: (email) => this.state.getRestingInbox(email),
-            },
-          );
-          if (!pool?.smartleadAccountId) break;
-          const original = input.accountByEmail.get(pool.email.toLowerCase());
-          if (!original) {
-            this.state.removePoolMailbox(pool.email);
-            rejected.add(pool.email.toLowerCase());
+          const key = seat.email.toLowerCase();
+          if (selected.has(key) || rejected.has(key)) continue;
+          const original = input.accountByEmail.get(key);
+          if (!original || typeof original.id !== "number") {
+            rejected.add(key);
             continue;
           }
-          const firstName = pool.firstName || "Pool";
-          const lastName = pool.lastName || "User";
+          if (!isPoolGenericSeat(original, seat.email, this.config, this.state)) {
+            rejected.add(key);
+            continue;
+          }
+          if (this.powerGrydStaffingBlocked(original, seat.email, clientId)) {
+            rejected.add(key);
+            continue;
+          }
+          if (
+            hasPocReservationTag(original) &&
+            original.client_id != null &&
+            original.client_id !== clientId
+          ) {
+            rejected.add(key);
+            continue;
+          }
+          const locked = lockedGenericPod({
+            tags: original.tags,
+            assignedPod: seat.assignedPod,
+          });
+          if (locked != null && locked !== pod) {
+            rejected.add(key);
+            continue;
+          }
+          if (!this.genericMayTakePod(original, seat.email, clientId, pod)) {
+            rejected.add(key);
+            continue;
+          }
+          const pool =
+            poolMailboxes.find((row) => row.email.toLowerCase() === key) ??
+            this.state.getPoolMailbox(key);
+          const firstName = pool?.firstName || "Pool";
+          const lastName = pool?.lastName || "User";
+          const covering = linkCoveringFor({
+            seat: {
+              ...seat,
+              assignedClientId: clientId,
+              assignedPod: pod,
+            },
+            warming: warmingBranded,
+            alreadyCovered: alreadyCoveredEmails(this.state.listGenericSeats(), key),
+            now: input.now,
+          });
           try {
             if (!input.dryRun) {
-              await this.smartlead.updateEmailAccount(pool.smartleadAccountId, {
+              await this.smartlead.updateEmailAccount(original.id, {
                 signature: buildPoolSignature({
                   firstName,
                   lastName,
@@ -1467,32 +1509,50 @@ export class Min40TopUpService {
                 time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
               });
               original.client_id = clientId;
-              this.state.upsertPoolMailbox({
-                ...pool,
-                status: "assigned",
-                assignedClientId: clientId,
-                assignedAt: new Date().toISOString(),
-              });
-              await this.stampGenericPod(original, pool.email, clientId, pod, input.dryRun);
+              if (pool) {
+                this.state.upsertPoolMailbox({
+                  ...pool,
+                  status: "assigned",
+                  assignedClientId: clientId,
+                  assignedAt: new Date().toISOString(),
+                });
+              }
+              await this.stampGenericPod(
+                original,
+                seat.email,
+                clientId,
+                pod,
+                input.dryRun,
+                covering,
+              );
               if (pod === onWeek) {
                 for (const campaign of clientActive) {
                   if (campaignIdsOf(original).includes(campaign.id)) continue;
-                  if (!this.seatIsUsable(original, pool.email, campaign, input.campaignById)) {
+                  if (!this.seatIsUsable(original, seat.email, campaign, input.campaignById)) {
                     continue;
                   }
                   await this.smartlead.addEmailAccountsToCampaign(campaign.id, [
-                    pool.smartleadAccountId,
+                    original.id,
                   ]);
                   recordMembership(original, campaign.id);
                   await sleep(WRITE_GAP_MS);
                 }
               }
+            } else {
+              await this.stampGenericPod(
+                original,
+                seat.email,
+                clientId,
+                pod,
+                true,
+                covering,
+              );
             }
-            selected.add(pool.email.toLowerCase());
+            selected.add(key);
             input.result.assigned.push({
               campaignId: pod === onWeek ? (clientActive[0]?.id ?? 0) : 0,
               campaignName: String(clientActive[0]?.name ?? clientId),
-              email: pool.email,
+              email: seat.email,
               clientId,
               pod,
             });
@@ -1501,12 +1561,48 @@ export class Min40TopUpService {
             if (placedSlot) espCounts[placedSlot] += 1;
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            input.result.errors.push(`${pool.email} POD ${pod}: ${message}`);
+            input.result.errors.push(`${seat.email} POD ${pod}: ${message}`);
             break;
           }
         }
       }
     }
+  }
+
+  private warmingBrandedSeats(
+    accounts: SmartleadAccountWithCampaigns[],
+    campaignById: Map<number, SmartleadCampaign>,
+    now: Date,
+  ): WarmingBrandedSeat[] {
+    const out: WarmingBrandedSeat[] = [];
+    const isMarker = this.state.isMarkerClientId?.bind(this.state);
+    for (const account of accounts) {
+      const email = accountEmail(account)?.toLowerCase();
+      if (!email) continue;
+      if (isGenericMailbox(account, email, this.config, this.state)) continue;
+      if (!owesWarmup(account, email, this.config, this.state)) continue;
+      const clientId = ownedNamedClientIdForSeat({
+        account,
+        email,
+        campaignIds: campaignIdsOf(account),
+        campaignById,
+        isMarkerClientId: isMarker,
+      });
+      if (clientId == null) continue;
+      const pod = mailboxPodOf(account);
+      if (pod !== "A" && pod !== "B") continue;
+      out.push({
+        email,
+        clientId,
+        pod,
+        warmReadyAt: warmReadyAtFromClock(
+          warmupClockStartedAt(account, email, this.state),
+          this.config.campaignMinWarmupDays ?? 21,
+          now,
+        ),
+      });
+    }
+    return out;
   }
 
   /** D207 / D285 — on-week assigned generics sit on every ACTIVE campaign of that client. */
@@ -1636,6 +1732,7 @@ export class Min40TopUpService {
     const stampKeys: string[] = [];
     for (const row of podRows) {
       if (row.clientId == null) continue;
+      if (suppressPodFloorAlert(row.clientId)) continue;
       const key = `pod:${row.clientId}:${row.pod}`;
       if (this.state.getMin40ShortfallAlerted(key) === todayYmd) continue;
       const owned: OwnedPodCount = {

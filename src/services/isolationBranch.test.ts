@@ -556,6 +556,37 @@ describe("IsolationBranchService placement queue (D158)", () => {
     assert.ok(evaluated.length <= 1, "abort must not keep evaluating");
   });
 
+  it("D287: a stored 0% canary-copy score queues isolation and never pauses", async () => {
+    const { branch, state, evaluated, campaign } = await buildBranch({
+      knownGoodInbox: 95,
+      canaryInbox: 0,
+    });
+    state.recordPlacementScore({
+      campaignId: campaign.id,
+      campaignName: campaign.name,
+      testId: "stored-0",
+      source: "canary-copy",
+      inboxPercent: 0,
+      at: new Date().toISOString(),
+    });
+    const src = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("./isolationBranch.ts", import.meta.url), "utf8"),
+    );
+    assert.doesNotMatch(
+      src,
+      /updateCampaignStatus/,
+      "isolation-branch must never hold-pause a campaign",
+    );
+    const result = await branch.run();
+    assert.ok(
+      evaluated.includes(campaign.id),
+      `0% stored score must start isolation: evaluated=${evaluated.join(",")}`,
+    );
+    assert.ok(state.listCopySuspects().some((row) => row.campaignId === campaign.id));
+    assert.ok(state.latestIsolationRunForCampaign(campaign.id));
+    assert.ok(result.evaluated >= 1);
+  });
+
   it("heals a missing copy-canary testId so unwarmed scoring can finish", async () => {
     const { branch, state, healed } = await buildBranch({
       knownGoodInbox: 95,

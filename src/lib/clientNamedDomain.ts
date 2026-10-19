@@ -12,6 +12,7 @@ import {
   BCP_CLIENT_ID,
   EMCOR_CLIENT_ID,
   PARLAY_CLIENT_ID,
+  PETERSON_CLIENT_ID,
   POWERGRYD_CLIENT_ID,
   TECHEVO_CLIENT_ID,
 } from "./namedClientIds.js";
@@ -71,6 +72,7 @@ export const CLIENT_NAMED_DOMAIN_SLUGS = [
   "insight",
   "parlay",
   "nutter",
+  "peterson",
   "vector",
   "emcor",
   "roofs",
@@ -91,6 +93,8 @@ const SLUG_OWNER: Record<string, number> = {
   joshosborn: INSIGHT_CLIENT_ID,
   powergryd: POWERGRYD_CLIENT_ID,
   deeproots: DEEP_ROOTS_NAMED_CLIENT_ID,
+  roofs: PETERSON_CLIENT_ID,
+  peterson: PETERSON_CLIENT_ID,
 };
 
 const SLUGS_LONGEST_FIRST = [...CLIENT_NAMED_DOMAIN_SLUGS].sort(

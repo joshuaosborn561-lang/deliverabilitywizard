@@ -163,6 +163,7 @@ export class IsolationBranchService {
         return result;
       }
       try {
+        await this.queueUglyFromExistingScores(campaigns, opts.signal);
         await this.queueUglyPlacementSuspects(campaigns, opts.signal, {
           overBudget,
         });
@@ -360,6 +361,8 @@ export class IsolationBranchService {
     } = {},
   ): Promise<IsolationRunRecord> {
     throwIfAborted(opts.signal);
+    // D287 — isolation never hold-pauses a campaign. Evaluate only
+    // scores and starts a run. Never write campaign status.
     const campaign = await this.smartlead.getCampaign(campaignId);
     if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) {
       const skipped: IsolationRunRecord = {
@@ -585,6 +588,34 @@ export class IsolationBranchService {
         Number.isFinite(scoreAgeMs) &&
         scoreAgeMs < PLACEMENT_SCORE_FRESH_MS
       ) {
+        if (
+          existingScore.inboxPercent < this.config.remediationInboxThreshold &&
+          shouldRequeueIsolation({
+            existing: this.state
+              .listCopySuspects()
+              .find((row) => row.campaignId === target.campaignId),
+            openRun: this.state.latestIsolationRunForCampaign(target.campaignId),
+            status: campaign.status,
+          })
+        ) {
+          this.state.markCopySuspect({
+            campaignId: target.campaignId,
+            campaignName: target.campaignName ?? campaign.name,
+            at: new Date().toISOString(),
+            reason: placementSuspectReason(
+              existingScore.source,
+              [
+                {
+                  name: existingScore.source,
+                  inboxPercent: existingScore.inboxPercent,
+                },
+              ],
+              this.config.remediationInboxThreshold,
+            ),
+            evaluatedAt: undefined,
+          });
+          queued += 1;
+        }
         continue;
       }
       if (pulled >= ISOLATION_PROVIDER_SPLITS_CAP) {
@@ -651,6 +682,61 @@ export class IsolationBranchService {
         `[isolation-branch] queued #${target.campaignId} from ${target.source}: ${splits
           .map((row) => `${row.name} ${row.inboxPercent.toFixed(0)}%`)
           .join(", ")}`,
+      );
+    }
+    return queued;
+  }
+
+  /**
+   * D287 — 0% (and any under-80%) canary-copy scores already on the
+   * book must become suspects even when listTests is empty or the
+   * provider-split pull is skipped as fresh. Isolation starts from
+   * the score; it never hold-pauses the campaign.
+   */
+  private async queueUglyFromExistingScores(
+    campaigns: Awaited<ReturnType<SmartleadClient["listCampaigns"]>>,
+    signal?: AbortSignal,
+  ): Promise<number> {
+    throwIfAborted(signal);
+    const byId = new Map(campaigns.map((row) => [row.id, row]));
+    let queued = 0;
+    for (const score of this.state.listPlacementScores()) {
+      await yieldEventLoop();
+      if (score.inboxPercent >= this.config.remediationInboxThreshold) continue;
+      const campaign = byId.get(score.campaignId);
+      if (
+        !campaign ||
+        !isActiveSendingStatus(campaign.status) ||
+        isExcluded(campaign, this.config.topUpExcludeCampaigns) ||
+        isAnyShellCampaign(campaign)
+      ) {
+        continue;
+      }
+      if (
+        !shouldRequeueIsolation({
+          existing: this.state
+            .listCopySuspects()
+            .find((row) => row.campaignId === score.campaignId),
+          openRun: this.state.latestIsolationRunForCampaign(score.campaignId),
+          status: campaign.status,
+        })
+      ) {
+        continue;
+      }
+      this.state.markCopySuspect({
+        campaignId: score.campaignId,
+        campaignName: score.campaignName ?? campaign.name,
+        at: new Date().toISOString(),
+        reason: placementSuspectReason(
+          score.source,
+          [{ name: score.source, inboxPercent: score.inboxPercent }],
+          this.config.remediationInboxThreshold,
+        ),
+        evaluatedAt: undefined,
+      });
+      queued += 1;
+      console.log(
+        `[isolation-branch] queued #${score.campaignId} from stored ${score.source} ${score.inboxPercent.toFixed(0)}% (D287)`,
       );
     }
     return queued;

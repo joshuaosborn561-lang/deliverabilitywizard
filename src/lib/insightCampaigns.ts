@@ -24,7 +24,7 @@ import {
   sequenceBodiesContainInsight,
   signatureHay,
 } from "./signatureQa.js";
-import { isAttachForbiddenSeat } from "./attachGuard.js";
+import { isAttachForbiddenSeat, isDoNotRelinkPair } from "./attachGuard.js";
 
 /** Live Insight campaigns Josh named (now client 582890 — D192). */
 export const INSIGHT_CAMPAIGN_IDS: readonly number[] = [
@@ -354,6 +354,7 @@ export function canAttachMailboxToCampaign(
   // including onto EMCOR / TechEvo campaign-fill. Shells stay open
   // for instrumentation only when the seat is not hold-blocked.
   if (isAttachForbiddenSeat(account)) return false;
+  if (isDoNotRelinkPair(insightSenderEmail(account), target.id)) return false;
   if (isAnyShellCampaign(target)) return true;
   if (isInsightJoshOnlyCampaign(target) || isInsightCampaignId(target.id)) {
     if (!isInsightJoshAllowedSender(account)) return false;

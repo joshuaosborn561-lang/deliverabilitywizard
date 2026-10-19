@@ -2268,4 +2268,144 @@ describe("Min40TopUpService (D205)", () => {
     );
     assert.equal(result.asked.length, 0);
   });
+
+  it("D287: ledger assigns a free warm generic with covering_for and skips marekbrooks on #4005226", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "cover@crosslaunchco.com",
+      domain: "crosslaunchco.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 901,
+      firstName: "Cover",
+      lastName: "Seat",
+      status: "available",
+      warmedAt,
+    });
+    state.ensureGenericSeat({
+      email: "cover@crosslaunchco.com",
+      slAccountId: 901,
+      warmupEnabled: true,
+      warmReadyAt: "2026-01-01T00:00:00.000Z",
+    });
+    state.ensureGenericSeat({
+      email: "marekbrooks@meetconnectbox.com",
+      slAccountId: 88,
+      warmupEnabled: true,
+      warmReadyAt: "2026-01-01T00:00:00.000Z",
+    });
+    const named = Array.from({ length: 38 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `n${i}@emcorservices.com`,
+      from_name: "Ada Lovelace",
+      client_id: 574020,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "POD-A" }],
+      campaign_ids: [20],
+      created_at: "2026-01-01T00:00:00.000Z",
+    }));
+    const warmingA = {
+      id: 50,
+      from_email: "new@emcorservices.com",
+      from_name: "New Hire",
+      client_id: 574020,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "POD-A" }],
+      campaign_ids: [],
+      created_at: "2026-10-10T00:00:00.000Z",
+    };
+    const warmingB = {
+      id: 51,
+      from_email: "newb@emcorservices.com",
+      from_name: "New Hire B",
+      client_id: 574020,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "POD-B" }],
+      campaign_ids: [],
+      created_at: "2026-10-10T00:00:00.000Z",
+    };
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-19T16:00:00.000Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 574020, name: "EMCOR", logo: "EMCOR" }],
+        campaigns: [
+          { id: 20, name: "EMCOR A", status: "ACTIVE", client_id: 574020 },
+          { id: 4005226, name: "PowerGRYD", status: "ACTIVE", client_id: 592842 },
+        ],
+        accounts: [
+          ...named,
+          warmingA,
+          warmingB,
+          {
+            id: 901,
+            from_email: "cover@crosslaunchco.com",
+            from_name: "Cover Seat",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [],
+            created_at: "2026-01-01T00:00:00.000Z",
+            warmup_details: { status: "ACTIVE" },
+          },
+          {
+            id: 88,
+            from_email: "marekbrooks@meetconnectbox.com",
+            from_name: "Marek Brooks",
+            type: "GMAIL",
+            client_id: 592842,
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [],
+            created_at: "2026-01-01T00:00:00.000Z",
+            warmup_details: { status: "ACTIVE" },
+          },
+        ],
+      },
+    });
+    assert.ok(
+      result.assigned.some((row) => row.email === "cover@crosslaunchco.com"),
+      `ledger must assign the free generic: ${JSON.stringify(result.assigned)} ${result.errors.join(" | ")}`,
+    );
+    const cover = state.getGenericSeat("cover@crosslaunchco.com");
+    assert.equal(cover?.assignedClientId, 574020);
+    assert.ok(cover?.assignedPod === "A" || cover?.assignedPod === "B");
+    const expectedCovered =
+      cover?.assignedPod === "B" ? "newb@emcorservices.com" : "new@emcorservices.com";
+    assert.ok(
+      (cover?.coveringFor ?? []).some((row) => row.email === expectedCovered),
+      `covering_for must name the warming branded seat on POD-${cover?.assignedPod}: ${JSON.stringify(cover?.coveringFor)}`,
+    );
+    assert.equal(
+      attached.some((row) => row[0] === 4005226 && row[1].includes(88)),
+      false,
+      "marekbrooks must not be re-linked to #4005226",
+    );
+    assert.ok(state.getGenericSeat("marekbrooks@meetconnectbox.com"));
+  });
 });

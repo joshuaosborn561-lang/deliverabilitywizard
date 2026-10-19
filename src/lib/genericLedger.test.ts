@@ -5,12 +5,16 @@ import {
   alreadyCoveredEmails,
   freeWarmGenericCount,
   isCornerstoneGenericDomain,
+  isFreeWarmLedgerSeat,
   isInsightClientId,
   ledgerNoRestaffClientId,
   linkCoveringFor,
+  pendingRetireDomains,
   pickCoveringForReturns,
+  pickFreeWarmGenericsForPod,
   podShortNoFreeGeneric,
   seatCoveringReady,
+  suppressPodFloorAlert,
   warmReadyAtFromClock,
 } from "./genericLedger.js";
 import { INSIGHT_CLIENT_ID } from "./insightCampaigns.js";
@@ -165,5 +169,48 @@ describe("D286 generics ledger helpers", () => {
         coveringFor: [{ email: "n@x.com", warmReadyAt: null }],
       }),
     ]).has("n@x.com"), true);
+  });
+
+  it("D287: picks free warm generics, retire-pending last, never CornerStone", () => {
+    const now = new Date("2026-10-19T16:00:00.000Z");
+    const clean = emptyGenericSeat("ada@getintroduced.info", {
+      warmupEnabled: true,
+      warmReadyAt: "2026-09-01T00:00:00.000Z",
+    });
+    const retire = emptyGenericSeat("zoe@burned.info", {
+      warmupEnabled: true,
+      warmReadyAt: "2026-09-01T00:00:00.000Z",
+    });
+    const stone = emptyGenericSeat("owen@cornerstoneearthworksmy.info", {
+      warmupEnabled: true,
+    });
+    const assigned = emptyGenericSeat("busy@getintroduced.info", {
+      assignedClientId: 77,
+      assignedPod: "A",
+      warmupEnabled: true,
+    });
+    assert.equal(isFreeWarmLedgerSeat(clean, now), true);
+    assert.equal(isFreeWarmLedgerSeat(stone, now), false);
+    assert.equal(isFreeWarmLedgerSeat(assigned, now), false);
+    const picked = pickFreeWarmGenericsForPod({
+      seats: [retire, stone, assigned, clean],
+      need: 2,
+      retirePendingDomains: pendingRetireDomains({
+        actions: [
+          {
+            kind: "retire_domain",
+            status: "pending",
+            detail: { domain: "burned.info" },
+          },
+        ],
+      }),
+      now,
+    });
+    assert.deepEqual(
+      picked.map((row) => row.email),
+      ["ada@getintroduced.info", "zoe@burned.info"],
+    );
+    assert.equal(suppressPodFloorAlert(PETERSON_CLIENT_ID), true);
+    assert.equal(suppressPodFloorAlert(592842), false);
   });
 });

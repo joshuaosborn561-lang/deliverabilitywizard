@@ -280,8 +280,8 @@ describe("owner intent — D285 LOCKED POD-40 canon", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D286\*\*/,
-      stop("CANON is dated D286.", "CANON.md header is not D286."),
+      /Canon as of \*\*D(286|28[7-9]|29[0-9])\*\*/,
+      stop("CANON is dated D286+.", "CANON.md header is before D286."),
     );
   });
 });

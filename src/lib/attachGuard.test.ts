@@ -3,11 +3,14 @@ import { describe, it } from "node:test";
 import {
   AttachForbiddenSeatError,
   CORNERSTONE_CLIENT_ID,
+  MAREKBROOKS_EMAIL,
+  POWERGRYD_MAREK_CAMPAIGN_ID,
   accountHasActiveHoldUntil,
   assertAttachAllowedAccountIds,
   indexAttachForbiddenAccountIds,
   isAttachForbiddenSeat,
   isCornerstoneClientSeat,
+  isDoNotRelinkPair,
 } from "./attachGuard.js";
 
 describe("D283 attach guard — CornerStone + HOLD-UNTIL", () => {
@@ -74,5 +77,42 @@ describe("D283 attach guard — CornerStone + HOLD-UNTIL", () => {
       now,
     );
     assert.deepEqual([...forbidden].sort((a, b) => a - b), [73, 74]);
+  });
+});
+
+describe("D287 marekbrooks do-not-relink", () => {
+  it("blocks only marekbrooks → PowerGRYD #4005226", () => {
+    assert.equal(
+      isDoNotRelinkPair(MAREKBROOKS_EMAIL, POWERGRYD_MAREK_CAMPAIGN_ID),
+      true,
+    );
+    assert.equal(isDoNotRelinkPair(MAREKBROOKS_EMAIL, 4005227), false);
+    assert.equal(
+      isDoNotRelinkPair("other@meetconnectbox.com", POWERGRYD_MAREK_CAMPAIGN_ID),
+      false,
+    );
+  });
+
+  it("assertAttachAllowedAccountIds rejects the re-link", () => {
+    const accountsById = new Map([
+      [
+        88,
+        {
+          id: 88,
+          from_email: MAREKBROOKS_EMAIL,
+          client_id: 592842,
+        },
+      ],
+    ]);
+    assert.throws(
+      () =>
+        assertAttachAllowedAccountIds(POWERGRYD_MAREK_CAMPAIGN_ID, [88], {
+          accountsById,
+        }),
+      AttachForbiddenSeatError,
+    );
+    assert.doesNotThrow(() =>
+      assertAttachAllowedAccountIds(4005227, [88], { accountsById }),
+    );
   });
 });

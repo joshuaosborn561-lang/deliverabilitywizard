@@ -544,6 +544,32 @@ describe("D282 Insight Josh-only senders", () => {
     assert.equal(canAttachMailboxToCampaign(teSeat, techevo, byId), true);
   });
 
+  it("D287: canAttachMailboxToCampaign refuses marekbrooks on PowerGRYD #4005226", () => {
+    const campaign = {
+      id: 4005226,
+      name: "PowerGRYD",
+      status: "ACTIVE",
+      client_id: 592842,
+    } as SmartleadCampaign;
+    const other = {
+      id: 4005227,
+      name: "PowerGRYD B",
+      status: "ACTIVE",
+      client_id: 592842,
+    } as SmartleadCampaign;
+    const byId = new Map<number, SmartleadCampaign>([
+      [4005226, campaign],
+      [4005227, other],
+    ]);
+    const marek = account([], {
+      id: 88,
+      client_id: 592842,
+      from_email: "marekbrooks@meetconnectbox.com",
+    });
+    assert.equal(canAttachMailboxToCampaign(marek, campaign, byId), false);
+    assert.equal(canAttachMailboxToCampaign(marek, other, byId), true);
+  });
+
   it("assertInsightJoshOnlyAccountIds hard-rejects non-Josh on Insight campaigns", () => {
     const accountsById = new Map([
       [1, { from_name: "Josh Osborn", from_email: "josh@trysalesglider.info" }],

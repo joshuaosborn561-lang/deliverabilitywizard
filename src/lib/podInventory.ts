@@ -44,8 +44,15 @@ export function keepAssignedGenericForPodInventory(input: {
   email: string;
   tags?: Pick<SmartleadEmailAccount, "tags">["tags"];
   idleEmails?: Iterable<string>;
+  /** D293 — ledger assignedClientId+POD is assigned even if Smartlead tags lag. */
+  assignedClientId?: number | null;
+  assignedPod?: "A" | "B" | null;
 }): boolean {
-  if (!podFromMailboxTags(input.tags)) return false;
+  const tagged = Boolean(podFromMailboxTags(input.tags));
+  const ledger =
+    input.assignedClientId != null &&
+    (input.assignedPod === "A" || input.assignedPod === "B");
+  if (!tagged && !ledger) return false;
   const idle = new Set(
     [...(input.idleEmails ?? [])].map((email) => email.trim().toLowerCase()),
   );

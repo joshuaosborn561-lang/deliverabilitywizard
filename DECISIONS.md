@@ -287,7 +287,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D289 | Live | Old-wizard fix: min40 owned-count, covering_for relink, and seat-index walks time-slice so a 514×1690 fleet pass cannot pin the event loop 6–18s after Smartlead pages stream to disk. Watchdog 3× ≥3s / 120s stays. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
 | D290 | Live — salesglider* owned remap amended by D291 | Old-wizard fix: Insight owned-count accepts production `Joshua Osborn` on `joshuaosborn*` / `joshosborn*` / `salesglider*` (D288 matcher required exact `Josh Osborn` and substring `joshosborn`, so 85 live `Joshua Osborn` @ `joshuaosborn*` seats counted 0). The 1:53pm CT min40 pass that assigned 0 was correct canon: all 122 free generics still owe warmup — do not loosen the warm filter; never assign unwarmed generics. PowerGRYD 0 owned is also correct: branded `*powergryd.info` seats created Oct 16–17 still owe 21 days; warm dedicated generics with `client_id=592842` still count (D287). Insight still no generics. CornerStone never. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
 | D291 | Live | Old-wizard fix: SalesGlider's own `salesglider*` Josh seats with client 345263 (unlinked or on SG campaigns) count for SalesGlider, never Insight. Insight-named Josh seats (`joshuaosborn*` / `joshosborn*` / `insight*`) and leftover Josh seats sitting on an Insight campaign still count for Insight, never SalesGlider. D288's remap of every Josh+salesglider* seat to Insight 582890 emptied SG POD-A/B (prod 2026-10-19 2:32pm CT under-floor: SG A 0/40, B 4/40) after D290 made joshuaosborn* fill Insight. Never both. Insight still no generics. CornerStone never. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
-| D292 | Live | Old-wizard fix: min40 assigns free warm ledger seats into under-floor PODs even when leftover Smartlead marker `client_id` / pool assignment / POD tags / foreign signatures remain (rewrite client sig on assign); PowerGRYD empty-by-design no longer refuses that free-pool rotation; Insight still no generics. canonOps hold-enforcement + min40-topup run at least every 30 min in the weekday window even when health is long or back-to-back (waive health-running skip when overdue; share the Smartlead limiter). Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
+| D292 | Live — overlap-with-health freeze / cleanup flap / silent errors / 10m timeout / PowerGRYD empty-by-design log amended by D293 | Old-wizard fix: min40 assigns free warm ledger seats into under-floor PODs even when leftover Smartlead marker `client_id` / pool assignment / POD tags / foreign signatures remain (rewrite client sig on assign); PowerGRYD empty-by-design no longer refuses that free-pool rotation; Insight still no generics. canonOps hold-enforcement + min40-topup run at least every 30 min in the weekday window even when health is long or back-to-back (waive health-running skip when overdue; share the Smartlead limiter). Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
+| D293 | Live | Old-wizard fix after D292 prod (deploy f446303c, 2026-10-19 ~5:10pm CT): overdue min40 serializes against health CPU (does not overlap client-rest / campaign-check scans); cleanup and min40 agree on assigned generics (ledger + owned POD count) so cleanup cannot undo a just-assigned under-floor seat; min40 logs each error and each POD's rejection reasons; one seat error does not abort the rest of the POD; min40-topup step budget 20m; PowerGRYD empty-by-design refuse-generics log/logic removed (Insight is the only no-generics client). Watchdog thresholds unchanged. Warm gate, CornerStone, ESP match, ≥33% mix unchanged. LOCKED section unchanged. |
 
 ---
 
@@ -10582,6 +10583,92 @@ does not skip. D230's `genericEligibleForClientPod` POD-flip
 fixture now includes `assignedClientId` so leftover tags on
 a ledger-free seat are D292 supply, not a D230 flip.
 `src/guards/lockedCanon.test.ts` LOCKED section unchanged.
+
+---
+
+## D293 — D292 follow-up: serialize min40 vs health; cleanup agrees; log errors; 20m step; PowerGRYD takes generics
+
+**Date.** 2026-10-19 (Josh).
+
+**Decision.** Production after D292 (PR #336, 828b52d,
+deploy f446303c) at ~5:10pm CT: overdue min40 overlapped
+health:client-rest, event-loop delays 4.5s / 22.4s / 7.0s
+(`scan:indexAccountsByCampaign` 27.6s), freeze watchdog
+`process.exit(1)` at 22:03:43Z. ~20s after min40 assigned
+116 generics, generic-cleanup returned 12 (cleared
+client_id / signature / POD tag): 9 Roofs by Peterson
+548610, 1 Emcor, 1 PowerGRYD, 1 Nutter. TechEvo B
+(need=5) and Parlay B (need=1) logged picks=301
+assignedNow=0 rejected=0 with no rejection reasons.
+The pass summary said errors=6 with no error lines.
+min40-topup FAILED `timeout after 10m` at 4:54pm though
+the walk finished 4:55pm. Stale log still printed
+"PowerGRYD empty-by-design … refuse foreign-signature
+generics". Fix the old wizard on main. Do not change
+the LOCKED canon section. Do not widen freeze-watchdog
+thresholds. Keep the warm gate, CornerStone exclusion,
+ESP match, and ≥33% mix. Insight still gets no generics.
+Never START, pause, or touch STOPPED. Never buy.
+
+1. **Serialize overdue min40 against health CPU.** D292's
+   skip-waiver stays (overdue weekday hold/min40 does not
+   skip for health-running). The overdue pass must **pause
+   health CPU walks** (client-rest, campaign-check,
+   one-client, `indexAccountsByCampaign`) then run
+   hold/min40, then unpause. Sharing the Smartlead limiter
+   stays so min40 is not queued behind a never-ending
+   health sitting. Two fleet scans must not overlap —
+   interleaved `setImmediate` chains starve the watchdog.
+2. **Cleanup and min40 agree on assigned generics.** A
+   ledger `assignedClientId` + `assignedPod` seat on a POD
+   whose owned count is still ≤ floor is assigned, even
+   with no campaign links and even if Smartlead POD tags
+   lag. Cleanup / surplus return must not clear those
+   seats. Surplus is owned > floor (same count as min40),
+   not a second named-staffable walk that double-counts.
+3. **Log every min40 error and rejection reason.** One
+   seat error continues to the next pick; it does not
+   `break` the POD. Abort names the client POD. Each
+   `result.errors` line is `console.warn`'d. Each short
+   POD logs a rejection-reason histogram.
+4. **min40-topup step budget is 20 minutes.** The 10m
+   default marked the stage failed while the walk still
+   finished (and aborted remaining PODs via the signal —
+   TechEvo B / Parlay B assigned 0 with picks=301
+   rejected=0).
+5. **PowerGRYD takes generics.** Remove the empty-by-design
+   "refuse foreign-signature / foreign-client generics"
+   log and refuse path. Insight is the only no-generics
+   client. D283 Onboarding-freed seats still stay freed.
+   Live foreign named owners still cannot move onto
+   PowerGRYD.
+
+**Why.** Locked POD-40 / Generics Ledger already said
+rotate free warm generics into any under-floor POD and
+keep them assigned until that POD is above floor.
+D292's overlap, silent abort, 10m timeout, and cleanup
+idle walk undid that.
+
+**Rejected.** Changing the LOCKED section. Giving Insight
+generics. Loosening the warm filter. Widening freeze-watchdog
+thresholds. Using CornerStone inboxes. Starting / pausing /
+touching STOPPED. Buying anything. Touching v2.
+
+**Supersedes / amends.** Amends D292 (overlap-during-health,
+empty-by-design refuse log). Amends D258 empty-by-design
+refuse-generics. Amends D247 min40-topup 10m default.
+Does not reverse D1, D40, D4, D50, D122, D228, D234,
+D256, D267 fresh-tick health skip, D282 no-generics,
+D283 idle Onboarding-freed seats, D285 POD-40, D247/D257
+watchdog thresholds, or the LOCKED text.
+
+**Guards.** `src/lib/healthCpuPause.ts` overdue exclusive
+flag; health walks pause; min40 surplus skips that pause.
+`src/lib/stepTimeout.ts` min40-topup 20m. min40 logs
+`[min40-topup] error:` for every error and POD `reasons=`.
+generic-cleanup keeps a ledger-assigned under-floor seat.
+PowerGRYD empty-by-design log is gone. `src/guards/lockedCanon.test.ts`
+LOCKED section unchanged.
 
 ---
 

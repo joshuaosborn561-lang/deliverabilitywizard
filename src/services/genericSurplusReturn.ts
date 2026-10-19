@@ -147,7 +147,9 @@ export async function returnSurplusGenerics(input: {
   if (!picks.length) return result;
 
   const accounts = input.inventory.accounts as SmartleadAccountWithCampaigns[];
-  const membersByCampaign = await indexAccountsByCampaign(accounts);
+  const membersByCampaign = await indexAccountsByCampaign(accounts, {
+    skipOverduePause: true,
+  });
   const campaignById = new Map(
     (input.inventory.campaigns as SmartleadCampaign[]).map((row) => [row.id, row]),
   );

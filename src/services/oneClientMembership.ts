@@ -49,6 +49,7 @@ import {
 } from "../lib/oneClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
+import { pauseWhileOverdueCanonOps } from "../lib/healthCpuPause.js";
 import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import { signatureHay } from "../lib/signatureQa.js";
 import type { StateStore } from "../state/store.js";
@@ -207,7 +208,10 @@ export class OneClientMembershipService {
     let walked = 0;
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       walked += 1;
-      if (walked % ONE_CLIENT_YIELD_EVERY === 0) await yieldEventLoop();
+      if (walked % ONE_CLIENT_YIELD_EVERY === 0) {
+        await yieldEventLoop();
+        await pauseWhileOverdueCanonOps({ label: "health:one-client" });
+      }
       const email = accountEmail(account);
       if (!email || !account.id) continue;
       if (isLockedCanarySeat(account, email, this.state)) continue;

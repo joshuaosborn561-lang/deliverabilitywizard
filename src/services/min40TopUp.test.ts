@@ -2560,4 +2560,124 @@ describe("Min40TopUpService (D205)", () => {
       `PowerGRYD assigns must rewrite leftover TechEvolution signatures: ${JSON.stringify(pgUpdates)}`,
     );
   });
+
+  it("D293: a seat error is logged and does not abort the rest of the POD", async () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.map(String).join(" "));
+    };
+    const attached: Array<[number, number[]]> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    for (const email of ["first@crosslaunchco.com", "second@crosslaunchco.com"]) {
+      state.upsertPoolMailbox({
+        email,
+        domain: "crosslaunchco.com",
+        platform: "GOOGLE",
+        smartleadAccountId: email.startsWith("first") ? 901 : 902,
+        firstName: email.split("@")[0]!,
+        lastName: "Pool",
+        status: "available",
+        warmedAt,
+      });
+    }
+    const named = Array.from({ length: 38 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `n${i}@boldercyperpartner.com`,
+      client_id: 542838,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "POD-A" }],
+      campaign_ids: [10],
+    }));
+    let updates = 0;
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+          updates += 1;
+          if (id === 901) throw new Error("smartlead 500");
+          void fields;
+        },
+        removeEmailAccountsFromCampaign: async () => undefined,
+        ensureTag: async (name: string) => ({ id: name === "POD-A" ? 1 : 2, name }),
+        assignTags: async () => undefined,
+        removeTags: async () => undefined,
+      } as unknown as SmartleadClient,
+      { send: async () => undefined, notifyIsolationAction: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    try {
+      const result = await service.run({
+        dryRun: false,
+        now: new Date("2026-09-29T15:00:00Z"),
+        inventory: {
+          fetchedAt: Date.now(),
+          clients: [{ id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" }],
+          campaigns: [
+            { id: 10, name: "BCP No Team", status: "ACTIVE", client_id: 542838 },
+          ],
+          accounts: [
+            ...named,
+            {
+              id: 901,
+              from_email: "first@crosslaunchco.com",
+              from_name: "First Pool",
+              type: "GMAIL",
+              is_smtp_success: true,
+              is_imap_success: true,
+              tags: [{ tag_name: "GENERIC" }],
+              campaign_ids: [],
+              created_at: "2026-01-01T00:00:00.000Z",
+              warmup_details: { status: "ACTIVE" },
+            },
+            {
+              id: 902,
+              from_email: "second@crosslaunchco.com",
+              from_name: "Second Pool",
+              type: "GMAIL",
+              is_smtp_success: true,
+              is_imap_success: true,
+              tags: [{ tag_name: "GENERIC" }],
+              campaign_ids: [],
+              created_at: "2026-01-01T00:00:00.000Z",
+              warmup_details: { status: "ACTIVE" },
+            },
+          ],
+        },
+      });
+      assert.ok(
+        result.errors.some((row) => /first@crosslaunchco.com/.test(row) && /smartlead 500/.test(row)),
+        `expected the first-seat error: ${result.errors.join(" | ")}`,
+      );
+      assert.ok(
+        warnings.some((row) => /\[min40-topup\] error:/.test(row) && /smartlead 500/.test(row)),
+        `expected an error log line: ${warnings.join(" | ")}`,
+      );
+      assert.ok(
+        result.assigned.some((row) => row.email === "second@crosslaunchco.com"),
+        `second seat must still assign after the first error: ${JSON.stringify(result.assigned)}`,
+      );
+      assert.ok(updates >= 2, `must try the next seat, updates=${updates}`);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  it("D293: source no longer prints PowerGRYD empty-by-design refuse generics", async () => {
+    const src = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("./min40TopUp.ts", import.meta.url), "utf8"),
+    );
+    assert.doesNotMatch(
+      src,
+      /PowerGRYD empty-by-design \(branded seats still warming\) — refuse/,
+    );
+    assert.match(src, /\[min40-topup\] error:/);
+    assert.match(src, /reasons=/);
+  });
 });

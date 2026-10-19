@@ -3,7 +3,10 @@ import {
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
 import { runWithStallScopeAsync } from "./eventLoopAttribution.js";
-import { pauseWhileHealthLive } from "./healthCpuPause.js";
+import {
+  pauseWhileHealthLive,
+  pauseWhileOverdueCanonOps,
+} from "./healthCpuPause.js";
 import {
   createTimeSlicer,
   yieldEventLoop,
@@ -20,6 +23,11 @@ export interface IndexAccountsOpts {
    * campaign-check omit this (they *are* the health cycle).
    */
   pauseWhile?: () => boolean;
+  /**
+   * D293 — min40 / surplus-return (the overdue canon-ops holder) must
+   * not wait on the exclusive flag they themselves set.
+   */
+  skipOverduePause?: boolean;
 }
 
 /**
@@ -59,6 +67,10 @@ export async function indexAccountsByCampaign(
       await pauseWhileHealthLive(opts.pauseWhile, {
         label: "scan:indexAccountsByCampaign",
       });
+      await pauseWhileOverdueCanonOps({
+        label: "scan:indexAccountsByCampaign",
+        skip: opts.skipOverduePause,
+      });
     };
     for (const account of accounts) {
       for (const id of membershipIds(account)) {
@@ -93,6 +105,10 @@ export async function indexAccountsByEmail(
         await yieldEventLoop();
         await pauseWhileHealthLive(opts.pauseWhile, {
           label: "scan:indexAccountsByEmail",
+        });
+        await pauseWhileOverdueCanonOps({
+          label: "scan:indexAccountsByEmail",
+          skip: opts.skipOverduePause,
         });
       } else {
         await slice();

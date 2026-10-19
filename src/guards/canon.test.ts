@@ -14713,6 +14713,7 @@ describe("owner intent — D247 stuck-pass hardening", () => {
     assert.equal(STEP_TIMEOUT_MS.inventory, 5 * 60 * 1000);
     assert.equal(STEP_TIMEOUT_MS["campaign-check-first"], 20 * 60 * 1000);
     assert.equal(STEP_TIMEOUT_MS["scan-backfill"], 20 * 60 * 1000);
+    assert.equal(STEP_TIMEOUT_MS["min40-topup"], 20 * 60 * 1000);
     assert.equal(timeoutAfterMessage(10 * 60 * 1000), "timeout after 10m");
     assert.equal(HEALTH_LOCK_MAX_MS, 45 * 60 * 1000);
     assert.equal(CANON_OPS_LOCK_MAX_MS, 30 * 60 * 1000);
@@ -17782,8 +17783,8 @@ describe("owner intent — D292 ledger-free rotation; overdue canonOps vs health
 
     assert.match(
       canon,
-      /Canon as of \*\*D292\*\*/,
-      stop("CANON is dated D292.", "CANON.md header is not D292."),
+      /D292/,
+      stop("CANON still names D292.", "CANON.md lost D292."),
     );
     assert.match(
       canon,
@@ -17840,6 +17841,88 @@ describe("owner intent — D292 ledger-free rotation; overdue canonOps vs health
       locked,
       /POD-40: every client POD A and POD B must each hold >=40 warm seats/,
       stop("LOCKED POD-40 sentence unchanged (D292).", "docs/LOCKED-CANON.md LOCKED sentence drifted."),
+    );
+  });
+});
+
+describe("owner intent — D293 D292 follow-up serialize/cleanup/log/timeout/PowerGRYD", () => {
+  it("D293: serialize overdue min40, agree cleanup, log errors, 20m step, no PG refuse log", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    const min40 = await readFile(new URL("../services/min40TopUp.ts", import.meta.url), "utf8");
+    const cleanup = await readFile(new URL("../services/genericCleanup.ts", import.meta.url), "utf8");
+    const pause = await readFile(new URL("../lib/healthCpuPause.ts", import.meta.url), "utf8");
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const timeout = await readFile(new URL("../lib/stepTimeout.ts", import.meta.url), "utf8");
+    const locked = await readFile(
+      new URL("../../docs/LOCKED-CANON.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D293\*\*/,
+      stop("CANON is dated D293.", "CANON.md header is not D293."),
+    );
+    assert.match(
+      canon,
+      /pauses health CPU/,
+      stop("CANON names health-CPU serialize (D293).", "CANON.md lost the health CPU pause."),
+    );
+    assert.match(
+      decisions,
+      /## D293 — /,
+      stop("The ledger records D293.", "DECISIONS.md has no D293 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D293 \|/m,
+      stop("The status index lists D293 (D127).", "DECISIONS.md status index has no D293 row."),
+    );
+    assert.match(
+      pause,
+      /setOverdueCanonOpsExclusive/,
+      stop("Health CPU can pause for overdue min40 (D293).", "healthCpuPause.ts lost the exclusive flag."),
+    );
+    assert.match(
+      index,
+      /setOverdueCanonOpsExclusive\(true\)/,
+      stop("Overdue canon-ops pauses health CPU (D293).", "index.ts lost setOverdueCanonOpsExclusive(true)."),
+    );
+    assert.match(
+      min40,
+      /\[min40-topup\] error:/,
+      stop("min40 logs each error (D293).", "min40TopUp.ts lost error log lines."),
+    );
+    assert.match(
+      min40,
+      /reasons=/,
+      stop("min40 logs rejection reasons (D293).", "min40TopUp.ts lost the reasons histogram."),
+    );
+    assert.doesNotMatch(
+      min40,
+      /PowerGRYD empty-by-design \(branded seats still warming\) — refuse/,
+      stop(
+        "PowerGRYD empty-by-design refuse log is gone (D293).",
+        "min40TopUp.ts still prints the refuse-generics log.",
+      ),
+    );
+    assert.match(
+      cleanup,
+      /countOwnedClientPods/,
+      stop("Cleanup uses min40 owned count (D293).", "genericCleanup.ts lost countOwnedClientPods."),
+    );
+    assert.match(
+      timeout,
+      /"min40-topup": 20 \* 60 \* 1000/,
+      stop("min40-topup step is 20m (D293).", "stepTimeout.ts lost the min40-topup budget."),
+    );
+    assert.match(
+      locked,
+      /POD-40: every client POD A and POD B must each hold >=40 warm seats/,
+      stop("LOCKED POD-40 sentence unchanged (D293).", "docs/LOCKED-CANON.md LOCKED sentence drifted."),
     );
   });
 });

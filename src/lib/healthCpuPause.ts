@@ -6,9 +6,26 @@
  * monitor:campaign-audit. This is a hunch, not the whole fix: pause
  * campaign-audit CPU while health is live so the two walks do not pin
  * the loop together. Health itself must never wait on this (deadlock).
+ *
+ * D293 — overdue weekday canon-ops (hold/min40) must not overlap a
+ * live health scan either. Two time-sliced walks interleave
+ * `setImmediate` and starve the freeze watchdog (prod 2026-10-19
+ * 22:03:43Z, event-loop delay 22.4s, `scan:indexAccountsByCampaign`
+ * 27.6s during health:client-rest). Health CPU yields to overdue
+ * canon-ops; canon-ops itself must not wait on this flag (deadlock).
  */
 
 export const HEALTH_CPU_PAUSE_MS = 25;
+
+let overdueCanonOpsExclusive = false;
+
+export function setOverdueCanonOpsExclusive(on: boolean): void {
+  overdueCanonOpsExclusive = on;
+}
+
+export function isOverdueCanonOpsExclusive(): boolean {
+  return overdueCanonOpsExclusive;
+}
 
 export async function pauseWhileHealthLive(
   isLive: (() => boolean) | undefined,
@@ -20,6 +37,21 @@ export async function pauseWhileHealthLive(
     `[${label}] health pass live — pausing CPU until health ends (D272)`,
   );
   while (isLive()) {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, HEALTH_CPU_PAUSE_MS);
+    });
+  }
+}
+
+export async function pauseWhileOverdueCanonOps(
+  opts: { label?: string; skip?: boolean } = {},
+): Promise<void> {
+  if (opts.skip || !overdueCanonOpsExclusive) return;
+  const label = opts.label ?? "health";
+  console.log(
+    `[${label}] overdue canon-ops live — pausing CPU until min40 ends (D293)`,
+  );
+  while (overdueCanonOpsExclusive) {
     await new Promise<void>((resolve) => {
       setTimeout(resolve, HEALTH_CPU_PAUSE_MS);
     });

@@ -28,6 +28,7 @@ describe("D267 canon-ops skipped-tick logging and retry", () => {
     });
     assert.equal(reason, undefined);
     assert.match(canonOpsOverdueDespiteHealthLog(), /overdue hold-enforcement\/min40/);
+    assert.match(canonOpsOverdueDespiteHealthLog(), /pausing health CPU/);
     assert.equal(
       canonOpsSkipReason({
         healthLive: true,

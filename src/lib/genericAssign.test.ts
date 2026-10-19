@@ -66,6 +66,33 @@ describe("D230 generic assign lock", () => {
     );
   });
 
+  it("D292: leftover marker client_id and stale POD tag do not lock a free ledger seat", () => {
+    assert.equal(
+      genericEligibleForClientPod({
+        clientId: 418274,
+        targetPod: "B",
+        mailboxClientId: 900001,
+        assignedClientId: null,
+        tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-A" }],
+        isMarkerClientId: (id) => id === 900001,
+      }),
+      true,
+      "marker Generic/POC leftover client_id is not a named owner",
+    );
+    assert.equal(
+      genericEligibleForClientPod({
+        clientId: 521881,
+        targetPod: "A",
+        mailboxClientId: null,
+        assignedClientId: null,
+        assignedPod: null,
+        tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-B" }],
+      }),
+      true,
+      "stale POD-B tag on an unassigned ledger seat may take POD-A",
+    );
+  });
+
   it("D283: Onboarding-freed PowerGRYD generics are not pool supply", () => {
     assert.equal(
       genericEligibleForClientPod({

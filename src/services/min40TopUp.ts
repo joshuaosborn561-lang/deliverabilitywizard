@@ -76,11 +76,13 @@ import {
   genericPodTagName,
   lockedGenericPod,
   stampMailboxPodTag,
+  stripMailboxPodTags,
 } from "../lib/genericAssign.js";
 import { genericMayLinkToCampaigns, mailboxPodOf } from "../lib/podInventory.js";
 import {
   alreadyCoveredEmails,
   freeWarmGenericCount,
+  isFreeWarmLedgerSeat,
   linkCoveringFor,
   pendingRetireDomains,
   pickFreeWarmGenericsForPod,
@@ -262,7 +264,9 @@ export class Min40TopUpService {
       powerGrydClientId: this.config.powerGrydClientId,
       pocEngagementClientIds: pocIds,
     });
-    if (!dryRun) this.state.replaceGenericSeats(seeded.seats);
+    // D292 — pick/getGenericSeat read wizard state. Always seed in
+    // memory so a dry run still assigns. Persist stays !dryRun (save).
+    this.state.replaceGenericSeats(seeded.seats);
     console.log(
       `[min40-topup] ledger seats=${seeded.seats.length} freeWarm=${freeWarmGenericCount(seeded.seats, now)} dryRun=${dryRun}`,
     );
@@ -813,18 +817,20 @@ export class Min40TopUpService {
   ): boolean {
     const seat = this.state.getGenericSeat(email);
     if (!seat) return false;
-    const pool = this.state.getPoolMailbox(email);
+    // D292 — ledger assignedClientId is source of truth. A leftover
+    // poolMailboxes.assignedClientId must not lock a free ledger seat.
     return genericEligibleForClientPod({
       clientId,
       targetPod,
       mailboxClientId: typeof account.client_id === "number" ? account.client_id : null,
-      assignedClientId: seat.assignedClientId ?? pool?.assignedClientId ?? null,
+      assignedClientId: seat.assignedClientId ?? null,
       assignedReason: seat.reason,
       releaseHistory: seat.releaseHistory,
       tags: account.tags,
       assignedPod: seat.assignedPod ?? null,
       excluded: seat.excluded,
       email,
+      isMarkerClientId: (id) => this.state.isMarkerClientId(id),
     });
   }
 
@@ -861,7 +867,6 @@ export class Min40TopUpService {
     clientId: number,
   ): boolean {
     const seat = this.state.getGenericSeat(email);
-    const pool = this.state.getPoolMailbox(email);
     return genericBlockedOnPowerGrydStaffing({
       account,
       email,
@@ -872,7 +877,9 @@ export class Min40TopUpService {
       allBrands: this.allClientBrands,
       mailboxClientId:
         typeof account.client_id === "number" ? account.client_id : null,
-      assignedClientId: seat?.assignedClientId ?? pool?.assignedClientId ?? null,
+      // D292 — leftover poolMailboxes.assignedClientId must not lock
+      // a ledger-free seat. Ledger assignedClientId is the owner.
+      assignedClientId: seat?.assignedClientId ?? null,
       assignedReason: seat?.reason ?? null,
       releaseHistory: seat?.releaseHistory,
       isMarkerClientId: (id) => this.state.isMarkerClientId(id),
@@ -887,15 +894,38 @@ export class Min40TopUpService {
     dryRun: boolean,
     coveringFor?: ReturnType<typeof linkCoveringFor>,
   ): Promise<void> {
-    const locked = lockedGenericPod({
-      tags: account.tags,
-      assignedPod: this.state.getGenericSeat(email)?.assignedPod,
-    });
+    const table = this.state.getGenericSeat(email);
+    const ledgerFree = table?.assignedClientId == null && table?.assignedPod == null;
+    const leftoverTag = lockedGenericPod({ tags: account.tags });
+    // D292 — leftover POD tags on a free ledger seat are stale (D286).
+    // Strip them and stamp the needed POD. Assigned seats still cannot
+    // move PODs (D230/D234).
+    const locked = ledgerFree
+      ? null
+      : lockedGenericPod({
+          tags: account.tags,
+          assignedPod: table?.assignedPod,
+        });
     if (locked != null && locked !== pod) {
       console.warn(
         `[min40] D234 refuse POD retag ${email} has=POD-${locked} want=POD-${pod}`,
       );
       return;
+    }
+    if (
+      ledgerFree &&
+      leftoverTag != null &&
+      leftoverTag !== pod &&
+      !dryRun &&
+      typeof account.id === "number" &&
+      this.smartlead.ensureTag &&
+      this.smartlead.removeTags
+    ) {
+      const tagA = await this.smartlead.ensureTag(genericPodTagName("A"), genericPodTagColor("A"));
+      const tagB = await this.smartlead.ensureTag(genericPodTagName("B"), genericPodTagColor("B"));
+      await this.smartlead.removeTags([account.id], [tagA.id, tagB.id]);
+      account.tags = stripMailboxPodTags(account.tags);
+      await sleep(WRITE_GAP_MS);
     }
     if (
       locked == null &&
@@ -1444,15 +1474,39 @@ export class Min40TopUpService {
         }
         await yieldEventLoop();
         if (skipGenerics) continue;
+        const askedNeed = need;
+        if (askedNeed > 1e-9) {
+          input.result.asked.push({
+            campaignId: clientActive[0]?.id ?? 0,
+            name: `${brand} POD-${pod}`,
+            shortBy: askedNeed,
+          });
+        }
         const rejected = new Set<string>();
+        const poolHasBothEsps = this.state.listGenericSeats().some((row) => {
+          if (!isFreeWarmLedgerSeat(row, input.now)) return false;
+          return row.provider === "GOOGLE";
+        }) && this.state.listGenericSeats().some((row) => {
+          if (!isFreeWarmLedgerSeat(row, input.now)) return false;
+          return row.provider === "MICROSOFT";
+        });
+        const neededEsp = espFillOrder(
+          espCounts,
+          floor,
+          Math.round(POD_ESP_MIX_MIN_FRACTION * 100),
+          poolHasBothEsps || (espCounts.GOOGLE > 0 && espCounts.MICROSOFT > 0),
+        );
         const ledgerPicks = pickFreeWarmGenericsForPod({
           seats: this.state.listGenericSeats(),
           need,
+          limit: 10_000,
+          preferProvider: neededEsp[0],
           alreadyPicked: selected,
           retirePendingDomains: retirePending,
           now: input.now,
         });
         const yieldPicked = createLoopYielder(MIN40_SEAT_YIELD_EVERY);
+        let rejectedWrongEsp = 0;
         for (const seat of ledgerPicks) {
           await yieldPicked();
           if (need <= 1e-9) break;
@@ -1467,8 +1521,26 @@ export class Min40TopUpService {
             rejected.add(key);
             continue;
           }
-          if (!isPoolGenericSeat(original, seat.email, this.config, this.state)) {
+          // D292 — ledger membership is enough. isPoolGenericSeat also
+          // required a poolMailboxes row / extraGenericDomains host and
+          // silently dropped every GENERIC-tag-only free seat.
+          if (!isGenericMailbox(original, seat.email, this.config, this.state)) {
             rejected.add(key);
+            continue;
+          }
+          const neededNow = espFillOrder(
+            espCounts,
+            floor,
+            Math.round(POD_ESP_MIX_MIN_FRACTION * 100),
+            poolHasBothEsps || (espCounts.GOOGLE > 0 && espCounts.MICROSOFT > 0),
+          );
+          const slot =
+            mailboxEspSlot(original) ??
+            (seat.provider === "GOOGLE" || seat.provider === "MICROSOFT"
+              ? seat.provider
+              : null);
+          if (neededNow.length === 1 && slot && slot !== neededNow[0]) {
+            rejectedWrongEsp += 1;
             continue;
           }
           if (this.powerGrydStaffingBlocked(original, seat.email, clientId)) {
@@ -1483,14 +1555,9 @@ export class Min40TopUpService {
             rejected.add(key);
             continue;
           }
-          const locked = lockedGenericPod({
-            tags: original.tags,
-            assignedPod: seat.assignedPod,
-          });
-          if (locked != null && locked !== pod) {
-            rejected.add(key);
-            continue;
-          }
+          // D292 — leftover Smartlead POD tags are not a lock on a
+          // ledger-free seat. genericMayTakePod / genericEligibleForClientPod
+          // own the one-client / one-POD rule (D230/D234).
           if (
             !this.genericMayTakePod(original, seat.email, clientId, pod)
           ) {
@@ -1582,6 +1649,11 @@ export class Min40TopUpService {
             input.result.errors.push(`${seat.email} POD ${pod}: ${message}`);
             break;
           }
+        }
+        if (askedNeed > 1e-9) {
+          console.log(
+            `[min40-topup] ${brand} POD-${pod} need=${askedNeed} picks=${ledgerPicks.length} assignedNow=${askedNeed - need} rejected=${rejected.size} wrongEsp=${rejectedWrongEsp}`,
+          );
         }
       }
     }

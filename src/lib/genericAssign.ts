@@ -48,6 +48,7 @@ export function genericEligibleForClientPod(input: {
   assignedPod?: GenericAssignedPod | null;
   excluded?: boolean;
   email?: string;
+  isMarkerClientId?: (id: number | null | undefined) => boolean;
 }): boolean {
   if (input.excluded) return false;
   if (input.email && isCornerstoneGenericDomain(input.email)) return false;
@@ -66,12 +67,21 @@ export function genericEligibleForClientPod(input: {
     mailboxClientId: input.mailboxClientId,
     assignedClientId: input.assignedClientId,
     assignedReason: input.assignedReason,
+    isMarkerClientId: input.isMarkerClientId,
   });
   if (owner != null && owner !== input.clientId) return false;
-  const pod = lockedGenericPod({
-    tags: input.tags,
-    assignedPod: input.assignedPod,
-  });
+  // D292 — leftover Smartlead POD-A/POD-B tags are stale only on a
+  // truly free seat (ledger assignedClientId blank AND no live named
+  // owner). Same-client assigned seats still cannot move PODs
+  // (D230/D234), even when assignedClientId was omitted from the
+  // caller and mailboxClientId is the owner.
+  const freeLedgerSeat = input.assignedClientId == null && owner == null;
+  const pod = freeLedgerSeat
+    ? input.assignedPod ?? null
+    : lockedGenericPod({
+        tags: input.tags,
+        assignedPod: input.assignedPod,
+      });
   if (pod != null && pod !== input.targetPod) return false;
   return true;
 }

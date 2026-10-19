@@ -13,10 +13,19 @@ export type CanonOpsSkipReason = "already-running" | "health-running";
 export function canonOpsSkipReason(opts: {
   healthLive: boolean;
   alreadyRunning: boolean;
+  /** D292 — hold/min40 lastOk older than cadence+grace. */
+  overdue?: boolean;
 }): CanonOpsSkipReason | undefined {
   if (opts.alreadyRunning) return "already-running";
-  if (opts.healthLive) return "health-running";
+  // A long or back-to-back health pass must not starve weekday
+  // hold-enforcement / min40-topup past 30 minutes (D292). Fresh
+  // ticks still yield to health (D267) and retry after it ends.
+  if (opts.healthLive && !opts.overdue) return "health-running";
   return undefined;
+}
+
+export function canonOpsOverdueDespiteHealthLog(): string {
+  return "[canon-ops] Health pass still running — starting overdue hold-enforcement/min40 anyway (D292)";
 }
 
 export function canonOpsSkipLog(reason: CanonOpsSkipReason): string {

@@ -88,7 +88,7 @@ describe("Min40TopUpService (D205)", () => {
     assert.equal(updates[0]?.fields.client_id, 542838);
     assert.match(String(updates[0]?.fields.signature), /Bolder Cyber Partners/);
     assert.equal(result.assigned.length, 1);
-    assert.equal(result.asked.length, 0);
+    assert.ok(result.asked.length > 0, "short PODs are recorded on asked (D292)");
     assert.equal(
       slackCalls.some((line) => /Allow generics/i.test(line)),
       false,
@@ -163,7 +163,7 @@ describe("Min40TopUpService (D205)", () => {
     });
     assert.equal(attached.length, 1);
     assert.deepEqual(attached[0], [44, [900]]);
-    assert.equal(result.asked.length, 0);
+    assert.ok(result.asked.length > 0, "short PODs are recorded on asked (D292)");
     assert.equal(
       state.listIsolationActions().filter((row) => row.kind === "generic_backfill").length,
       0,
@@ -244,7 +244,7 @@ describe("Min40TopUpService (D205)", () => {
       result.assigned.every((row) => row.campaignId === 0),
       "off-week generics stay assigned and unlinked",
     );
-    assert.equal(result.asked.length, 0);
+    assert.ok(result.asked.length > 0, "short PODs are recorded on asked (D292)");
   });
 
   it("D268: TechEvo named-at-30 does not take generics; a 20-named POD stops at 40", async () => {
@@ -346,7 +346,7 @@ describe("Min40TopUpService (D205)", () => {
     );
     assert.ok(attached.length > 0, "short Other Co POD must take a thin top-up");
     assert.ok(attached.length <= 20, `top-up must stop at the 40 floor, got ${attached.length}`);
-    assert.equal(result.asked.length, 0);
+    assert.ok(result.asked.length > 0, "short PODs are recorded on asked (D292)");
   });
 
   it("never retags named seats or a generic across PODs", async () => {
@@ -504,7 +504,7 @@ describe("Min40TopUpService (D205)", () => {
       attached.some((row) => row[1].includes(801)),
       "PowerGRYD same-client generic may share across ACTIVE campaigns (D285)",
     );
-    assert.equal(result.asked.length, 0);
+    assert.ok(result.asked.length > 0, "short PODs are recorded on asked (D292)");
     assert.equal(
       slackCalls.some((line) => /Allow generics/.test(line)),
       false,
@@ -1683,10 +1683,9 @@ describe("Min40TopUpService (D205)", () => {
 
     assert.equal(campaigns.length, 360);
     assert.ok(accounts.length >= 890);
-    assert.equal(result.assigned.length, 0);
     assert.ok(
       ticks > 0,
-      `event loop must breathe during min40 (ticks=${ticks} elapsed=${elapsed}ms)`,
+      `event loop must breathe during min40 (ticks=${ticks} elapsed=${elapsed}ms assigned=${result.assigned.length})`,
     );
     assert.ok(
       maxGap < 500,
@@ -2407,5 +2406,158 @@ describe("Min40TopUpService (D205)", () => {
       "marekbrooks must not be re-linked to #4005226",
     );
     assert.ok(state.getGenericSeat("marekbrooks@meetconnectbox.com"));
+  });
+
+  it("D292: leftover marker/POD/sig/pool owner still rotate into under-floor PODs except Insight", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.setMarkerClientIds({ genericId: 900001 });
+    const now = new Date("2026-10-19T19:53:00.000Z");
+    const NUTTER = 419001;
+    const clients = [
+      { id: 418274, name: "Randy Haba", logo: "Parlay Tech", named: { A: 40, B: 39 }, domain: "parlaytech.com" },
+      { id: 521881, name: "Corey Tapper", logo: "TechEvolution", named: { A: 30, B: 29 }, domain: "techevolution.com" },
+      { id: NUTTER, name: "Roger Nutter", logo: "Nutter Group", named: { A: 40, B: 39 }, domain: "nuttergroup.com" },
+      { id: 574020, name: "Myles McIntosh", logo: "Emcor", named: { A: 39, B: 39 }, domain: "emcorservices.com" },
+      { id: 582890, name: "Insight", logo: "Insight", named: { A: 15, B: 15 }, domain: "joshuaosbornco.info" },
+      { id: 592842, name: "PowerGRYD", logo: "PowerGRYD", named: { A: 0, B: 0 }, domain: "powergryd.com" },
+    ] as const;
+    const accounts: Array<Record<string, unknown>> = [];
+    const campaigns: Array<{ id: number; name: string; status: string; client_id: number }> = [];
+    let accountId = 100;
+    let campaignId = 10;
+    for (const client of clients) {
+      campaigns.push({
+        id: campaignId,
+        name: `${client.logo} Live`,
+        status: "ACTIVE",
+        client_id: client.id,
+      });
+      const cid = campaignId;
+      campaignId += 1;
+      for (const pod of ["A", "B"] as const) {
+        const n = client.named[pod];
+        for (let i = 0; i < n; i += 1) {
+          const insight = client.id === 582890;
+          accounts.push({
+            id: accountId,
+            from_email: insight
+              ? `josh${pod}${i}@joshuaosbornco.info`
+              : `n${pod}${i}@${client.domain}`,
+            from_name: insight ? "Joshua Osborn" : "Named Seat",
+            client_id: client.id,
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: `POD-${pod}` }],
+            campaign_ids: [cid],
+            created_at: "2026-01-01T00:00:00.000Z",
+          });
+          accountId += 1;
+        }
+      }
+    }
+    for (let i = 0; i < 4; i += 1) {
+      accounts.push({
+        id: 800 + i,
+        from_email: `pg${i}@powergryd.com`,
+        from_name: "PowerGRYD Hire",
+        client_id: 592842,
+        type: "GMAIL",
+        is_smtp_success: true,
+        is_imap_success: true,
+        tags: [{ tag_name: i % 2 === 0 ? "POD-A" : "POD-B" }],
+        campaign_ids: [],
+        created_at: "2026-10-16T00:00:00.000Z",
+      });
+    }
+    const free = [
+      "ada@crosslaunchco.com",
+      "bev@crosslaunchco.com",
+      "cal@crossscaleco.com",
+      "dee@crossscaleco.com",
+      "eli@crosslaunchco.com",
+      "fay@crosslaunchco.com",
+      "gus@crossscaleco.com",
+      "hia@crossscaleco.com",
+      "ian@crosslaunchco.com",
+      "joy@crosslaunchco.com",
+      "kip@crossscaleco.com",
+      "lia@crossscaleco.com",
+    ];
+    free.forEach((email, i) => {
+      const id = 900 + i;
+      state.upsertPoolMailbox({
+        email,
+        domain: email.split("@")[1]!,
+        platform: "GOOGLE",
+        smartleadAccountId: id,
+        firstName: email.split("@")[0]!,
+        lastName: "Pool",
+        status: "assigned",
+        assignedClientId: 548611,
+        warmedAt,
+      });
+      accounts.push({
+        id,
+        from_email: email,
+        from_name: `${email.split("@")[0]} Pool`,
+        signature: `${email.split("@")[0]} Pool\nTechEvolution`,
+        client_id: 900001,
+        type: "GMAIL",
+        is_smtp_success: true,
+        is_imap_success: true,
+        tags: [{ tag_name: "GENERIC" }, { tag_name: i % 2 === 0 ? "POD-A" : "POD-B" }],
+        campaign_ids: [],
+        created_at: "2026-01-01T00:00:00.000Z",
+        warmup_details: { status: "ACTIVE" },
+      });
+    });
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+          updates.push({ id, fields });
+        },
+        removeEmailAccountsFromCampaign: async () => undefined,
+        ensureTag: async (name: string) => ({ id: name === "POD-A" ? 1 : 2, name }),
+        assignTags: async () => undefined,
+        removeTags: async () => undefined,
+      } as unknown as SmartleadClient,
+      { send: async () => undefined, notifyIsolationAction: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now,
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: clients.map((row) => ({ id: row.id, name: row.name, logo: row.logo })),
+        campaigns,
+        accounts,
+      },
+    });
+    const assignedClients = new Set(result.assigned.map((row) => row.clientId));
+    assert.equal(result.asked.length > 0, true, `should attempt POD fills: asked=${result.asked.length}`);
+    assert.ok(assignedClients.has(418274), `Parlay: ${JSON.stringify(result.assigned)}`);
+    assert.ok(assignedClients.has(521881), `TechEvo: ${JSON.stringify(result.assigned)}`);
+    assert.ok(assignedClients.has(NUTTER), `Nutter: ${JSON.stringify(result.assigned)}`);
+    assert.ok(assignedClients.has(574020), `Emcor: ${JSON.stringify(result.assigned)}`);
+    assert.ok(assignedClients.has(592842), `PowerGRYD: ${JSON.stringify(result.assigned)}`);
+    assert.equal(
+      assignedClients.has(582890),
+      false,
+      `Insight must not receive generics: ${JSON.stringify(result.assigned)}`,
+    );
+    const pgUpdates = updates.filter((row) => row.fields.client_id === 592842);
+    assert.ok(
+      pgUpdates.length > 0 && pgUpdates.every((row) => /PowerGRYD/i.test(String(row.fields.signature ?? ""))),
+      `PowerGRYD assigns must rewrite leftover TechEvolution signatures: ${JSON.stringify(pgUpdates)}`,
+    );
   });
 });

@@ -343,9 +343,18 @@ export function pickFreeWarmGenericsForPod(input: {
   alreadyPicked?: Iterable<string>;
   retirePendingDomains?: Iterable<string>;
   now?: Date;
+  /**
+   * D292 — return more than `need` so ESP mix can skip a wrong-family
+   * seat without starving the POD. Default = need.
+   */
+  limit?: number;
+  preferProvider?: "GOOGLE" | "MICROSOFT";
 }): GenericSeatRecord[] {
   const need = Number(input.need);
   if (!Number.isFinite(need) || need <= 1e-9) return [];
+  const limitRaw = Number(input.limit);
+  const limit =
+    Number.isFinite(limitRaw) && limitRaw > 0 ? Math.max(need, limitRaw) : need;
   const picked = new Set(
     [...(input.alreadyPicked ?? [])].map((email) => genericSeatKey(email)),
   );
@@ -355,10 +364,16 @@ export function pickFreeWarmGenericsForPod(input: {
     ),
   );
   const now = input.now ?? new Date();
+  const prefer = input.preferProvider;
   const free = input.seats.filter(
     (seat) => isFreeWarmLedgerSeat(seat, now) && !picked.has(genericSeatKey(seat.email)),
   );
   free.sort((a, b) => {
+    if (prefer) {
+      const aPref = a.provider === prefer ? 0 : 1;
+      const bPref = b.provider === prefer ? 0 : 1;
+      if (aPref !== bPref) return aPref - bPref;
+    }
     const aRetire = retire.has(emailDomainOf(a.email) ?? "") ? 1 : 0;
     const bRetire = retire.has(emailDomainOf(b.email) ?? "") ? 1 : 0;
     if (aRetire !== bRetire) return aRetire - bRetire;
@@ -367,7 +382,7 @@ export function pickFreeWarmGenericsForPod(input: {
   const out: GenericSeatRecord[] = [];
   let placed = 0;
   for (const seat of free) {
-    if (placed + 1e-9 >= need) break;
+    if (placed + 1e-9 >= limit) break;
     out.push(seat);
     placed += seatStaffableWeight(seat);
   }

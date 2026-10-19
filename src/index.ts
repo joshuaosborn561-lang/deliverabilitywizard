@@ -79,6 +79,7 @@ import { SpendDigestService } from "./services/spendDigest.js";
 import { InboxkitLicenseSweepService } from "./services/inboxkitLicenseSweep.js";
 import { canonOpsIdleReason, chicagoWallClock, weekendWriterIdleReason } from "./lib/canonOpsHours.js";
 import {
+  canonOpsOverdueDespiteHealthLog,
   canonOpsShouldRetryAfterHealth,
   canonOpsSkipLog,
   canonOpsSkipReason,
@@ -1303,19 +1304,33 @@ async function main(): Promise<void> {
   const runCanonOps = async (
     opts: { force?: boolean; retry?: boolean } = {},
   ): Promise<unknown> => {
+    const min40LastOk = state.listStageHealth()["min40-topup"]?.lastOkAt ?? null;
+    const holdLastOk =
+      state.listStageHealth()["hold-enforcement"]?.lastOkAt ?? null;
+    const overdue =
+      canonOpsTickOverdue({ lastOkAt: min40LastOk }) ||
+      canonOpsTickOverdue({ lastOkAt: holdLastOk });
+    const healthLive = healthLock.isLive();
     const skip = opts.force
       ? undefined
       : canonOpsSkipReason({
-          healthLive: !opts.retry && healthLock.isLive(),
+          healthLive: !opts.retry && healthLive,
           alreadyRunning: Boolean(canonOpsInFlight && canonOpsLock.isLive()),
+          overdue,
         });
     if (skip) {
       console.log(canonOpsSkipLog(skip));
       if (canonOpsShouldRetryAfterHealth(skip)) pendingCanonOpsRetry = true;
       return { skipped: true as const, reason: skip };
     }
+    const shareLimiter = healthLive && overdue && !opts.force;
+    if (shareLimiter) {
+      console.log(canonOpsOverdueDespiteHealthLog());
+      smartlead.setExclusiveHealth(false);
+    }
     const began = beginPass(canonOpsLock, canonOpsInFlight, "canon-ops");
     if (began.skipped) {
+      if (shareLimiter && healthLock.isLive()) smartlead.setExclusiveHealth(true);
       console.log(canonOpsSkipLog("already-running"));
       return { skipped: true as const, reason: "already-running" };
     }
@@ -1371,6 +1386,8 @@ async function main(): Promise<void> {
     });
     canonOpsInFlight = run.finally(() => {
       if (releasePass(canonOpsLock, token)) canonOpsInFlight = null;
+      // D292 — restore exclusive health only while that pass is still live.
+      if (shareLimiter && healthLock.isLive()) smartlead.setExclusiveHealth(true);
     });
     return run;
   };

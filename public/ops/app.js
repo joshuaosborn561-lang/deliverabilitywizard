@@ -4,6 +4,8 @@ const state = {
   dashboard: null,
   placementRows: [],
   placementSort: { key: "createdAt", direction: "desc" },
+  placementLoading: null,
+  placementPollSince: 0,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -289,17 +291,48 @@ function renderPlacement() {
 }
 
 async function loadPlacement(force = false, pass = 0) {
+  if (pass === 0) {
+    if (state.placementLoading) return state.placementLoading;
+    state.placementPollSince = Date.now();
+    const run = loadPlacementPass(force, 0).finally(() => {
+      state.placementLoading = null;
+    });
+    state.placementLoading = run;
+    return run;
+  }
+  return loadPlacementPass(force, pass);
+}
+
+async function loadPlacementPass(force = false, pass = 0) {
   const banner = $("#placement-errors");
   banner.textContent = "";
   banner.className = "error";
   const data = await api(`/placements${force ? "?force=1" : ""}`);
   state.placementRows = data.rows || [];
   const stamp = formatDate(data.generatedAt);
-  $("#placement-updated").textContent = `${data.stale ? "Last snapshot" : "Updated"} ${stamp} · ${state.placementRows.length} tests`;
+  const morningLabel = data.morningYmd ? `Morning of ${data.morningYmd}` : "";
+  $("#placement-updated").textContent = morningLabel
+    ? `${morningLabel} · ${stamp} · ${state.placementRows.length} tests`
+    : `${data.stale ? "Last snapshot" : "Updated"} ${stamp} · ${state.placementRows.length} tests`;
   const errors = Array.isArray(data.errors) ? data.errors.filter(Boolean) : [];
   if (data.rateLimited && state.placementRows.length) {
     banner.textContent =
       "SmartDelivery rate-limited this pass. The remaining tests update in a minute.";
+    banner.className = "muted";
+  } else if (data.pending && data.morningPending) {
+    banner.textContent = data.morningYmd
+      ? `Loading the morning placement run for ${data.morningYmd}. Earlier results stay hidden.`
+      : "Loading this morning's placement run. Earlier results stay hidden.";
+    banner.className = "muted";
+  } else if (data.pending) {
+    banner.textContent = state.placementRows.length
+      ? "Still loading placement tests. This page will keep updating."
+      : "Loading placement tests…";
+    banner.className = "muted";
+  } else if (data.morningPending) {
+    banner.textContent = data.morningYmd
+      ? `The morning run for ${data.morningYmd} is not in yet. Earlier results are not shown.`
+      : "This morning's placement run is not in yet. Earlier results are not shown.";
     banner.className = "muted";
   } else if (data.stale && state.placementRows.length) {
     banner.textContent =
@@ -318,9 +351,12 @@ async function loadPlacement(force = false, pass = 0) {
     return loadPlacement(true, pass + 1);
   }
   // The catalog walk is a couple of pages per request so a 429 does not wipe
-  // the offset. Keep going while live campaigns are still missing.
-  if (pass < 30 && data.complete === false && !data.stale) {
-    await new Promise((resolve) => setTimeout(resolve, 400));
+  // the offset. Keep going while live campaigns are still missing, and while
+  // a pass stopped early so the Railway proxy would not 502 the tab.
+  const keepGoing =
+    data.pending || (data.complete === false && !data.stale);
+  if (keepGoing && Date.now() - state.placementPollSince < 4 * 60 * 1000) {
+    await new Promise((resolve) => setTimeout(resolve, data.pending ? 3_000 : 400));
     return loadPlacement(true, pass + 1);
   }
 }

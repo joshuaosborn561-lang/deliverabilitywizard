@@ -140,7 +140,11 @@ describe("D219 tenant TERRL hold state", () => {
     const filePath = `/tmp/dw-terl-store-${process.pid}-${Date.now()}.json`;
     const state = new StateStore(filePath);
     await state.load();
-    const now = new Date("2026-10-03T15:00:00.000Z");
+    // The paused-day ledger keeps 14 days. A fixed October date falls
+    // out of that window and the reload assertion starts failing.
+    const now = new Date();
+    now.setUTCHours(15, 0, 0, 0);
+    const ymd = now.toISOString().slice(0, 10);
     const record = state.ensureTenantTerlHold({
       tenant: "tidalstackco.com",
       domains: ["tidalstackco.com"],
@@ -151,7 +155,7 @@ describe("D219 tenant TERRL hold state", () => {
     assert.equal(state.isTenantTerlHoldAccount(9, now), true);
     assert.equal(state.isTenantTerlHoldDomain("tidalstackco.com", now), true);
     state.recordTerlPausedInboxes({
-      ymd: "2026-10-03",
+      ymd,
       inboxes: [
         {
           accountId: 9,
@@ -170,8 +174,8 @@ describe("D219 tenant TERRL hold state", () => {
     const held = reloaded.getTenantTerlHold("tidalstackco.com");
     assert.equal(held?.accountIds.includes(9), true);
     assert.equal(reloaded.isTenantTerlHoldAccount(10, now), true);
-    assert.equal(reloaded.listTerlPausedInboxes("2026-10-03").length, 1);
-    const after = new Date("2026-10-04T16:00:00.000Z");
+    assert.equal(reloaded.listTerlPausedInboxes(ymd).length, 1);
+    const after = new Date(now.getTime() + 25 * 60 * 60 * 1000);
     assert.equal(reloaded.isTenantTerlHoldAccount(9, after), false);
     assert.ok(reloaded.getTenantTerlHold("tidalstackco.com"));
   });

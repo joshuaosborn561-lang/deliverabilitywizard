@@ -66,10 +66,10 @@ describe("D230 generic assign lock", () => {
     );
   });
 
-  it("D283: Onboarding-freed PowerGRYD generics are not pool supply", () => {
+  it("D283: Onboarding-freed PowerGRYD generics must not flip back onto 592842", () => {
     assert.equal(
       genericEligibleForClientPod({
-        clientId: 548611,
+        clientId: 592842,
         targetPod: "A",
         mailboxClientId: null,
         assignedClientId: 592842,
@@ -77,6 +77,42 @@ describe("D230 generic assign lock", () => {
         tags: [{ tag_name: "GENERIC" }],
       }),
       false,
+    );
+    assert.equal(
+      genericEligibleForClientPod({
+        clientId: 592842,
+        targetPod: "A",
+        mailboxClientId: null,
+        assignedClientId: null,
+        releaseHistory: [{ reason: "onboarding_freed_powergryd" }],
+        tags: [{ tag_name: "GENERIC" }],
+      }),
+      false,
+    );
+  });
+
+  it("D290: leftover mailbox client_id and Onboarding-freed seats may fill other named PODs", () => {
+    assert.equal(
+      genericEligibleForClientPod({
+        clientId: 574020,
+        targetPod: "B",
+        mailboxClientId: 548611,
+        assignedClientId: null,
+        tags: [{ tag_name: "GENERIC" }],
+      }),
+      true,
+    );
+    assert.equal(
+      genericEligibleForClientPod({
+        clientId: 574020,
+        targetPod: "A",
+        mailboxClientId: null,
+        assignedClientId: null,
+        releaseHistory: [{ reason: "onboarding_freed_powergryd" }],
+        tags: [{ tag_name: "GENERIC" }],
+        allowFreedPowerGrydSupply: true,
+      }),
+      true,
     );
     assert.equal(
       genericEligibleForClientPod({
@@ -88,15 +124,28 @@ describe("D230 generic assign lock", () => {
         tags: [{ tag_name: "GENERIC" }],
       }),
       false,
+      "one-client / Goliath dump still blocked without the min40 flag",
+    );
+    assert.equal(
+      genericEligibleForClientPod({
+        clientId: 582890,
+        targetPod: "A",
+        mailboxClientId: null,
+        assignedClientId: null,
+        tags: [{ tag_name: "GENERIC" }],
+      }),
+      false,
+      "Insight still never receives generics",
     );
   });
 
-  it("rejects another client's generic and the other POD", () => {
+  it("rejects a live-assigned other-client generic and the other POD", () => {
     assert.equal(
       genericEligibleForClientPod({
         clientId: 77,
         targetPod: "A",
         mailboxClientId: 88,
+        assignedClientId: 88,
         tags: [{ tag_name: "GENERIC" }],
       }),
       false,

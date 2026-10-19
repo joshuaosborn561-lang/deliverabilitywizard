@@ -45,7 +45,7 @@ export function seatWasOnboardingFreedPowerGryd(
   );
 }
 
-/** D283 — Onboarding-freed generics are idle, not pool supply. */
+/** D283 / D290 — Onboarding-freed generics must not flip back onto PowerGRYD. They are free-pool supply for every other named client. */
 export function isFreedPowerGrydAttachBlocked(input: {
   mailboxClientId?: number | null;
   assignedClientId?: number | null;

@@ -279,12 +279,13 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D271 | Live — stringify/index yield amended by D272 | Freeze/restart follow-up after D270: stall logs name the in-flight stage plus sampled stack / async-hooks / perf_hooks attribution; state.json saves stream to disk without joining the blob; load parses off-thread in yielded key/slice chunks; OK Smartlead bodies always stream in 64KB slices; fat campaigns/health-metrics/account JSON stays off-thread; account-by-campaign index yields. Watchdog thresholds unchanged. |
 | D272 | Live | Freeze/restart follow-up after D271: stringify time-slices via setTimeout(0) and emits flushed slices (saveHot included); indexAccountsByCampaign yields on inner campaign ids; campaign-audit pauses CPU while health is live. Watchdog thresholds unchanged. |
 | D282 | Live — understaffed/min40 silence superseded by D285; no-generics stays | Insight (Smartlead client 582890) campaigns may only send from Josh Osborn inboxes on SalesGlider or Insight domains; no generics / other named senders; Josh-only seats count toward the POD floor; `insight_non_josh_sender` flags existing violations; POD shortfalls still page Josh daily (D285) |
-| D283 | Live — never-generics onto PowerGRYD superseded by D285; freed-seat ownership stays | Onboarding-freed Smartlead `client_id=null` is authoritative over a stale PowerGRYD / `powergryd_dedicated` pool row (one-time cleanup of those generic-domain seats); those freed seats must not flip back onto 592842. CornerStone 574088 and unexpired HOLD-UNTIL never attach (`addEmailAccountsToCampaign` hard-reject, same shape as D282); leftover HOLD-UNTIL still does not pull; never START / unpause STOPPED. PowerGRYD otherwise takes generics (D285). |
+| D283 | Live — never-generics onto PowerGRYD superseded by D285; freed-seat idle-not-supply amended by D290 | Onboarding-freed Smartlead `client_id=null` is authoritative over a stale PowerGRYD / `powergryd_dedicated` pool row (one-time cleanup of those generic-domain seats); those freed seats must not flip back onto 592842. CornerStone 574088 and unexpired HOLD-UNTIL never attach (`addEmailAccountsToCampaign` hard-reject, same shape as D282); leftover HOLD-UNTIL still does not pull; never START / unpause STOPPED. PowerGRYD otherwise takes generics (D285). |
 | D285 | Live — Generics Ledger fields / per-seat swap / new findings added by D286 | Min-40 is per POD owned inventory, never per campaign. POD A and POD B each hold >=40 warm seats the client owns (TechEvo 30). Borrowed seats never count. When under, rotate free warm generics in; never skip the off-week POD. Insight 582890 is the only client that never gets generics; alert Josh daily while under. PowerGRYD takes generics. LOCKED core canon — Josh-only; PRs that change the locked section must never auto-merge. |
 | D286 | Live | Generics Ledger: one row per generic (email, ESP, warmup on/off, assigned client, POD, assigned_at, covering_for). All generics warm continuously; seeder re-enables warmup the same day. Assigned only to fill one client's POD to 40 (TechEvo 30), one client + one POD, never moves PODs. Branded-preferred per-seat swap via covering_for + `returnGenericToUntaggedPool`; headcount is fallback for unlinked seats. No assign/release outside the ledger. Insight never receives generics; every other client including PowerGRYD does. CornerStone-domain inboxes are never generics. Findings `generic_outside_ledger` / `generic_not_warming` / `generic_on_insight` / `pod_short_no_free_generic` page Josh the same day. Optional upsert-only `wizard.generic_ledger` Supabase mirror. |
-| D287 | Live — saveHot maps / Insight unlinked count amended by D288 | Old-wizard fix: ledger assigns free warm generics into every under-floor POD (A and B) with covering_for; retire-pending domains last; CornerStone never; Insight still no generics. Owned-seat count includes Insight Josh seats (even SL 345263), PowerGRYD dedicated generics without a POD tag, and Peterson named-domain fallback. Peterson under-floor alerts suppressed (winding down). marekbrooks@meetconnectbox.com stays in the ledger and never re-links to PowerGRYD #4005226. isolation-buy-resume yields and skips idle full-state stringify. 0% canary-copy scores start isolation within 30 min; isolation never hold-pauses. Never START / PAUSE / touch STOPPED; never buy. LOCKED section unchanged. |
-| D288 | Live — min40 covering/owned-count yield amended by D289 | Old-wizard fix: `saveHot` sidecar is stamps + goneIds + pool goneEmails only (never isolation score/suspect/canary maps); overlapping saveHot coalesces; nothing stringifies big state inside per-seat loops. Insight Josh seats count for Insight even when unlinked / leftover on SalesGlider 345263. Insight still gets no generics and a daily Josh alert. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
+| D287 | Live — saveHot maps / Insight unlinked count amended by D288; ledger assign leftover-owner gap amended by D290 | Old-wizard fix: ledger assigns free warm generics into every under-floor POD (A and B) with covering_for; retire-pending domains last; CornerStone never; Insight still no generics. Owned-seat count includes Insight Josh seats (even SL 345263), PowerGRYD dedicated generics without a POD tag, and Peterson named-domain fallback. Peterson under-floor alerts suppressed (winding down). marekbrooks@meetconnectbox.com stays in the ledger and never re-links to PowerGRYD #4005226. isolation-buy-resume yields and skips idle full-state stringify. 0% canary-copy scores start isolation within 30 min; isolation never hold-pauses. Never START / PAUSE / touch STOPPED; never buy. LOCKED section unchanged. |
+| D288 | Live — min40 covering/owned-count yield amended by D289; Insight from-name/domain matcher amended by D290 | Old-wizard fix: `saveHot` sidecar is stamps + goneIds + pool goneEmails only (never isolation score/suspect/canary maps); overlapping saveHot coalesces; nothing stringifies big state inside per-seat loops. Insight Josh seats count for Insight even when unlinked / leftover on SalesGlider 345263. Insight still gets no generics and a daily Josh alert. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
 | D289 | Live | Old-wizard fix: min40 owned-count, covering_for relink, and seat-index walks time-slice so a 514×1690 fleet pass cannot pin the event loop 6–18s after Smartlead pages stream to disk. Watchdog 3× ≥3s / 120s stays. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
+| D290 | Live | Old-wizard fix: min40 ledger rotation actually assigns free warm generics into under-floor non-Insight PODs (leftover SL client_id / pool owner is not a lock; Onboarding-freed seats are pool supply except back onto PowerGRYD; in-memory seed always lands before pick; Supabase skip ≠ empty ledger). Insight owned-count accepts production `Joshua Osborn` on `joshuaosborn*` / `joshosborn*` / `salesglider*`. Insight still no generics. CornerStone never. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
 
 ---
 
@@ -10359,6 +10360,71 @@ the LOCKED text.
 when the count cadence never fires. `src/lib/podOwnedInventory.ts`
 `countOwnedClientPods` is async and named `scan:countOwnedClientPods`.
 `src/guards/lockedCanon.test.ts` LOCKED section unchanged.
+
+---
+
+## D290 — Ledger rotation actually assigns; Insight Joshua seats count
+
+**Date.** 2026-10-19 (Josh).
+
+**Decision.** After D289, min40 completed (`lastOk` 18:53:36Z) but
+assigned no generics and Insight owned stayed 0. Live counts:
+EMCOR A 38/40, EMCOR B 28/40, Nutter B 28/40, TechEvo B 25/30,
+Parlay B 39/40, Insight A/B 0/40. Fix the old wizard on main.
+Do not change the LOCKED canon section. Never START, pause, or
+touch STOPPED. Never buy. Never use CornerStone inboxes. Insight
+still gets no generics.
+
+1. **Free-warm pick is leftover-owner blind.** Seed no longer
+   copies leftover Smartlead `client_id` (or a stale pool
+   `assignedClientId`) onto a generic that sits on no live
+   named-client campaign — those seats are the free pool.
+   `fillShortPods` uses the ledger `assignedClientId` as the
+   lock; a leftover pool owner must not bind the seat to that
+   old client. Onboarding-freed PowerGRYD seats stay blocked
+   from flipping back onto 592842 and become free-pool supply
+   for every other named client. CornerStone never. Insight
+   never. Dry-run still seeds the in-memory ledger before pick;
+   a skipped Supabase `wizard.generic_ledger` upsert is
+   write-only and does not empty the ledger.
+2. **Insight owned-count matches production seats.**
+   `isInsightJoshAllowedSender` accepts `Josh Osborn` and
+   `Joshua Osborn` on `salesglider*` / `joshosborn*` /
+   `joshuaosborn*` / `insight*` domains. D288's matcher
+   required exact `Josh Osborn` and substring `joshosborn`,
+   so 85 live `Joshua Osborn` @ `joshuaosbornco.info` /
+   `joshuaosbornsales.info` seats on client 582890 counted 0.
+
+**Why.** D287 switched named-client fill from
+`poolMailboxes status=available` to `pickFreeWarmGenericsForPod`
+(`assignedClientId == null`). Seed then re-owned every leftover
+Smartlead `client_id`, `genericMayTakePod` fell back to the pool
+owner, and D283 `isFreedPowerGrydAttachBlocked` refused every
+target including EMCOR / Nutter / TechEvo / Parlay — so the 44
+free warm generics sat unused. Insight 0 was the from-name /
+domain matcher, not unlinked membership. Locked POD-40 already
+said rotate free warm generics in (Insight: no generics).
+
+**Rejected.** Changing the LOCKED section. Giving Insight
+generics. Starting / pausing / touching STOPPED. Buying
+anything. Using CornerStone inboxes. Touching v2.
+
+**Supersedes / amends.** Amends D287 ledger assign (leftover
+owner is not a lock; seed always lands in memory). Amends D283
+(Onboarding-freed seats are pool supply except back onto
+PowerGRYD). Amends D288 Insight matcher (`Joshua` +
+`joshuaosborn*`). Does not reverse D40, D4, D122, D228, D234,
+D256, D282 no-generics, D285 POD-40, or the LOCKED text.
+
+**Guards.** `src/services/min40TopUp.test.ts` leftover SL
+client_id + Onboarding-freed assign to EMCOR, never Insight;
+dry-run still reports the assign. `src/lib/genericPoolCanon.test.ts`
+leftover client_id with no live campaigns is free.
+`src/lib/genericAssign.test.ts` leftover mailbox / freed seats
+may take EMCOR, not PowerGRYD, not Insight.
+`src/lib/podOwnedInventory.test.ts` + `src/lib/insightCampaigns.test.ts`
+Joshua Osborn @ joshuaosborn* counts. `src/guards/lockedCanon.test.ts`
+LOCKED section unchanged.
 
 ---
 

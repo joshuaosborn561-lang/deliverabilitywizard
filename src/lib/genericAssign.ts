@@ -8,6 +8,7 @@
 import { preferredGenericOwnerId } from "./dedicatedGeneric.js";
 import type { GenericAssignedPod, GenericSeatRecord } from "./genericPool.js";
 import { podFromMailboxTags } from "./genericPool.js";
+import { isPowerGrydClientId } from "./namedClientIds.js";
 import { isFreedPowerGrydAttachBlocked } from "./powerGrydFreedCleanup.js";
 import { isCornerstoneGenericDomain, isInsightClientId } from "./genericLedger.js";
 
@@ -48,6 +49,12 @@ export function genericEligibleForClientPod(input: {
   assignedPod?: GenericAssignedPod | null;
   excluded?: boolean;
   email?: string;
+  /**
+   * D290 — min40 named-client POD fill may use Onboarding-freed
+   * seats as free-pool supply. Default stays D283 (not Goliath /
+   * one-client / POC supply). Never onto PowerGRYD.
+   */
+  allowFreedPowerGrydSupply?: boolean;
 }): boolean {
   if (input.excluded) return false;
   if (input.email && isCornerstoneGenericDomain(input.email)) return false;
@@ -60,14 +67,22 @@ export function genericEligibleForClientPod(input: {
       releaseHistory: input.releaseHistory,
     })
   ) {
-    return false;
+    if (!input.allowFreedPowerGrydSupply || isPowerGrydClientId(input.clientId)) {
+      return false;
+    }
   }
   const owner = preferredGenericOwnerId({
     mailboxClientId: input.mailboxClientId,
     assignedClientId: input.assignedClientId,
     assignedReason: input.assignedReason,
   });
-  if (owner != null && owner !== input.clientId) return false;
+  if (owner != null && owner !== input.clientId) {
+    // D290 — leftover Smartlead client_id on a free ledger seat is
+    // not a one-client lock. Live assignments still bind.
+    const leftoverMailboxOnly =
+      input.assignedClientId == null && input.mailboxClientId === owner;
+    if (!leftoverMailboxOnly) return false;
+  }
   const pod = lockedGenericPod({
     tags: input.tags,
     assignedPod: input.assignedPod,

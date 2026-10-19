@@ -225,6 +225,63 @@ describe("podOwnedInventory (D285)", () => {
     assert.equal(podB?.shortBy, 30);
   });
 
+  it("D290: production Joshua Osborn @ joshuaosborn* on Insight 582890 counts", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const config = loadConfig({});
+    const joshua = namedSeat({
+      id: 11,
+      email: "joshua@joshuaosbornco.info",
+      clientId: INSIGHT_CLIENT_ID,
+      pod: "A",
+      campaignIds: [3921647],
+      fromName: "Joshua Osborn",
+    });
+    const sales = namedSeat({
+      id: 12,
+      email: "joshua@joshuaosbornsales.info",
+      clientId: INSIGHT_CLIENT_ID,
+      pod: "B",
+      campaignIds: [],
+      fromName: "Joshua Osborn",
+    });
+    assert.equal(
+      ownedNamedClientIdForSeat({
+        account: joshua,
+        email: joshua.from_email,
+        campaignIds: [3921647],
+        campaignById: new Map([
+          [3921647, { id: 3921647, client_id: INSIGHT_CLIENT_ID, name: "Insight A" }],
+        ]),
+      }),
+      INSIGHT_CLIENT_ID,
+    );
+    const rows = await countOwnedClientPods({
+      accounts: [joshua, sales],
+      campaigns: [
+        {
+          id: 3921647,
+          name: "Insight Consolidation Gateway SEG",
+          status: "ACTIVE",
+          client_id: INSIGHT_CLIENT_ID,
+        },
+      ],
+      config,
+      state,
+      clientIds: [INSIGHT_CLIENT_ID],
+    });
+    const insightA = rows.find(
+      (row) => row.clientId === INSIGHT_CLIENT_ID && row.pod === "A",
+    );
+    const insightB = rows.find(
+      (row) => row.clientId === INSIGHT_CLIENT_ID && row.pod === "B",
+    );
+    assert.equal(insightA?.named, 1);
+    assert.equal(insightA?.owned, 1);
+    assert.equal(insightB?.named, 1);
+    assert.equal(insightB?.owned, 1);
+  });
+
   it("D288: Insight Josh seats with SalesGlider client_id count even when unlinked", async () => {
     const state = new StateStore(stateFile());
     await state.load();

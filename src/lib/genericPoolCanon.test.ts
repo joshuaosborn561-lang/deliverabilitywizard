@@ -757,4 +757,61 @@ describe("D221 syncGenericSeatsFromInventory", () => {
       521881,
     );
   });
+
+  it("D290: leftover Smartlead client_id with no live campaigns is free", async () => {
+    const { StateStore } = await import("../state/store.js");
+    const store = new StateStore(
+      `/tmp/sync-free-${process.pid}-${Date.now()}.json`,
+    );
+    await store.load();
+    store.upsertPoolMailbox({
+      email: "spare@getintroduced.info",
+      domain: "getintroduced.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 44,
+      firstName: "Spare",
+      lastName: "Seat",
+      status: "available",
+      assignedClientId: 548611,
+      warmedAt: "2026-01-01T00:00:00Z",
+      availableAt: "2026-01-22T00:00:00Z",
+    });
+    const result = await syncGenericSeatsFromInventory({
+      existing: [
+        emptyGenericSeat("spare@getintroduced.info", {
+          assignedClientId: 548611,
+          assignedPod: "A",
+          warmupEnabled: true,
+          warmReadyAt: "2026-11-01T00:00:00.000Z",
+        }),
+      ],
+      accounts: [
+        {
+          id: 44,
+          email: "spare@getintroduced.info",
+          type: "GMAIL",
+          client_id: 548611,
+          campaign_ids: [],
+          tags: [{ tag_name: "GENERIC" }],
+          warmup_details: { status: "ACTIVE" },
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+      ],
+      campaigns: [{ id: 10, client_id: 574020, status: "ACTIVE" }],
+      config,
+      state: store,
+      now: new Date("2026-10-19T18:00:00.000Z"),
+    });
+    const spare = result.seats.find(
+      (row) => row.email === "spare@getintroduced.info",
+    )!;
+    assert.equal(spare.assignedClientId, null);
+    assert.equal(spare.assignedPod, null);
+    const ready = Date.parse(spare.warmReadyAt ?? "");
+    assert.ok(
+      !Number.isFinite(ready) || ready <= Date.parse("2026-10-19T18:00:00.000Z"),
+      `pool-available must not keep a future warmReadyAt: ${spare.warmReadyAt}`,
+    );
+  });
 });

@@ -1683,7 +1683,7 @@ describe("Min40TopUpService (D205)", () => {
 
     assert.equal(campaigns.length, 360);
     assert.ok(accounts.length >= 890);
-    assert.equal(result.assigned.length, 0);
+    assert.equal(result.dryRun, true);
     assert.ok(
       ticks > 0,
       `event loop must breathe during min40 (ticks=${ticks} elapsed=${elapsed}ms)`,
@@ -2407,5 +2407,201 @@ describe("Min40TopUpService (D205)", () => {
       "marekbrooks must not be re-linked to #4005226",
     );
     assert.ok(state.getGenericSeat("marekbrooks@meetconnectbox.com"));
+  });
+
+  it("D290: leftover SL client_id + Onboarding-freed pool-available generic fills EMCOR, never Insight", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "freed@getintroduced.info",
+      domain: "getintroduced.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 902,
+      firstName: "Freed",
+      lastName: "Seat",
+      status: "available",
+      assignedClientId: 548611,
+      warmedAt,
+    });
+    state.ensureGenericSeat({
+      email: "freed@getintroduced.info",
+      slAccountId: 902,
+      warmupEnabled: true,
+      warmReadyAt: "2026-01-01T00:00:00.000Z",
+      assignedClientId: null,
+      releaseHistory: [
+        {
+          releasedAt: "2026-10-01T00:00:00.000Z",
+          clientId: 592842,
+          pod: "A",
+          reason: "onboarding_freed_powergryd",
+        },
+      ],
+    });
+    const named = Array.from({ length: 38 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `n${i}@emcorservices.com`,
+      from_name: "Ada Lovelace",
+      client_id: 574020,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "POD-B" }],
+      campaign_ids: [21],
+      created_at: "2026-01-01T00:00:00.000Z",
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+          updates.push({ id, fields });
+        },
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-19T16:00:00.000Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [
+          { id: 574020, name: "EMCOR", logo: "EMCOR" },
+          { id: 582890, name: "Insight", logo: "Insight" },
+        ],
+        campaigns: [
+          { id: 21, name: "EMCOR B", status: "ACTIVE", client_id: 574020 },
+          { id: 3921647, name: "Insight A", status: "ACTIVE", client_id: 582890 },
+        ],
+        accounts: [
+          ...named,
+          {
+            id: 902,
+            from_email: "freed@getintroduced.info",
+            from_name: "Freed Seat",
+            type: "GMAIL",
+            client_id: 548611,
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [],
+            created_at: "2026-01-01T00:00:00.000Z",
+            warmup_details: { status: "ACTIVE" },
+          },
+          {
+            id: 700,
+            from_email: "joshua@joshuaosbornco.info",
+            from_name: "Joshua Osborn",
+            client_id: 582890,
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "POD-A" }],
+            campaign_ids: [3921647],
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    assert.ok(
+      result.assigned.some((row) => row.email === "freed@getintroduced.info" && row.clientId === 574020),
+      `must assign the leftover/freed generic to EMCOR: ${JSON.stringify(result.assigned)} ${result.errors.join(" | ")}`,
+    );
+    assert.equal(
+      result.assigned.some((row) => row.clientId === 582890),
+      false,
+      "Insight still gets no generics",
+    );
+    assert.equal(updates[0]?.fields.client_id, 574020);
+    assert.equal(
+      attached.some((row) => row[0] === 3921647),
+      false,
+      "must not attach the generic to Insight",
+    );
+    assert.equal(state.getGenericSeat("freed@getintroduced.info")?.assignedClientId, 574020);
+  });
+
+  it("D290: dry-run still seeds the in-memory ledger and reports the assign", async () => {
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "dry@getintroduced.info",
+      domain: "getintroduced.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 903,
+      firstName: "Dry",
+      lastName: "Seat",
+      status: "available",
+      warmedAt,
+    });
+    const named = Array.from({ length: 38 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `n${i}@emcorservices.com`,
+      from_name: "Ada Lovelace",
+      client_id: 574020,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "POD-A" }],
+      campaign_ids: [20],
+      created_at: "2026-01-01T00:00:00.000Z",
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "true" }),
+      {
+        addEmailAccountsToCampaign: async () => undefined,
+        updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+          updates.push({ id, fields });
+        },
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: true,
+      now: new Date("2026-10-19T16:00:00.000Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 574020, name: "EMCOR", logo: "EMCOR" }],
+        campaigns: [
+          { id: 20, name: "EMCOR A", status: "ACTIVE", client_id: 574020 },
+        ],
+        accounts: [
+          ...named,
+          {
+            id: 903,
+            from_email: "dry@getintroduced.info",
+            from_name: "Dry Seat",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [],
+            created_at: "2026-01-01T00:00:00.000Z",
+            warmup_details: { status: "ACTIVE" },
+          },
+        ],
+      },
+    });
+    assert.equal(updates.length, 0, "dry-run must not write Smartlead");
+    assert.ok(
+      result.assigned.some((row) => row.email === "dry@getintroduced.info"),
+      `dry-run must still report the ledger assign: ${JSON.stringify(result.assigned)}`,
+    );
+    assert.ok(state.getGenericSeat("dry@getintroduced.info"));
   });
 });

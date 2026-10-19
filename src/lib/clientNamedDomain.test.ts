@@ -34,6 +34,8 @@ describe("D243 client-named domains", () => {
     assert.equal(isClientNamedDomain("powergrydnow.info"), true);
     assert.equal(isClientNamedDomain("deeprootscapital.info"), true);
     assert.equal(isClientNamedDomain("joshosbornhq.info"), true);
+    assert.equal(isClientNamedDomain("joshuaosbornco.info"), true);
+    assert.equal(clientNamedSlugInDomain("joshuaosbornsales.info"), "joshuaosborn");
     assert.equal(
       isClientNamedDomain("cornerstoneearthworksmy.info", [
         { id: 12, name: "CornerStone", logo: "CornerStone Earthworks" },

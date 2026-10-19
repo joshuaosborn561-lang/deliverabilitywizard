@@ -53,8 +53,12 @@ export function isInsightClientId(id: number | null | undefined): boolean {
   return id === INSIGHT_CLIENT_ID;
 }
 
-/** Visible from-name that may send on Insight (D282). */
-export const INSIGHT_JOSH_FROM_NAME = /^josh\s+osborn$/i;
+/**
+ * Visible from-name that may send on Insight (D282 / D290).
+ * Production seats use `Joshua Osborn` (Smartlead GET 2026-10-19);
+ * `Josh Osborn` still matches.
+ */
+export const INSIGHT_JOSH_FROM_NAME = /^josh(ua)?\s+osborn$/i;
 
 /**
  * D282 — Insight (client 582890, named Insight ids, or `Insight ` prefix
@@ -84,8 +88,10 @@ function insightSendingDomainBase(domain: string): string {
 }
 
 /**
- * D282 — SalesGlider (`salesglider*`) or Insight (`insight` / `joshosborn`)
- * sending domains. Other client brands are never Insight supply.
+ * D282 / D290 — SalesGlider (`salesglider*`) or Insight
+ * (`insight` / `joshosborn*` / `joshuaosborn*`) sending domains.
+ * `joshosborn` is not a substring of `joshuaosbornco`.
+ * Other client brands are never Insight supply.
  */
 export function isSalesGliderOrInsightSendingDomain(
   domain: string | null | undefined,
@@ -95,7 +101,7 @@ export function isSalesGliderOrInsightSendingDomain(
   if (!base) return false;
   return (
     base.includes("salesglider") ||
-    base.includes("joshosborn") ||
+    /josh(ua)?osborn/.test(base) ||
     base.includes("insight")
   );
 }
@@ -120,7 +126,8 @@ export function insightSenderEmail(
 }
 
 /**
- * D282 — a Josh Osborn mailbox on a salesglider* or Insight domain.
+ * D282 / D290 — a Josh / Joshua Osborn mailbox on a salesglider*
+ * or Insight (`joshosborn*` / `joshuaosborn*` / `insight*`) domain.
  * Generics and other named senders (Owen Sanchez, …) never qualify.
  */
 export function isInsightJoshAllowedSender(

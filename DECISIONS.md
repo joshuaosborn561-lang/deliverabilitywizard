@@ -282,6 +282,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D283 | Live — never-generics onto PowerGRYD superseded by D285; freed-seat ownership stays | Onboarding-freed Smartlead `client_id=null` is authoritative over a stale PowerGRYD / `powergryd_dedicated` pool row (one-time cleanup of those generic-domain seats); those freed seats must not flip back onto 592842. CornerStone 574088 and unexpired HOLD-UNTIL never attach (`addEmailAccountsToCampaign` hard-reject, same shape as D282); leftover HOLD-UNTIL still does not pull; never START / unpause STOPPED. PowerGRYD otherwise takes generics (D285). |
 | D285 | Live — Generics Ledger fields / per-seat swap / new findings added by D286 | Min-40 is per POD owned inventory, never per campaign. POD A and POD B each hold >=40 warm seats the client owns (TechEvo 30). Borrowed seats never count. When under, rotate free warm generics in; never skip the off-week POD. Insight 582890 is the only client that never gets generics; alert Josh daily while under. PowerGRYD takes generics. LOCKED core canon — Josh-only; PRs that change the locked section must never auto-merge. |
 | D286 | Live | Generics Ledger: one row per generic (email, ESP, warmup on/off, assigned client, POD, assigned_at, covering_for). All generics warm continuously; seeder re-enables warmup the same day. Assigned only to fill one client's POD to 40 (TechEvo 30), one client + one POD, never moves PODs. Branded-preferred per-seat swap via covering_for + `returnGenericToUntaggedPool`; headcount is fallback for unlinked seats. No assign/release outside the ledger. Insight never receives generics; every other client including PowerGRYD does. CornerStone-domain inboxes are never generics. Findings `generic_outside_ledger` / `generic_not_warming` / `generic_on_insight` / `pod_short_no_free_generic` page Josh the same day. Optional upsert-only `wizard.generic_ledger` Supabase mirror. |
+| D287 | Live | Old-wizard fix: ledger assigns free warm generics into every under-floor POD (A and B) with covering_for; retire-pending domains last; CornerStone never; Insight still no generics. Owned-seat count includes Insight Josh seats (even SL 345263), PowerGRYD dedicated generics without a POD tag, and Peterson named-domain fallback. Peterson under-floor alerts suppressed (winding down). marekbrooks@meetconnectbox.com stays in the ledger and never re-links to PowerGRYD #4005226. isolation-buy-resume yields and skips idle full-state stringify. 0% canary-copy scores start isolation within 30 min; isolation never hold-pauses. Never START / PAUSE / touch STOPPED; never buy. LOCKED section unchanged. |
 
 ---
 
@@ -10177,6 +10178,72 @@ Insight, or D4.
 re-enables warmup; swap uses covering_for then headcount;
 findings named; cleanup idempotent; never STOPPED / START /
 PAUSE.
+
+---
+
+## D287 — Ledger actually assigns; owned-count + isolation 0% + no hang
+
+**Date.** 2026-10-19 (Josh).
+
+**Decision.** The 10/19 under-40 report showed EMCOR / Nutter /
+TechEvo short while 44 free warm generics sat unused, Insight /
+PowerGRYD / Peterson at 0 owned, marekbrooks re-linked onto
+PowerGRYD #4005226 after the Oct 14 removal, isolation-buy-resume
+hanging the health pass (~9s serialize), and 0% canary-copy
+campaigns (#3847940, #3921850, #3921852, #3921869, #4037540) with
+no isolation run. Fix the old wizard on main. Do not change the
+LOCKED canon section.
+
+1. **Ledger assign.** `pickFreeWarmGenericsForPod` + min40
+   `fillShortPods` assign free warm ledger seats into every POD
+   under floor (A and B), all named clients except Insight.
+   Record `covering_for`. Domains with a pending Retire card go
+   last. CornerStone-domain inboxes are never used. Never START,
+   pause, or touch STOPPED. Never buy. Never touch v2.
+2. **Owned-seat count.** Insight Josh seats count for Insight
+   even when Smartlead `client_id` is still SalesGlider 345263.
+   PowerGRYD dedicated generics without a POD tag still count
+   (static A/B split). Peterson roofs*/peterson* named seats
+   count via domain fallback. Insight still gets no generics and
+   a daily Josh alert. Peterson is winding down — suppress its
+   under-floor alerts.
+3. **marekbrooks.** `isDoNotRelinkPair` hard-rejects
+   `marekbrooks@meetconnectbox.com` → campaign #4005226 on every
+   attach path. The seat stays in the generics ledger.
+4. **isolation-buy-resume hang.** Yield the action walk. Skip
+   the full `/data/state.json` stringify when nothing changed
+   (`saveHot` only if dirty).
+5. **Isolation 0%.** Stored canary-copy scores under 80%
+   (including 0%) become suspects even when the provider-split
+   pull is skipped as fresh. Isolation starts within 30 minutes.
+   Isolation never hold-pauses a campaign.
+
+**Why.** Locked POD-40 / Generics Ledger already said this.
+The count keyed only on live `client_id` + tagged POD, min40
+picked from `poolMailboxes` instead of the ledger, share/fan-out
+re-linked the removed PowerGRYD generic, resume always dumped
+state, and a fresh 0% score never became a suspect.
+
+**Rejected.** Changing the LOCKED section. Starting / pausing /
+touching STOPPED campaigns. Buying anything. Touching v2.
+Giving Insight generics. Alerting Peterson.
+
+**Supersedes / amends.** Amends D285 owned-count (Insight Josh
+/ PowerGRYD untagged dedicated / Peterson domain fallback) and
+alert (Peterson suppressed). Amends D286 so the ledger is the
+assign path. Amends D158/D159: stored 0% scores queue isolation;
+isolation never hold-pauses. Amends D267/D272: isolation-buy-resume
+must not idle-stringify. Does not reverse D40, D4, D122, D228,
+D234, D256, D282 no-generics, or the LOCKED text.
+
+**Guards.** `src/lib/podOwnedInventory.test.ts` Insight Josh +
+PowerGRYD untagged + Peterson domain. `src/lib/genericLedger.test.ts`
+ledger pick / retire-last / CornerStone skip. `src/lib/attachGuard.test.ts`
+marekbrooks denylist. `src/services/isolationBranch.test.ts` 0%
+stored score queues; no `updateCampaignStatus`.
+`src/services/isolationBuy.test.ts` idle resume does not
+`save()`. `src/guards/lockedCanon.test.ts` LOCKED section
+unchanged vs D285/D286 text.
 
 ---
 

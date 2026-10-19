@@ -18,7 +18,9 @@ import {
   callerFollowUpPolicyFromConfig,
   isCallerFollowUpCampaign,
 } from "./callerFollowUp.js";
-import { isClientInbox, isGenericMailbox } from "./clientInbox.js";
+import { isGenericMailbox } from "./clientInbox.js";
+import { clientNamedOwnerForDomain } from "./clientNamedDomain.js";
+import { emailDomainOf } from "./isolationDomain.js";
 import {
   accountIsPeelStaffable,
   hasHoldOrRetireTag,
@@ -30,8 +32,11 @@ import {
 } from "./displaySenderCount.js";
 import { clientPodKey, type GenericAssignedPod } from "./genericPool.js";
 import {
+  INSIGHT_CLIENT_ID,
+  SALESGLIDER_CLIENT_ID,
   isInsightClientId,
   isInsightJoshAllowedSender,
+  isInsightJoshOnlyCampaign,
 } from "./insightCampaigns.js";
 import { mailboxStaffableWeight, roundStaffableWeight } from "./mailboxType.js";
 import { readMessagePerDay } from "./mailboxSendSettings.js";
@@ -58,6 +63,8 @@ export function seatSitsOnForeignNamedCampaign(input: {
     { id?: number; client_id?: number | null; name?: string | null }
   >;
   isMarkerClientId?: (id: number | null | undefined) => boolean;
+  /** Insight Josh leftover on SalesGlider is not a borrowed seat (D287). */
+  ignoreForeignClientIds?: ReadonlySet<number>;
 }): boolean {
   for (const id of input.campaignIds) {
     const campaign = input.campaignById.get(id);
@@ -70,12 +77,81 @@ export function seatSitsOnForeignNamedCampaign(input: {
     if (
       typeof cid === "number" &&
       isRealNamedClientId(cid, input.isMarkerClientId) &&
-      cid !== input.ownerClientId
+      cid !== input.ownerClientId &&
+      !input.ignoreForeignClientIds?.has(cid)
     ) {
       return true;
     }
   }
   return false;
+}
+
+function sitsOnInsightCampaign(
+  campaignIds: Iterable<number>,
+  campaignById: ReadonlyMap<
+    number,
+    { id?: number; client_id?: number | null; name?: string | null }
+  >,
+): boolean {
+  for (const id of campaignIds) {
+    const campaign = campaignById.get(id);
+    if (!campaign) continue;
+    if (isInsightJoshOnlyCampaign(campaign) || isInsightClientId(campaign.client_id)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * D287 — owner for the POD-40 count. Insight Josh seats count for
+ * Insight even when Smartlead still has SalesGlider 345263. Named
+ * seats with a missing client_id fall back to the sending-domain
+ * slug (Peterson roofs*, PowerGRYD, …).
+ */
+export function ownedNamedClientIdForSeat(input: {
+  account: {
+    client_id?: number | null;
+    from_name?: string | null;
+    from_email?: string | null;
+    email?: string | null;
+    username?: string | null;
+    signature?: string | null;
+  };
+  email: string;
+  campaignIds: Iterable<number>;
+  campaignById: ReadonlyMap<
+    number,
+    { id?: number; client_id?: number | null; name?: string | null }
+  >;
+  isMarkerClientId?: (id: number | null | undefined) => boolean;
+}): number | null {
+  const liveId =
+    typeof input.account.client_id === "number" &&
+    isRealNamedClientId(input.account.client_id, input.isMarkerClientId)
+      ? input.account.client_id
+      : null;
+  if (isInsightJoshAllowedSender(input.account)) {
+    const domain = emailDomainOf(input.email) ?? "";
+    const insightDomain =
+      /joshosborn/i.test(domain) || /insight/i.test(domain);
+    if (
+      isInsightClientId(liveId) ||
+      insightDomain ||
+      sitsOnInsightCampaign(input.campaignIds, input.campaignById)
+    ) {
+      return INSIGHT_CLIENT_ID;
+    }
+  }
+  if (liveId != null) return liveId;
+  const domainOwner = clientNamedOwnerForDomain(emailDomainOf(input.email));
+  if (
+    domainOwner &&
+    isRealNamedClientId(domainOwner.clientId, input.isMarkerClientId)
+  ) {
+    return domainOwner.clientId;
+  }
+  return null;
 }
 
 function warmupConfigOf(
@@ -249,22 +325,27 @@ export function countOwnedClientPods(input: {
       });
       continue;
     }
-    if (!isClientInbox(account, email, input.config, input.state)) continue;
-    const clientId =
-      typeof account.client_id === "number" &&
-      isRealNamedClientId(account.client_id, isMarker)
-        ? account.client_id
-        : null;
+    const clientId = ownedNamedClientIdForSeat({
+      account,
+      email,
+      campaignIds: campaignIdsOf(account),
+      campaignById,
+      isMarkerClientId: isMarker,
+    });
     if (clientId == null || !wanted.has(clientId)) continue;
     if (isInsightClientId(clientId) && !isInsightJoshAllowedSender(account)) {
       continue;
     }
+    const ignoreForeign = isInsightClientId(clientId)
+      ? new Set([SALESGLIDER_CLIENT_ID])
+      : undefined;
     if (
       seatSitsOnForeignNamedCampaign({
         campaignIds: campaignIdsOf(account),
         ownerClientId: clientId,
         campaignById,
         isMarkerClientId: isMarker,
+        ignoreForeignClientIds: ignoreForeign,
       })
     ) {
       continue;
@@ -299,15 +380,39 @@ export function countOwnedClientPods(input: {
   }
 
   const genericWeight = new Map<string, number>();
+  const untaggedGenerics = new Map<
+    number,
+    Array<{ email: string; type?: string | null; account: SmartleadAccountWithCampaigns }>
+  >();
   for (const row of genericRows) {
-    if (row.pod !== "A" && row.pod !== "B") continue;
-    const key = clientPodKey(row.clientId, row.pod);
-    genericWeight.set(
-      key,
-      roundStaffableWeight(
-        (genericWeight.get(key) ?? 0) + mailboxStaffableWeight(row.account),
-      ),
+    if (row.pod === "A" || row.pod === "B") {
+      const key = clientPodKey(row.clientId, row.pod);
+      genericWeight.set(
+        key,
+        roundStaffableWeight(
+          (genericWeight.get(key) ?? 0) + mailboxStaffableWeight(row.account),
+        ),
+      );
+      continue;
+    }
+    const list = untaggedGenerics.get(row.clientId) ?? [];
+    list.push({ email: row.email, type: row.account.type, account: row.account });
+    untaggedGenerics.set(row.clientId, list);
+  }
+  for (const [clientId, rows] of untaggedGenerics) {
+    const cohorts = assignClientCohorts(
+      rows.map((row) => ({ email: row.email, type: row.type })),
     );
+    for (const row of rows) {
+      const pod: GenericAssignedPod = cohorts.get(row.email) === "B" ? "B" : "A";
+      const key = clientPodKey(clientId, pod);
+      genericWeight.set(
+        key,
+        roundStaffableWeight(
+          (genericWeight.get(key) ?? 0) + mailboxStaffableWeight(row.account),
+        ),
+      );
+    }
   }
 
   const out: OwnedPodCount[] = [];

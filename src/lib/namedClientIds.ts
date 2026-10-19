@@ -13,6 +13,9 @@ export const POWERGRYD_CLIENT_ID = 592842;
 export const CORNERSTONE_CLIENT_ID = 574088;
 /** Roofs by Peterson — no restaff from the generics ledger (D286). */
 export const PETERSON_CLIENT_ID = 548610;
+/** PowerGRYD campaign that must not re-link marekbrooks (D287). */
+export const POWERGRYD_MAREK_CAMPAIGN_ID = 4005226;
+export const MAREKBROOKS_EMAIL = "marekbrooks@meetconnectbox.com";
 /** Deep Roots Capital — POC / no restaff from the generics ledger (D286). */
 export const DEEP_ROOTS_CLIENT_ID = 597783;
 

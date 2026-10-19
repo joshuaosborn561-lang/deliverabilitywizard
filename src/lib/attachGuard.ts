@@ -7,9 +7,28 @@
  * both before any Smartlead write.
  */
 
-import { CORNERSTONE_CLIENT_ID, isCornerstoneClientId } from "./namedClientIds.js";
+import {
+  CORNERSTONE_CLIENT_ID,
+  isCornerstoneClientId,
+  MAREKBROOKS_EMAIL,
+  POWERGRYD_MAREK_CAMPAIGN_ID,
+} from "./namedClientIds.js";
 
-export { CORNERSTONE_CLIENT_ID, isCornerstoneClientId };
+export {
+  CORNERSTONE_CLIENT_ID,
+  isCornerstoneClientId,
+  MAREKBROOKS_EMAIL,
+  POWERGRYD_MAREK_CAMPAIGN_ID,
+};
+
+/** D287 — removed from PowerGRYD #4005226 on Oct 14; do not re-link. */
+export function isDoNotRelinkPair(
+  email: string | null | undefined,
+  campaignId: number | null | undefined,
+): boolean {
+  if (campaignId !== POWERGRYD_MAREK_CAMPAIGN_ID) return false;
+  return String(email ?? "").trim().toLowerCase() === MAREKBROOKS_EMAIL;
+}
 
 export const HOLD_UNTIL_TAG_RE = /^HOLD-UNTIL-(\d{4}-\d{2}-\d{2})$/i;
 
@@ -115,7 +134,13 @@ export function assertAttachAllowedAccountIds(
   const blocked = accountIds.filter((id) => {
     const account = ctx.accountsById.get(id);
     if (!account) return false;
-    return isAttachForbiddenSeat(account, now);
+    if (isAttachForbiddenSeat(account, now)) return true;
+    const email = String(
+      account.from_email ?? account.email ?? account.username ?? "",
+    )
+      .trim()
+      .toLowerCase();
+    return isDoNotRelinkPair(email, campaignId);
   });
   if (blocked.length) {
     throw new AttachForbiddenSeatError(campaignId, blocked);

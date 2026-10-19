@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { loadConfig } from "../config.js";
-import { BCP_CLIENT_ID, TECHEVO_CLIENT_ID } from "./namedClientIds.js";
+import {
+  BCP_CLIENT_ID,
+  PETERSON_CLIENT_ID,
+  POWERGRYD_CLIENT_ID,
+  TECHEVO_CLIENT_ID,
+} from "./namedClientIds.js";
 import {
   countOwnedClientPods,
   formatPodFloorAlert,
@@ -216,6 +221,108 @@ describe("podOwnedInventory (D285)", () => {
     assert.equal(podA?.floor, 30);
     assert.equal(podB?.owned, 0);
     assert.equal(podB?.shortBy, 30);
+  });
+
+  it("D287: Insight Josh seats with SalesGlider client_id still count", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const config = loadConfig({});
+    const josh = namedSeat({
+      id: 1,
+      email: "josh@trysalesglider.info",
+      clientId: 345263,
+      pod: "A",
+      campaignIds: [3921647],
+      fromName: "Josh Osborn",
+    });
+    const rows = countOwnedClientPods({
+      accounts: [josh],
+      campaigns: [
+        {
+          id: 3921647,
+          name: "Insight Consolidation Gateway SEG",
+          status: "ACTIVE",
+          client_id: 582890,
+        },
+      ],
+      config,
+      state,
+      clientIds: [582890, 345263],
+    });
+    const insightA = rows.find((row) => row.clientId === 582890 && row.pod === "A");
+    const sgA = rows.find((row) => row.clientId === 345263 && row.pod === "A");
+    assert.equal(insightA?.named, 1);
+    assert.equal(insightA?.owned, 1);
+    assert.equal(sgA?.owned ?? 0, 0);
+  });
+
+  it("D287: PowerGRYD dedicated generics without a POD tag still count", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const config = loadConfig({});
+    const dedicated = Array.from({ length: 4 }, (_, i) =>
+      genericSeat({
+        id: 800 + i,
+        email: `pg${i}@meetconnectbox.com`,
+        clientId: POWERGRYD_CLIENT_ID,
+        campaignIds: [4005226],
+      }),
+    );
+    const rows = countOwnedClientPods({
+      accounts: dedicated,
+      campaigns: [
+        {
+          id: 4005226,
+          name: "PowerGRYD A",
+          status: "ACTIVE",
+          client_id: POWERGRYD_CLIENT_ID,
+        },
+      ],
+      config,
+      state,
+      clientIds: [POWERGRYD_CLIENT_ID],
+    });
+    const owned = rows
+      .filter((row) => row.clientId === POWERGRYD_CLIENT_ID)
+      .reduce((sum, row) => sum + row.owned, 0);
+    assert.equal(owned, 4);
+    assert.ok(rows.some((row) => row.pod === "A" && row.owned > 0));
+    assert.ok(rows.some((row) => row.pod === "B" && row.owned > 0));
+  });
+
+  it("D287: Peterson named-domain seats count without client_id", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const config = loadConfig({});
+    const seat = {
+      ...namedSeat({
+        id: 1,
+        email: "kyle@hubroofsbypeterson.info",
+        clientId: PETERSON_CLIENT_ID,
+        pod: "A",
+        campaignIds: [3798229],
+      }),
+      client_id: null,
+    };
+    const rows = countOwnedClientPods({
+      accounts: [seat],
+      campaigns: [
+        {
+          id: 3798229,
+          name: "Peterson live",
+          status: "ACTIVE",
+          client_id: PETERSON_CLIENT_ID,
+        },
+      ],
+      config,
+      state,
+      clientIds: [PETERSON_CLIENT_ID],
+    });
+    const podA = rows.find(
+      (row) => row.clientId === PETERSON_CLIENT_ID && row.pod === "A",
+    );
+    assert.equal(podA?.named, 1);
+    assert.equal(podA?.owned, 1);
   });
 
   it("seatSitsOnForeignNamedCampaign skips shells and same-client links", () => {

@@ -32,6 +32,9 @@ import {
 import type { SpendGateway, SpendRequest } from "../lib/spendGateway.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
+import { yieldEventLoop } from "../lib/stringifyYielding.js";
+
+export const ISOLATION_BUY_RESUME_YIELD_EVERY = 4;
 
 export interface IsolationBuyResult {
   domains: string[];
@@ -225,7 +228,13 @@ export class IsolationBuyService {
 
   async resume(): Promise<number> {
     let finished = 0;
+    let dirty = false;
+    let walked = 0;
     for (const action of this.store.listIsolationActions()) {
+      walked += 1;
+      if (walked % ISOLATION_BUY_RESUME_YIELD_EVERY === 0) {
+        await yieldEventLoop();
+      }
       if (needsPurchaseRetry(action)) {
         try {
           const result = await this.run(action);
@@ -246,6 +255,7 @@ export class IsolationBuyService {
                 : {}),
             },
           });
+          dirty = true;
           if (!result.awaitingNameservers) finished += 1;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -260,6 +270,7 @@ export class IsolationBuyService {
               retryReason: message,
             },
           });
+          dirty = true;
         }
         continue;
       }
@@ -286,9 +297,13 @@ export class IsolationBuyService {
           error: undefined,
         });
         finished += 1;
+        dirty = true;
       }
     }
-    await this.store.save();
+    // D287 — idle resume must not stringify the full dump (9s event-loop
+    // stall at isolation-buy-resume). Persist stamps only when something
+    // actually changed.
+    if (dirty) await this.store.saveHot();
     return finished;
   }
 

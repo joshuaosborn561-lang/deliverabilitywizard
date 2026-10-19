@@ -39,6 +39,33 @@ async function buyStore(): Promise<StateStore> {
   return state;
 }
 
+describe("IsolationBuyService — D287 idle resume", () => {
+  it("yields and does not stringify the full dump when nothing changed", async () => {
+    const state = await buyStore();
+    let saves = 0;
+    let hot = 0;
+    const wrapped = Object.create(state) as StateStore;
+    wrapped.save = async () => {
+      saves += 1;
+    };
+    wrapped.saveHot = async () => {
+      hot += 1;
+    };
+    wrapped.listIsolationActions = () => [];
+    const svc = new IsolationBuyService(
+      dryConfig(),
+      null,
+      null,
+      wrapped,
+      {} as never,
+    );
+    const finished = await svc.resume();
+    assert.equal(finished, 0);
+    assert.equal(saves, 0, "idle resume must not dump state.json");
+    assert.equal(hot, 0, "idle resume must not write stamps");
+  });
+});
+
 describe("IsolationBuyService — D161 client-named replace", () => {
   it("retiring a BCP domain buys boldercyperpartner* — never a crosslaunchco spin", async () => {
     const state = await buyStore();

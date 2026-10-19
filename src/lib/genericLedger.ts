@@ -251,6 +251,100 @@ export interface GenericLedgerCleanupStamp {
   powergrydFindingsCleared: number;
 }
 
+export function suppressPodFloorAlert(clientId: number | null | undefined): boolean {
+  return clientId === PETERSON_CLIENT_ID;
+}
+
+export function isFreeWarmLedgerSeat(
+  seat: Pick<
+    GenericSeatRecord,
+    | "assignedClientId"
+    | "warmupEnabled"
+    | "excluded"
+    | "warmReadyAt"
+    | "email"
+  >,
+  now = new Date(),
+): boolean {
+  if (seat.excluded) return false;
+  if (isCornerstoneGenericDomain(seat.email)) return false;
+  if (seat.assignedClientId != null) return false;
+  if (seat.warmReadyAt) {
+    const at = Date.parse(seat.warmReadyAt);
+    if (Number.isFinite(at) && at > now.getTime()) return false;
+  }
+  return true;
+}
+
+export function pendingRetireDomains(input: {
+  actions?: Iterable<{
+    kind?: string | null;
+    status?: string | null;
+    detail?: Record<string, unknown> | null;
+  }>;
+  history?: Iterable<{ domain?: string | null; status?: string | null }>;
+}): Set<string> {
+  const out = new Set<string>();
+  for (const action of input.actions ?? []) {
+    if (action.kind !== "retire_domain") continue;
+    const status = String(action.status ?? "").toLowerCase();
+    if (status !== "pending" && status !== "approved") continue;
+    for (const key of ["domain", "retiredDomain"] as const) {
+      const raw = action.detail?.[key];
+      if (typeof raw === "string" && raw.includes(".")) {
+        out.add(raw.trim().toLowerCase());
+      }
+    }
+  }
+  for (const row of input.history ?? []) {
+    if (row.status !== "retire_pending") continue;
+    const domain = String(row.domain ?? "").trim().toLowerCase();
+    if (domain) out.add(domain);
+  }
+  return out;
+}
+
+/**
+ * Free warm ledger seats for a short POD. CornerStone never.
+ * Domains with a pending Retire card go last.
+ */
+export function pickFreeWarmGenericsForPod(input: {
+  seats: GenericSeatRecord[];
+  need: number;
+  alreadyPicked?: Iterable<string>;
+  retirePendingDomains?: Iterable<string>;
+  now?: Date;
+}): GenericSeatRecord[] {
+  const need = Number(input.need);
+  if (!Number.isFinite(need) || need <= 1e-9) return [];
+  const picked = new Set(
+    [...(input.alreadyPicked ?? [])].map((email) => genericSeatKey(email)),
+  );
+  const retire = new Set(
+    [...(input.retirePendingDomains ?? [])].map((domain) =>
+      String(domain).trim().toLowerCase(),
+    ),
+  );
+  const now = input.now ?? new Date();
+  const free = input.seats.filter(
+    (seat) => isFreeWarmLedgerSeat(seat, now) && !picked.has(genericSeatKey(seat.email)),
+  );
+  free.sort((a, b) => {
+    const aRetire = retire.has(emailDomainOf(a.email) ?? "") ? 1 : 0;
+    const bRetire = retire.has(emailDomainOf(b.email) ?? "") ? 1 : 0;
+    if (aRetire !== bRetire) return aRetire - bRetire;
+    return a.email.localeCompare(b.email);
+  });
+  const out: GenericSeatRecord[] = [];
+  let placed = 0;
+  for (const seat of free) {
+    if (placed + 1e-9 >= need) break;
+    out.push(seat);
+    placed += seatStaffableWeight(seat);
+  }
+  return out;
+}
+
 export function parseGenericLedgerCleanupStamp(
   raw: unknown,
 ): GenericLedgerCleanupStamp | null {

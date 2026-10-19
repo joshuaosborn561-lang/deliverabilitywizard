@@ -2894,14 +2894,14 @@ export class StateStore {
       inboxkitLicenseYmd: this.state.inboxkitLicenseHandoff?.ymd ?? null,
       inboxkitLicenseAt: this.state.inboxkitLicenseHandoff?.at ?? null,
       stageHealth: this.state.stageHealth,
-      // D267 — isolation prune / hole list must survive a freeze-kill
-      // that only flushes the sidecar (never the full dump).
+      // D267 / D288 — gone-campaign ids must survive a freeze-kill that
+      // only flushes the sidecar. Overlay drops those ids; it never
+      // replaces living maps. Embedding placementScores / copySuspects /
+      // copyCanaries here made `json.stringify:hot` an 82s stall
+      // (prod 2026-10-19 after D287) and tripped the freeze watchdog.
       isolationPrune: {
         at: new Date().toISOString(),
         goneIds: [...this.isolationGoneIds],
-        placementScores: this.state.isolation.placementScores,
-        copySuspects: this.state.isolation.copySuspects,
-        copyCanaries: this.state.isolation.copyCanaries,
       },
       // D269 — ghost pool emails must survive a freeze-kill that
       // only flushes the sidecar (never the full dump).
@@ -3021,18 +3021,40 @@ export class StateStore {
     }
   }
 
-  /** D249 / D272 — persist lastOk / Slack / cron stamps without the full dump. */
+  private saveHotWanted = false;
+  private saveHotCoalesce: Promise<void> | null = null;
+  private saveHotTail: Promise<void> = Promise.resolve();
+
+  /** D249 / D272 / D288 — persist lastOk / Slack / cron stamps without the full dump. */
   async saveHot(): Promise<void> {
-    const dir = path.dirname(this.filePath);
-    await mkdir(dir, { recursive: true });
-    const target = this.stampsFilePath();
-    const tmp = `${target}.${process.pid}.${++this.saveSeq}.tmp`;
-    // D272 — production tagged `json.stringify:yielding` 10–18s on this
-    // path. Write flushed slices; never join the sidecar into one string.
-    await stringifyOffThreadToFile(this.hotStamps(), tmp, {
-      op: "json.stringify:hot",
+    // D288 — overlapping persistPoolPrune / checkpoint / save() must not
+    // stringify the sidecar once per caller. Share one upcoming write.
+    this.saveHotWanted = true;
+    if (this.saveHotCoalesce) return this.saveHotCoalesce;
+    const write = async (): Promise<void> => {
+      while (this.saveHotWanted) {
+        this.saveHotWanted = false;
+        const dir = path.dirname(this.filePath);
+        await mkdir(dir, { recursive: true });
+        const target = this.stampsFilePath();
+        const tmp = `${target}.${process.pid}.${++this.saveSeq}.tmp`;
+        // D272 — production tagged `json.stringify:yielding` 10–18s on this
+        // path. Write flushed slices; never join the sidecar into one string.
+        await stringifyOffThreadToFile(this.hotStamps(), tmp, {
+          op: "json.stringify:hot",
+        });
+        await rename(tmp, target);
+      }
+    };
+    const run = this.saveHotTail.then(write, write);
+    this.saveHotCoalesce = run.finally(() => {
+      if (this.saveHotCoalesce === run) this.saveHotCoalesce = null;
     });
-    await rename(tmp, target);
+    this.saveHotTail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return this.saveHotCoalesce;
   }
 
   async save(opts: { debounceMs?: number } = {}): Promise<void> {

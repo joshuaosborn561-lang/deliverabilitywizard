@@ -36,7 +36,6 @@ import {
   SALESGLIDER_CLIENT_ID,
   isInsightClientId,
   isInsightJoshAllowedSender,
-  isInsightJoshOnlyCampaign,
 } from "./insightCampaigns.js";
 import { mailboxStaffableWeight, roundStaffableWeight } from "./mailboxType.js";
 import { readMessagePerDay } from "./mailboxSendSettings.js";
@@ -86,27 +85,12 @@ export function seatSitsOnForeignNamedCampaign(input: {
   return false;
 }
 
-function sitsOnInsightCampaign(
-  campaignIds: Iterable<number>,
-  campaignById: ReadonlyMap<
-    number,
-    { id?: number; client_id?: number | null; name?: string | null }
-  >,
-): boolean {
-  for (const id of campaignIds) {
-    const campaign = campaignById.get(id);
-    if (!campaign) continue;
-    if (isInsightJoshOnlyCampaign(campaign) || isInsightClientId(campaign.client_id)) {
-      return true;
-    }
-  }
-  return false;
-}
-
 /**
- * D287 — owner for the POD-40 count. Insight Josh seats count for
- * Insight even when Smartlead still has SalesGlider 345263. Named
- * seats with a missing client_id fall back to the sending-domain
+ * D287 / D288 — owner for the POD-40 count. Insight Josh seats count
+ * for Insight even when Smartlead still has SalesGlider 345263 and
+ * even when they are not currently linked to an Insight campaign
+ * (prod 2026-10-19 counted 0 owned while 88 Josh seats existed).
+ * Named seats with a missing client_id fall back to the sending-domain
  * slug (Peterson roofs*, PowerGRYD, …).
  */
 export function ownedNamedClientIdForSeat(input: {
@@ -132,16 +116,7 @@ export function ownedNamedClientIdForSeat(input: {
       ? input.account.client_id
       : null;
   if (isInsightJoshAllowedSender(input.account)) {
-    const domain = emailDomainOf(input.email) ?? "";
-    const insightDomain =
-      /joshosborn/i.test(domain) || /insight/i.test(domain);
-    if (
-      isInsightClientId(liveId) ||
-      insightDomain ||
-      sitsOnInsightCampaign(input.campaignIds, input.campaignById)
-    ) {
-      return INSIGHT_CLIENT_ID;
-    }
+    return INSIGHT_CLIENT_ID;
   }
   if (liveId != null) return liveId;
   const domainOwner = clientNamedOwnerForDomain(emailDomainOf(input.email));

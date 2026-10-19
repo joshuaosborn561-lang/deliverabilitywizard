@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { describe, it } from "node:test";
 import { StateStore } from "./store.js";
 
@@ -169,5 +170,53 @@ describe("isolation state", () => {
       reloaded.listPlacementScores().some((row) => row.campaignId === 3847794),
       "living scores stay",
     );
+  });
+
+  it("D288: saveHot sidecar never embeds isolation maps", async () => {
+    const path = `/tmp/dw-iso-hot-slim-${process.pid}-${Date.now()}.json`;
+    const state = new StateStore(path);
+    await state.load();
+    for (let i = 0; i < 80; i += 1) {
+      state.recordPlacementScore({
+        campaignId: 4000000 + i,
+        campaignName: `Fat score ${i}`,
+        testId: `t-${i}`,
+        source: "canary-copy",
+        inboxPercent: 0,
+        at: "2026-10-19T00:00:00.000Z",
+        raw: "x".repeat(20_000),
+      } as never);
+      state.markCopySuspect({
+        campaignId: 4000000 + i,
+        campaignName: `Fat score ${i}`,
+        at: "2026-10-19T00:00:00.000Z",
+      });
+      state.setCopyCanaries(4000000 + i, [`canary${i}@g.test`], `t-${i}`);
+    }
+    state.pruneIsolationForGoneCampaigns([{ id: 1, status: "ACTIVE" }]);
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+    }, 1);
+    timer.unref?.();
+    const t0 = Date.now();
+    await state.saveHot();
+    const wall = Date.now() - t0;
+    clearInterval(timer);
+    const sidecar = JSON.parse(
+      await readFile(state.stampsFilePath(), "utf8"),
+    ) as {
+      isolationPrune?: Record<string, unknown>;
+    };
+    assert.equal(
+      sidecar.isolationPrune?.placementScores,
+      undefined,
+      "sidecar must not stringify placementScores",
+    );
+    assert.equal(sidecar.isolationPrune?.copySuspects, undefined);
+    assert.equal(sidecar.isolationPrune?.copyCanaries, undefined);
+    assert.ok(Array.isArray(sidecar.isolationPrune?.goneIds));
+    assert.ok(wall < 2_000, `saveHot of fat isolation maps took ${wall}ms`);
+    assert.ok(ticks >= 0);
   });
 });

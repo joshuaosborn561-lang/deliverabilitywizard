@@ -14,6 +14,7 @@ import {
   insightMailboxSecondBrand,
   isInsightJoshAllowedSender,
   isInsightJoshOnlyCampaign,
+  isInsightNamedSendingDomain,
   isSalesGliderOrInsightSendingDomain,
   canAttachMailboxToCampaign,
   isInsightCampaign,
@@ -457,6 +458,16 @@ describe("D282 Insight Josh-only senders", () => {
     );
     assert.equal(isSalesGliderOrInsightSendingDomain("joshuaosbornco.info"), true);
     assert.equal(isSalesGliderOrInsightSendingDomain("joshosbornhq.info"), true);
+  });
+
+  it("D291: Insight-named domains exclude salesglider*", () => {
+    assert.equal(isInsightNamedSendingDomain("joshuaosbornco.info"), true);
+    assert.equal(isInsightNamedSendingDomain("joshuaosbornsales.info"), true);
+    assert.equal(isInsightNamedSendingDomain("joshosbornhq.info"), true);
+    assert.equal(isInsightNamedSendingDomain("getinsight.co"), true);
+    assert.equal(isInsightNamedSendingDomain("trysalesglider.info"), false);
+    assert.equal(isInsightNamedSendingDomain("salesglidersdr.info"), false);
+    assert.equal(isInsightNamedSendingDomain("techevolution.com"), false);
   });
 
   it("classifies client 582890 and named Insight ids; exempts them from min40", () => {

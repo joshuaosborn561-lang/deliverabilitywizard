@@ -34,8 +34,12 @@ import { clientPodKey, type GenericAssignedPod } from "./genericPool.js";
 import {
   INSIGHT_CLIENT_ID,
   SALESGLIDER_CLIENT_ID,
+  insightSenderEmail,
+  isInsightCampaignId,
   isInsightClientId,
   isInsightJoshAllowedSender,
+  isInsightJoshOnlyCampaign,
+  isInsightNamedSendingDomain,
 } from "./insightCampaigns.js";
 import { mailboxStaffableWeight, roundStaffableWeight } from "./mailboxType.js";
 import { readMessagePerDay } from "./mailboxSendSettings.js";
@@ -92,12 +96,37 @@ export function seatSitsOnForeignNamedCampaign(input: {
 }
 
 /**
- * D287 / D288 — owner for the POD-40 count. Insight Josh seats count
- * for Insight even when Smartlead still has SalesGlider 345263 and
- * even when they are not currently linked to an Insight campaign
- * (prod 2026-10-19 counted 0 owned while 88 Josh seats existed).
- * Named seats with a missing client_id fall back to the sending-domain
- * slug (Peterson roofs*, PowerGRYD, …).
+ * D287 leftover — a Josh seat still sitting on an Insight campaign
+ * (named ids, client 582890, or `Insight ` prefix) counts for Insight
+ * even when Smartlead `client_id` is still SalesGlider 345263.
+ */
+function seatSitsOnInsightJoshCampaign(
+  campaignIds: Iterable<number>,
+  campaignById: ReadonlyMap<
+    number,
+    { id?: number; client_id?: number | null; name?: string | null }
+  >,
+): boolean {
+  for (const id of campaignIds) {
+    if (isInsightCampaignId(id)) return true;
+    const campaign = campaignById.get(id);
+    if (campaign && isInsightJoshOnlyCampaign(campaign)) return true;
+  }
+  return false;
+}
+
+/**
+ * D287 / D288 / D291 — owner for the POD-40 count.
+ * Insight-named Josh seats (`joshuaosborn*` / `joshosborn*` /
+ * `insight*`) count for Insight even when Smartlead still has
+ * SalesGlider 345263 and even when they are unlinked.
+ * Leftover Josh seats sitting on an Insight campaign also count
+ * for Insight, never SalesGlider (D287).
+ * SalesGlider's own `salesglider*` Josh seats with client 345263
+ * (unlinked or on SG campaigns) count for SalesGlider, never
+ * Insight — D288's unlinked salesglider* remap is retired (D291).
+ * Never both. Named seats with a missing client_id fall back to
+ * the sending-domain slug (Peterson roofs*, PowerGRYD, …).
  */
 export function ownedNamedClientIdForSeat(input: {
   account: {
@@ -122,7 +151,16 @@ export function ownedNamedClientIdForSeat(input: {
       ? input.account.client_id
       : null;
   if (isInsightJoshAllowedSender(input.account)) {
-    return INSIGHT_CLIENT_ID;
+    const email = insightSenderEmail(input.account) ?? input.email;
+    if (isInsightNamedSendingDomain(emailDomainOf(email))) {
+      return INSIGHT_CLIENT_ID;
+    }
+    if (liveId === INSIGHT_CLIENT_ID) {
+      return INSIGHT_CLIENT_ID;
+    }
+    if (seatSitsOnInsightJoshCampaign(input.campaignIds, input.campaignById)) {
+      return INSIGHT_CLIENT_ID;
+    }
   }
   if (liveId != null) return liveId;
   const domainOwner = clientNamedOwnerForDomain(emailDomainOf(input.email));

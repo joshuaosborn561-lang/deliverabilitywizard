@@ -88,9 +88,22 @@ function insightSendingDomainBase(domain: string): string {
 }
 
 /**
+ * D291 — Insight-owned sending domains (`insight*` / `joshosborn*` /
+ * `joshuaosborn*`). `salesglider*` is SalesGlider's brand, not Insight's.
+ * `joshosborn` is not a substring of `joshuaosbornco`.
+ */
+export function isInsightNamedSendingDomain(
+  domain: string | null | undefined,
+): boolean {
+  if (!domain) return false;
+  const base = insightSendingDomainBase(domain);
+  if (!base) return false;
+  return /josh(ua)?osborn/.test(base) || base.includes("insight");
+}
+
+/**
  * D282 / D290 — SalesGlider (`salesglider*`) or Insight
  * (`insight` / `joshosborn*` / `joshuaosborn*`) sending domains.
- * `joshosborn` is not a substring of `joshuaosbornco`.
  * Other client brands are never Insight supply.
  */
 export function isSalesGliderOrInsightSendingDomain(
@@ -99,11 +112,7 @@ export function isSalesGliderOrInsightSendingDomain(
   if (!domain) return false;
   const base = insightSendingDomainBase(domain);
   if (!base) return false;
-  return (
-    base.includes("salesglider") ||
-    /josh(ua)?osborn/.test(base) ||
-    base.includes("insight")
-  );
+  return base.includes("salesglider") || isInsightNamedSendingDomain(domain);
 }
 
 export type InsightJoshSenderAccount = {

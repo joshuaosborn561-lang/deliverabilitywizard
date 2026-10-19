@@ -25,7 +25,7 @@ function stateFile(): string {
 function namedSeat(input: {
   id: number;
   email: string;
-  clientId: number;
+  clientId?: number | null;
   pod?: "A" | "B";
   campaignIds?: number[];
   fromName?: string;
@@ -36,7 +36,7 @@ function namedSeat(input: {
     id: input.id,
     from_email: input.email,
     from_name: input.fromName ?? "Ada Lovelace",
-    client_id: input.clientId,
+    client_id: input.clientId ?? null,
     type: "GMAIL",
     is_smtp_success: true,
     is_imap_success: true,
@@ -287,11 +287,11 @@ describe("podOwnedInventory (D285)", () => {
     assert.equal(insightB?.owned, 1);
   });
 
-  it("D288: Insight Josh seats with SalesGlider client_id count even when unlinked", async () => {
+  it("D291: SalesGlider salesglider* Josh seats count for SG; Insight-named and leftover-on-Insight do not double-count", async () => {
     const state = new StateStore(stateFile());
     await state.load();
     const config = loadConfig({});
-    const unlinked = namedSeat({
+    const sgUnlinked = namedSeat({
       id: 1,
       email: "josh@trysalesglider.info",
       clientId: SALESGLIDER_CLIENT_ID,
@@ -299,7 +299,7 @@ describe("podOwnedInventory (D285)", () => {
       campaignIds: [],
       fromName: "Josh Osborn",
     });
-    const onSgOnly = namedSeat({
+    const sgOnSgCampaign = namedSeat({
       id: 2,
       email: "josh@salesglidersdr.info",
       clientId: SALESGLIDER_CLIENT_ID,
@@ -307,17 +307,134 @@ describe("podOwnedInventory (D285)", () => {
       campaignIds: [88],
       fromName: "Josh Osborn",
     });
+    const sgNullClient = namedSeat({
+      id: 3,
+      email: "joshua@salesglidermrr.info",
+      clientId: null,
+      pod: "A",
+      campaignIds: [],
+      fromName: "Joshua Osborn",
+    });
+    const insightNamedOnSgId = namedSeat({
+      id: 4,
+      email: "joshua@joshuaosbornco.info",
+      clientId: SALESGLIDER_CLIENT_ID,
+      pod: "A",
+      campaignIds: [],
+      fromName: "Joshua Osborn",
+    });
+    const leftoverOnInsight = namedSeat({
+      id: 5,
+      email: "josh@gosalesglider.info",
+      clientId: SALESGLIDER_CLIENT_ID,
+      pod: "B",
+      campaignIds: [3921647],
+      fromName: "Josh Osborn",
+    });
+    const insightLiveId = namedSeat({
+      id: 6,
+      email: "josh@salesglidertop.org",
+      clientId: INSIGHT_CLIENT_ID,
+      pod: "B",
+      campaignIds: [],
+      fromName: "Josh Osborn",
+    });
+    const owenSg = namedSeat({
+      id: 7,
+      email: "owen@salesglidersdr.info",
+      clientId: SALESGLIDER_CLIENT_ID,
+      pod: "A",
+      campaignIds: [88],
+      fromName: "Owen Sanchez",
+    });
+    const campaignById = new Map([
+      [
+        3921647,
+        {
+          id: 3921647,
+          client_id: INSIGHT_CLIENT_ID,
+          name: "Insight Consolidation Gateway SEG",
+        },
+      ],
+      [
+        88,
+        {
+          id: 88,
+          client_id: SALESGLIDER_CLIENT_ID,
+          name: "SalesGlider Engagers",
+        },
+      ],
+    ]);
     assert.equal(
       ownedNamedClientIdForSeat({
-        account: unlinked,
-        email: unlinked.from_email,
+        account: sgUnlinked,
+        email: sgUnlinked.from_email,
         campaignIds: [],
-        campaignById: new Map(),
+        campaignById,
+      }),
+      SALESGLIDER_CLIENT_ID,
+      "unlinked salesglider* Josh with SG client_id is SalesGlider",
+    );
+    assert.equal(
+      ownedNamedClientIdForSeat({
+        account: sgOnSgCampaign,
+        email: sgOnSgCampaign.from_email,
+        campaignIds: [88],
+        campaignById,
+      }),
+      SALESGLIDER_CLIENT_ID,
+      "salesglider* Josh on an SG campaign is SalesGlider",
+    );
+    assert.equal(
+      ownedNamedClientIdForSeat({
+        account: sgNullClient,
+        email: sgNullClient.from_email,
+        campaignIds: [],
+        campaignById,
+      }),
+      SALESGLIDER_CLIENT_ID,
+      "unlinked salesglider* Josh with no client_id falls back to the SG slug",
+    );
+    assert.equal(
+      ownedNamedClientIdForSeat({
+        account: insightNamedOnSgId,
+        email: insightNamedOnSgId.from_email,
+        campaignIds: [],
+        campaignById,
       }),
       INSIGHT_CLIENT_ID,
+      "joshuaosborn* Josh counts for Insight even under SG client_id",
+    );
+    assert.equal(
+      ownedNamedClientIdForSeat({
+        account: leftoverOnInsight,
+        email: leftoverOnInsight.from_email,
+        campaignIds: [3921647],
+        campaignById,
+      }),
+      INSIGHT_CLIENT_ID,
+      "salesglider* Josh leftover on an Insight campaign is Insight",
+    );
+    assert.equal(
+      ownedNamedClientIdForSeat({
+        account: insightLiveId,
+        email: insightLiveId.from_email,
+        campaignIds: [],
+        campaignById,
+      }),
+      INSIGHT_CLIENT_ID,
+      "salesglider* Josh with live Insight client_id is Insight",
     );
     const rows = await countOwnedClientPods({
-      accounts: [unlinked, onSgOnly],
+      accounts: [
+        sgUnlinked,
+        sgOnSgCampaign,
+        sgNullClient,
+        insightNamedOnSgId,
+        leftoverOnInsight,
+        insightLiveId,
+        owenSg,
+      ],
       campaigns: [
         {
           id: 3921647,
@@ -345,11 +462,39 @@ describe("podOwnedInventory (D285)", () => {
     const sgA = rows.find(
       (row) => row.clientId === SALESGLIDER_CLIENT_ID && row.pod === "A",
     );
-    assert.equal(insightA?.named, 1, "unlinked Josh seat must count for Insight");
-    assert.equal(insightB?.named, 1, "Josh leftover on SG campaign still counts for Insight");
+    const sgB = rows.find(
+      (row) => row.clientId === SALESGLIDER_CLIENT_ID && row.pod === "B",
+    );
+    assert.equal(
+      insightA?.named,
+      1,
+      "joshuaosborn* Josh fills Insight A, not SalesGlider",
+    );
+    assert.equal(
+      insightB?.named,
+      2,
+      "leftover-on-Insight + live Insight client_id fill Insight B",
+    );
+    assert.equal(
+      sgA?.named,
+      3,
+      "unlinked SG Josh + null-client salesglider* Josh + Owen fill SalesGlider A",
+    );
+    assert.equal(
+      sgB?.named,
+      1,
+      "salesglider* Josh on an SG campaign fills SalesGlider B",
+    );
     assert.equal(insightA?.owned, 1);
-    assert.equal(insightB?.owned, 1);
-    assert.equal(sgA?.owned ?? 0, 0, "Josh seats must not fill SalesGlider owned count");
+    assert.equal(insightB?.owned, 2);
+    assert.equal(sgA?.owned, 3);
+    assert.equal(sgB?.owned, 1);
+    const namedTotal =
+      (insightA?.named ?? 0) +
+      (insightB?.named ?? 0) +
+      (sgA?.named ?? 0) +
+      (sgB?.named ?? 0);
+    assert.equal(namedTotal, 7, "seven seats must appear once, never both clients");
   });
 
   it("D287: Insight Josh seats with SalesGlider client_id still count", async () => {

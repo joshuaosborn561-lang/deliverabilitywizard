@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D290** (2026-10-19). One page of current truth. When a new
+Canon as of **D291** (2026-10-19). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -395,11 +395,17 @@ Caps ramp manually (35 on Oct 12).
   on an on-week campaign unlink without dropping on-week
   below 40.   Insight 582890 is the **only** client that gets
   **no generics** (`insightExemptFromSenderTopUp`) and is
-  still counted per POD; Josh-only seats fill Insight even
-  when Smartlead still shows SalesGlider 345263 and even
-  when they are not currently linked to an Insight campaign
-  (D287/D288); production from-name is **Joshua Osborn** on
-  `joshuaosborn*` / `joshosborn*` / `salesglider*` (D290); a
+  still counted per POD. Josh-only seats on Insight-named
+  domains (`joshuaosborn*` / `joshosborn*` / `insight*`) fill
+  Insight even when Smartlead still shows SalesGlider 345263
+  and even when they are not currently linked (D287/D288/D291).
+  Leftover Josh seats sitting on an Insight campaign also
+  count for Insight, never SalesGlider. SalesGlider's own
+  `salesglider*` Josh seats with client 345263 (unlinked or
+  on SG campaigns) count for SalesGlider, never Insight —
+  D288's unlinked salesglider* remap is retired (D291).
+  Production from-name is **Joshua Osborn** on
+  `joshuaosborn*` / `joshosborn*` / `salesglider*` (D290). A
   short POD pages Josh daily (D282/D285). PowerGRYD 592842
   takes generics like any named client; dedicated generic
   seats without a POD tag still count when they are warm

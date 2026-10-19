@@ -1376,11 +1376,12 @@ export class Min40TopUpService {
       actions: this.state.listIsolationActions(),
       history: this.state.listDomainHistory(),
     });
-    const warmingBranded = this.warmingBrandedSeats(
+    const warmingBranded = await this.warmingBrandedSeats(
       input.accounts,
       input.campaignById,
       input.now,
     );
+    let covered = alreadyCoveredEmails(this.state.listGenericSeats());
     const owned = ownedPodMap(
       countOwnedClientPods({
         accounts: input.accounts,
@@ -1440,7 +1441,10 @@ export class Min40TopUpService {
           retirePendingDomains: retirePending,
           now: input.now,
         });
+        let pickedN = 0;
         for (const seat of ledgerPicks) {
+          pickedN += 1;
+          if (pickedN % MIN40_SEAT_YIELD_EVERY === 0) await yieldEventLoop();
           if (need <= 1e-9) break;
           if (input.signal?.aborted) {
             input.result.errors.push("aborted: stopped remaining POD fills");
@@ -1493,7 +1497,7 @@ export class Min40TopUpService {
               assignedPod: pod,
             },
             warming: warmingBranded,
-            alreadyCovered: alreadyCoveredEmails(this.state.listGenericSeats(), key),
+            alreadyCovered: covered,
             now: input.now,
           });
           try {
@@ -1549,6 +1553,7 @@ export class Min40TopUpService {
               );
             }
             selected.add(key);
+            for (const row of covering) covered.add(row.email);
             input.result.assigned.push({
               campaignId: pod === onWeek ? (clientActive[0]?.id ?? 0) : 0,
               campaignName: String(clientActive[0]?.name ?? clientId),
@@ -1569,14 +1574,17 @@ export class Min40TopUpService {
     }
   }
 
-  private warmingBrandedSeats(
+  private async warmingBrandedSeats(
     accounts: SmartleadAccountWithCampaigns[],
     campaignById: Map<number, SmartleadCampaign>,
     now: Date,
-  ): WarmingBrandedSeat[] {
+  ): Promise<WarmingBrandedSeat[]> {
     const out: WarmingBrandedSeat[] = [];
     const isMarker = this.state.isMarkerClientId?.bind(this.state);
+    let scanned = 0;
     for (const account of accounts) {
+      scanned += 1;
+      if (scanned % MIN40_SEAT_YIELD_EVERY === 0) await yieldEventLoop();
       const email = accountEmail(account)?.toLowerCase();
       if (!email) continue;
       if (isGenericMailbox(account, email, this.config, this.state)) continue;

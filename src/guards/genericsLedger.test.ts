@@ -45,6 +45,11 @@ describe("owner intent — D286 Generics Ledger", () => {
       new URL("../services/min40TopUp.ts", import.meta.url),
       "utf8",
     );
+    const store = await readFile(new URL("../state/store.ts", import.meta.url), "utf8");
+    const inventory = await readFile(
+      new URL("../lib/podOwnedInventory.ts", import.meta.url),
+      "utf8",
+    );
 
     assert.match(
       pool,
@@ -146,6 +151,50 @@ describe("owner intent — D286 Generics Ledger", () => {
       decisions,
       /^\| D287 \|/m,
       stop("The status index lists D287 (D127).", "DECISIONS.md status index has no D287 row."),
+    );
+    assert.match(
+      decisions,
+      /## D288 — /,
+      stop("The ledger records D288.", "DECISIONS.md has no D288 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D288 \|/m,
+      stop("The status index lists D288 (D127).", "DECISIONS.md status index has no D288 row."),
+    );
+    assert.match(
+      canon,
+      /saveHot[\s\S]{0,120}goneIds/,
+      stop("CANON names slim saveHot (D288).", "CANON.md lost saveHot goneIds-only."),
+    );
+    assert.doesNotMatch(
+      store,
+      /placementScores:\s*this\.state\.isolation\.placementScores/,
+      stop(
+        "saveHot never embeds isolation maps (D288).",
+        "store.ts hotStamps still copies placementScores.",
+      ),
+    );
+    assert.match(
+      store,
+      /saveHotWanted/,
+      stop("Overlapping saveHot coalesces (D288).", "store.ts lost saveHot coalescing."),
+    );
+    assert.match(
+      inventory,
+      /if \(isInsightJoshAllowedSender\(input\.account\)\) \{\s*return INSIGHT_CLIENT_ID;/,
+      stop(
+        "Josh seats count for Insight even unlinked (D288).",
+        "podOwnedInventory.ts still gates Insight remap on campaign membership.",
+      ),
+    );
+    assert.match(
+      min40,
+      /if \(scanned % MIN40_SEAT_YIELD_EVERY === 0\) await yieldEventLoop\(\);/,
+      stop(
+        "min40 branded-warming walk yields (D288).",
+        "min40TopUp.ts warmingBrandedSeats lost its yield.",
+      ),
     );
   });
 });

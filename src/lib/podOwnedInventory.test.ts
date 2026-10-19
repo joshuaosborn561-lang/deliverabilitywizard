@@ -10,8 +10,10 @@ import {
 import {
   countOwnedClientPods,
   formatPodFloorAlert,
+  ownedNamedClientIdForSeat,
   seatSitsOnForeignNamedCampaign,
 } from "./podOwnedInventory.js";
+import { INSIGHT_CLIENT_ID, SALESGLIDER_CLIENT_ID } from "./insightCampaigns.js";
 import { StateStore } from "../state/store.js";
 
 const warmedAt = "2026-01-01T00:00:00.000Z";
@@ -221,6 +223,71 @@ describe("podOwnedInventory (D285)", () => {
     assert.equal(podA?.floor, 30);
     assert.equal(podB?.owned, 0);
     assert.equal(podB?.shortBy, 30);
+  });
+
+  it("D288: Insight Josh seats with SalesGlider client_id count even when unlinked", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const config = loadConfig({});
+    const unlinked = namedSeat({
+      id: 1,
+      email: "josh@trysalesglider.info",
+      clientId: SALESGLIDER_CLIENT_ID,
+      pod: "A",
+      campaignIds: [],
+      fromName: "Josh Osborn",
+    });
+    const onSgOnly = namedSeat({
+      id: 2,
+      email: "josh@salesglidersdr.info",
+      clientId: SALESGLIDER_CLIENT_ID,
+      pod: "B",
+      campaignIds: [88],
+      fromName: "Josh Osborn",
+    });
+    assert.equal(
+      ownedNamedClientIdForSeat({
+        account: unlinked,
+        email: unlinked.from_email,
+        campaignIds: [],
+        campaignById: new Map(),
+      }),
+      INSIGHT_CLIENT_ID,
+    );
+    const rows = countOwnedClientPods({
+      accounts: [unlinked, onSgOnly],
+      campaigns: [
+        {
+          id: 3921647,
+          name: "Insight Consolidation Gateway SEG",
+          status: "ACTIVE",
+          client_id: INSIGHT_CLIENT_ID,
+        },
+        {
+          id: 88,
+          name: "SalesGlider Engagers",
+          status: "ACTIVE",
+          client_id: SALESGLIDER_CLIENT_ID,
+        },
+      ],
+      config,
+      state,
+      clientIds: [INSIGHT_CLIENT_ID, SALESGLIDER_CLIENT_ID],
+    });
+    const insightA = rows.find(
+      (row) => row.clientId === INSIGHT_CLIENT_ID && row.pod === "A",
+    );
+    const insightB = rows.find(
+      (row) => row.clientId === INSIGHT_CLIENT_ID && row.pod === "B",
+    );
+    const sgA = rows.find(
+      (row) => row.clientId === SALESGLIDER_CLIENT_ID && row.pod === "A",
+    );
+    assert.equal(insightA?.named, 1, "unlinked Josh seat must count for Insight");
+    assert.equal(insightB?.named, 1, "Josh leftover on SG campaign still counts for Insight");
+    assert.equal(insightA?.owned, 1);
+    assert.equal(insightB?.owned, 1);
+    assert.equal(sgA?.owned ?? 0, 0, "Josh seats must not fill SalesGlider owned count");
   });
 
   it("D287: Insight Josh seats with SalesGlider client_id still count", async () => {

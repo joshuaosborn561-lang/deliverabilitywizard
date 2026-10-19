@@ -152,6 +152,10 @@ export function genericBlockedOnPowerGrydStaffing(input: {
     return true;
   }
   if (!input.emptyByDesign) return false;
+  // D292 — leftover foreign signatures on a FREE ledger seat are
+  // rewritten to PowerGRYD on assign. Empty-by-design must not refuse
+  // rotating those in. A live foreign owner still blocks above.
+  if (input.assignedClientId == null && liveOwner == null) return false;
   const brand = String(input.powerGrydBrand ?? "PowerGRYD").trim();
   const brands = input.allBrands ?? [];
   if (!brand || brands.length === 0) return false;

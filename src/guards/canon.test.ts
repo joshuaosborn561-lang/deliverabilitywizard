@@ -12866,6 +12866,9 @@ describe("owner intent — D230 one client one POD named-warm return", () => {
       genericEligibleForClientPod({
         clientId: 77,
         targetPod: "A",
+        mailboxClientId: 77,
+        assignedClientId: 77,
+        assignedPod: "B",
         tags: [{ tag_name: "POD-B" }],
       }),
       false,
@@ -17759,6 +17762,84 @@ describe("owner intent — D283 freed PowerGRYD seats; CornerStone / HOLD-UNTIL 
         "addEmailAccountsToCampaign hard-rejects CornerStone / HOLD-UNTIL (D283).",
         "smartlead.ts lost assertAttachAllowedAccountIds.",
       ),
+    );
+  });
+});
+
+describe("owner intent — D292 ledger-free rotation; overdue canonOps vs health", () => {
+  it("D292: leftover-free assign path and overdue health skip waiver stay wired", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    const min40 = await readFile(new URL("../services/min40TopUp.ts", import.meta.url), "utf8");
+    const retry = await readFile(new URL("../lib/canonOpsRetry.ts", import.meta.url), "utf8");
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const locked = await readFile(
+      new URL("../../docs/LOCKED-CANON.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D292\*\*/,
+      stop("CANON is dated D292.", "CANON.md header is not D292."),
+    );
+    assert.match(
+      canon,
+      /starting overdue hold-enforcement\/min40 anyway|does \*\*not\*\* skip for health-running/,
+      stop("CANON names overdue canonOps during health (D292).", "CANON.md lost the overdue health-skip waiver."),
+    );
+    assert.match(
+      decisions,
+      /## D292 — /,
+      stop("The ledger records D292.", "DECISIONS.md has no D292 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D292 \|/m,
+      stop("The status index lists D292 (D127).", "DECISIONS.md status index has no D292 row."),
+    );
+    const { genericEligibleForClientPod } = await import("../lib/genericAssign.js");
+    assert.equal(
+      genericEligibleForClientPod({
+        clientId: 418274,
+        targetPod: "B",
+        mailboxClientId: 900001,
+        assignedClientId: null,
+        tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-A" }],
+        isMarkerClientId: (id) => id === 900001,
+      }),
+      true,
+      stop(
+        "Leftover POD tags on a ledger-free seat may take any short POD (D292).",
+        "genericEligibleForClientPod locked leftover POD tags on a free seat.",
+      ),
+    );
+    assert.match(
+      min40,
+      /isMarkerClientId/,
+      stop("min40 eligibility ignores leftover marker ids (D292).", "min40TopUp.ts lost isMarkerClientId on genericEligibleForClientPod."),
+    );
+    assert.match(
+      min40,
+      /ledger membership is enough/,
+      stop("min40 ledger pick is not pool-row gated (D292).", "min40TopUp.ts lost the ledger-membership assign path."),
+    );
+    assert.match(
+      retry,
+      /overdue/,
+      stop("canon-ops skip is waived when overdue (D292).", "canonOpsRetry.ts lost the overdue waiver."),
+    );
+    assert.match(
+      index,
+      /canonOpsOverdueDespiteHealthLog/,
+      stop("Overdue canon-ops runs during health (D292).", "index.ts lost canonOpsOverdueDespiteHealthLog."),
+    );
+    assert.match(
+      locked,
+      /POD-40: every client POD A and POD B must each hold >=40 warm seats/,
+      stop("LOCKED POD-40 sentence unchanged (D292).", "docs/LOCKED-CANON.md LOCKED sentence drifted."),
     );
   });
 });

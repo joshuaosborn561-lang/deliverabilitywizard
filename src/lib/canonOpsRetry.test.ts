@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  canonOpsOverdueDespiteHealthLog,
   canonOpsShouldRetryAfterHealth,
   canonOpsSkipLog,
   canonOpsSkipReason,
@@ -17,6 +18,24 @@ describe("D267 canon-ops skipped-tick logging and retry", () => {
     assert.match(canonOpsSkipLog(reason!), /Health pass running/);
     assert.match(canonOpsSkipLog(reason!), /will retry after health/);
     assert.equal(canonOpsShouldRetryAfterHealth(reason), true);
+  });
+
+  it("D292: overdue hold/min40 is not skipped for a live health pass", () => {
+    const reason = canonOpsSkipReason({
+      healthLive: true,
+      alreadyRunning: false,
+      overdue: true,
+    });
+    assert.equal(reason, undefined);
+    assert.match(canonOpsOverdueDespiteHealthLog(), /overdue hold-enforcement\/min40/);
+    assert.equal(
+      canonOpsSkipReason({
+        healthLive: true,
+        alreadyRunning: false,
+        overdue: false,
+      }),
+      "health-running",
+    );
   });
 
   it("does not retry an already-running canon-ops pass", () => {

@@ -136,4 +136,48 @@ describe("D258 PowerGRYD empty-by-design", () => {
       "PowerGRYD may take a free-pool generic (D285)",
     );
   });
+
+  it("D292: leftover foreign signature on a free ledger seat does not block PowerGRYD", () => {
+    assert.equal(
+      genericBlockedOnPowerGrydStaffing({
+        account: {
+          id: 901,
+          from_email: "cover@crosslaunchco.com",
+          from_name: "Cover Seat",
+          signature: "Cover Seat\nTechEvolution",
+          client_id: null,
+        } as SmartleadAccountWithCampaigns,
+        email: "cover@crosslaunchco.com",
+        targetClientId: 592842,
+        emptyByDesign: true,
+        mailboxClientId: null,
+        assignedClientId: null,
+        powerGrydBrand: "PowerGRYD",
+        allBrands: ["PowerGRYD", "TechEvolution", "Insight", "Emcor"],
+      }),
+      false,
+      "empty-by-design must not refuse rotating a free warm generic whose leftover sig will be rewritten",
+    );
+    assert.equal(
+      genericBlockedOnPowerGrydStaffing({
+        account: {
+          id: 902,
+          from_email: "ada@crosslaunchco.com",
+          from_name: "Ada Pool",
+          signature: "Ada Pool\nTechEvolution",
+          client_id: 900001,
+        } as SmartleadAccountWithCampaigns,
+        email: "ada@crosslaunchco.com",
+        targetClientId: 592842,
+        emptyByDesign: true,
+        mailboxClientId: 900001,
+        assignedClientId: null,
+        isMarkerClientId: (id) => id === 900001,
+        powerGrydBrand: "PowerGRYD",
+        allBrands: ["PowerGRYD", "TechEvolution", "Insight", "Emcor"],
+      }),
+      false,
+      "leftover marker Generic/POC client_id is not a live named owner",
+    );
+  });
 });

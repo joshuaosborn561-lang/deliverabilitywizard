@@ -28,6 +28,7 @@ import {
   type CopySuspectRecord,
   type PlacementScoreRecord,
   type IsolationActionRecord,
+  type IsolationDecisionReceipt,
   type IsolationRunRecord,
   type IsolationState,
   type IsolationVariantRecord,
@@ -855,6 +856,8 @@ export class StateStore {
   private isolationGoneIds = new Set<number>();
   /** D269 — ghost pool emails persisted on the sidecar so min40 does not re-drop them after a freeze-kill. */
   private poolGoneEmails = new Set<string>();
+  /** D294 — decided isolation receipts on the sidecar (never the full action map). */
+  private isolationDecisionReceipts: IsolationDecisionReceipt[] = [];
   /**
    * Test-only: sit between stringify and rename so a concurrent mutation
    * can prove the mutex does not persist a stale snapshot.
@@ -2821,6 +2824,37 @@ export class StateStore {
 
   upsertIsolationAction(record: IsolationActionRecord): void {
     this.state.isolation.actions[record.id] = record;
+    if (record.status !== "pending") this.rememberIsolationDecision(record);
+  }
+
+  private rememberIsolationDecision(record: IsolationActionRecord): void {
+    const domain = String(
+      record.detail.domain ?? record.detail.retiredDomain ?? "",
+    )
+      .trim()
+      .toLowerCase();
+    const next: IsolationDecisionReceipt = {
+      id: record.id,
+      status: record.status,
+      kind: record.kind,
+      decidedBy: record.decidedBy,
+      decidedAt: record.decidedAt,
+      ...(domain ? { domain } : {}),
+    };
+    this.isolationDecisionReceipts = [
+      ...this.isolationDecisionReceipts.filter((row) => row.id !== record.id),
+      next,
+    ].slice(-200);
+  }
+
+  /** D294 — flush decided isolation receipts to the lastOk sidecar now. */
+  async persistIsolationDecision(record: IsolationActionRecord): Promise<void> {
+    this.rememberIsolationDecision(record);
+    await this.saveHot();
+  }
+
+  async persistIsolationDecisions(): Promise<void> {
+    await this.saveHot();
   }
 
   getIsolationAction(id: string): IsolationActionRecord | undefined {
@@ -2909,6 +2943,12 @@ export class StateStore {
         at: new Date().toISOString(),
         goneEmails: [...this.poolGoneEmails],
       },
+      // D294 — compact decide receipts only. Never the isolation.actions map
+      // (D288: embedding living isolation maps made json.stringify:hot stall).
+      isolationDecisions: {
+        at: new Date().toISOString(),
+        receipts: this.isolationDecisionReceipts,
+      },
     };
   }
 
@@ -2973,6 +3013,38 @@ export class StateStore {
     }
     this.overlayIsolationPrune(raw.isolationPrune);
     this.overlayPoolPrune(raw.poolPrune);
+    this.overlayIsolationDecisions(raw.isolationDecisions);
+  }
+
+  private overlayIsolationDecisions(raw: unknown): void {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+    const blob = raw as { receipts?: unknown };
+    if (!Array.isArray(blob.receipts)) return;
+    for (const row of blob.receipts) {
+      if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+      const receipt = row as IsolationDecisionReceipt;
+      if (!receipt.id || typeof receipt.id !== "string") continue;
+      if (!receipt.status || receipt.status === "pending") continue;
+      this.isolationDecisionReceipts = [
+        ...this.isolationDecisionReceipts.filter((item) => item.id !== receipt.id),
+        {
+          id: receipt.id,
+          status: receipt.status,
+          kind: typeof receipt.kind === "string" ? receipt.kind : "unknown",
+          decidedBy: typeof receipt.decidedBy === "string" ? receipt.decidedBy : undefined,
+          decidedAt: typeof receipt.decidedAt === "string" ? receipt.decidedAt : undefined,
+          domain: typeof receipt.domain === "string" ? receipt.domain : undefined,
+        },
+      ].slice(-200);
+      const existing = this.state.isolation.actions[receipt.id];
+      if (!existing || existing.status !== "pending") continue;
+      this.state.isolation.actions[receipt.id] = {
+        ...existing,
+        status: receipt.status,
+        decidedBy: receipt.decidedBy ?? existing.decidedBy,
+        decidedAt: receipt.decidedAt ?? existing.decidedAt,
+      };
+    }
   }
 
   private overlayIsolationPrune(raw: unknown): void {

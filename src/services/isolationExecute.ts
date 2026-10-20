@@ -73,6 +73,65 @@ export class IsolationExecuteService {
     private readonly inboxkit?: InboxKitClient | null,
   ) {}
 
+  /**
+   * D294 — write approved on every id (sidecar) before any purchase.
+   * Josh-only kinds stay pending when the tapper is not Josh.
+   */
+  async stampApprovals(
+    ids: string[],
+    actor: { name: string; role: "owner" | "operator" | "unknown" },
+  ): Promise<string[]> {
+    const now = new Date().toISOString();
+    const stamped: string[] = [];
+    for (const id of ids) {
+      const action = this.state.getIsolationAction(id);
+      if (!action || action.status !== "pending") continue;
+      if (!canDecideIsolationAction(action.kind, actor.role)) continue;
+      this.state.upsertIsolationAction({
+        ...action,
+        status: "approved",
+        decidedAt: now,
+        decidedBy: actor.name,
+      });
+      stamped.push(id);
+    }
+    if (stamped.length) await this.state.persistIsolationDecisions();
+    return stamped;
+  }
+
+  /** D294 — finish approved retires / buys that died before executedAt. */
+  async resumeDecided(): Promise<number> {
+    let n = 0;
+    for (const action of this.state.listIsolationActions()) {
+      if (!this.shouldResumeApproved(action, "approve")) continue;
+      const name = action.decidedBy?.trim() || "the wizard";
+      const result = await this.decide(action.id, "approve", {
+        name,
+        role: "owner",
+      });
+      if (result.ok) n += 1;
+    }
+    return n;
+  }
+
+  private shouldResumeApproved(
+    action: IsolationActionRecord,
+    decision: "approve" | "deny",
+  ): boolean {
+    if (decision !== "approve") return false;
+    if (action.status !== "approved") return false;
+    if (action.executedAt) return false;
+    if (this.inFlight.has(action.id)) return false;
+    if (action.kind === "retire_domain") return true;
+    if (
+      (action.kind === "buy_domains" || action.kind === "buy_isolation_domain") &&
+      purchasedDomainsOf(action).length === 0
+    ) {
+      return true;
+    }
+    return false;
+  }
+
   async decide(
     actionId: string,
     decision: "approve" | "deny",
@@ -90,6 +149,59 @@ export class IsolationExecuteService {
           "Already working on that tap. No second purchase.",
         ),
       };
+    }
+    if (this.shouldResumeApproved(action, decision)) {
+      const approved: IsolationActionRecord = {
+        ...action,
+        status: "approved",
+        decidedAt: action.decidedAt ?? new Date().toISOString(),
+        decidedBy: action.decidedBy || actor.name,
+      };
+      this.state.upsertIsolationAction(approved);
+      await this.state.persistIsolationDecision(approved);
+      this.inFlight.add(actionId);
+      try {
+        const summary = await withTransientRetry(
+          () => this.runApproved(approved, actor.name),
+          process.env.NODE_TEST_CONTEXT
+            ? { backoffMs: [0, 0, 0], sleepFn: async () => undefined }
+            : {},
+        );
+        this.state.upsertIsolationAction({
+          ...this.state.getIsolationAction(actionId)!,
+          status: "executed",
+          executedAt: new Date().toISOString(),
+          error: undefined,
+        });
+        markSpendDoneForAsk(this.state, {
+          actionId,
+          domain: String(
+            approved.detail.domain ?? approved.detail.retiredDomain ?? "",
+          ),
+          decidedBy: actor.name,
+        });
+        pruneSatisfiedPendingSpend(this.state);
+        await this.state.save();
+        await this.clearCopies(
+          this.state.getIsolationAction(actionId)!,
+          actor.name,
+        );
+        return { ok: true, message: doneByLine(actor.name, summary) };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const current = this.state.getIsolationAction(actionId)!;
+        this.state.upsertIsolationAction({
+          ...current,
+          status: "approved",
+          error: message,
+        });
+        await this.state.persistIsolationDecision(
+          this.state.getIsolationAction(actionId)!,
+        );
+        return { ok: false, message: doneByLine(actor.name, message) };
+      } finally {
+        this.inFlight.delete(actionId);
+      }
     }
     if (action.status !== "pending") {
       await this.clearCopies(action, actor.name);
@@ -211,6 +323,7 @@ export class IsolationExecuteService {
       decidedBy: actor.name,
     };
     this.state.upsertIsolationAction(approved);
+    await this.state.persistIsolationDecision(approved);
     this.inFlight.add(actionId);
     try {
       const summary = await withTransientRetry(

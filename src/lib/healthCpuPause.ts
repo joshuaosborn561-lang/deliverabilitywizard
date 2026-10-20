@@ -18,6 +18,7 @@
 export const HEALTH_CPU_PAUSE_MS = 25;
 
 let overdueCanonOpsExclusive = false;
+let slackInteractionExclusive = false;
 
 export function setOverdueCanonOpsExclusive(on: boolean): void {
   overdueCanonOpsExclusive = on;
@@ -25,6 +26,15 @@ export function setOverdueCanonOpsExclusive(on: boolean): void {
 
 export function isOverdueCanonOpsExclusive(): boolean {
   return overdueCanonOpsExclusive;
+}
+
+/** D294 — a live Slack tap must not wait behind a 20–50s fleet scan. */
+export function setSlackInteractionExclusive(on: boolean): void {
+  slackInteractionExclusive = on;
+}
+
+export function isSlackInteractionExclusive(): boolean {
+  return slackInteractionExclusive;
 }
 
 export async function pauseWhileHealthLive(
@@ -52,6 +62,21 @@ export async function pauseWhileOverdueCanonOps(
     `[${label}] overdue canon-ops live — pausing CPU until min40 ends (D293)`,
   );
   while (overdueCanonOpsExclusive) {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, HEALTH_CPU_PAUSE_MS);
+    });
+  }
+}
+
+export async function pauseWhileSlackInteraction(
+  opts: { label?: string; skip?: boolean } = {},
+): Promise<void> {
+  if (opts.skip || !slackInteractionExclusive) return;
+  const label = opts.label ?? "scan";
+  console.log(
+    `[${label}] Slack tap live — pausing CPU until the ack/decide stamps (D294)`,
+  );
+  while (slackInteractionExclusive) {
     await new Promise<void>((resolve) => {
       setTimeout(resolve, HEALTH_CPU_PAUSE_MS);
     });

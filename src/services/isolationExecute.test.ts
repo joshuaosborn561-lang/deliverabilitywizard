@@ -1172,4 +1172,112 @@ describe("D266 — one-tap spend/retire cards", () => {
       /I will finish the mailbox order myself/,
     );
   });
+
+  it("D294: stamps approved on the sidecar before the buy runs", async () => {
+    const path = `/tmp/dw-iso-stamp-${process.pid}-${Date.now()}.json`;
+    const state = new StateStore(path);
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "buy_domains",
+      title: "Buy cover",
+      proof: "proof",
+      detail: { domain: "coverme.info", quantity: 1 },
+    });
+    state.upsertIsolationAction(action);
+    await state.save();
+    let statusWhenBuyStarted = "";
+    let sidecarHasApproved = false;
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {} as never,
+      { send: async () => undefined } as never,
+      state,
+      {
+        run: async () => {
+          statusWhenBuyStarted = state.getIsolationAction(action.id)?.status ?? "";
+          const reloaded = new StateStore(path);
+          await reloaded.load();
+          sidecarHasApproved =
+            reloaded.getIsolationAction(action.id)?.status === "approved";
+          return { domains: ["bought.info"], mailboxesOrdered: 0, awaitingNameservers: false };
+        },
+      } as never,
+    );
+    const result = await svc.decide(action.id, "approve", {
+      name: "Cayden",
+      role: "operator",
+    });
+    assert.equal(result.ok, true);
+    assert.equal(statusWhenBuyStarted, "approved");
+    assert.equal(sidecarHasApproved, true);
+  });
+
+  it("D294: resumeDecided finishes an approved retire that never got executedAt", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-resume-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "retire_domain",
+      title: "Retire leftover.info",
+      proof: "proof",
+      detail: { domain: "leftover.info" },
+    });
+    state.upsertIsolationAction({
+      ...action,
+      status: "approved",
+      decidedAt: "2026-10-20T12:00:00.000Z",
+      decidedBy: "Cayden",
+    });
+    const sl = {
+      listCampaigns: async () => [{ id: 1, status: "ACTIVE" }],
+      listAllEmailAccounts: async () => [],
+      listClients: async () => [],
+      removeEmailAccountsFromCampaign: async () => undefined,
+    };
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      sl as never,
+      { send: async () => undefined } as never,
+      state,
+      {
+        run: async () => ({
+          domains: [],
+          mailboxesOrdered: 0,
+          awaitingNameservers: false,
+        }),
+      } as never,
+    );
+    const n = await svc.resumeDecided();
+    assert.equal(n, 1);
+    assert.equal(state.getIsolationAction(action.id)?.status, "executed");
+    assert.ok(state.getIsolationAction(action.id)?.executedAt);
+  });
+
+  it("D294: Cayden cannot stamp a Josh-only canary buy", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-joshonly-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const canary = buildIsolationAction({
+      kind: "buy_canary_fleet",
+      title: "Buy canary fleet",
+      proof: "proof",
+      detail: { quantity: 2 },
+    });
+    state.upsertIsolationAction(canary);
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {} as never,
+      { send: async () => undefined } as never,
+      state,
+      { run: async () => ({ domains: [], mailboxesOrdered: 0, awaitingNameservers: false }) } as never,
+    );
+    const stamped = await svc.stampApprovals([canary.id], {
+      name: "Cayden",
+      role: "operator",
+    });
+    assert.deepEqual(stamped, []);
+    assert.equal(state.getIsolationAction(canary.id)?.status, "pending");
+  });
 });

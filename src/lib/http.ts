@@ -3,6 +3,7 @@ import { once } from "node:events";
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { runWithStallScopeAsync } from "./eventLoopAttribution.js";
 import { parseFileOffThread } from "./jsonOffThread.js";
+import { pauseWhileSlackInteraction } from "./healthCpuPause.js";
 import { yieldEventLoop } from "./stringifyYielding.js";
 
 export class ApiError extends Error {
@@ -98,9 +99,12 @@ export async function streamResponseToFile(
         if (!file.write(chunk)) await once(file, "drain");
         written += chunk.byteLength;
         sinceYield += chunk.byteLength;
-        if (sinceYield >= yieldEvery) {
+        // D294 — yield every 64KB slice (not every 256KB) so a Slack
+        // tap can ack inside 3s while a fat Smartlead page streams.
+        if (sinceYield >= Math.min(yieldEvery, STREAM_BODY_SLICE_BYTES)) {
           sinceYield = 0;
           await yieldEventLoop();
+          await pauseWhileSlackInteraction({ label: "fs.streamResponseToFile" });
         }
       }
     }

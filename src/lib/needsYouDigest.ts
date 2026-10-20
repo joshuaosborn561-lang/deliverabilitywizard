@@ -76,16 +76,46 @@ export function needsYouText(input: {
   return lines.join("\n").trim();
 }
 
+/** Slack button value: clientKey + stamped isolation ids (D294). */
+export function encodeNeedsYouButtonValue(
+  clientKey: string,
+  isolationIds: string[],
+): string {
+  return `${clientKey}\t${isolationIds.join(",")}`.slice(0, 2000);
+}
+
+export function parseNeedsYouButtonValue(value: string): {
+  clientKey: string;
+  ids: string[];
+} {
+  const raw = String(value ?? "");
+  const tab = raw.indexOf("\t");
+  if (tab === -1) {
+    return { clientKey: raw.trim(), ids: [] };
+  }
+  return {
+    clientKey: raw.slice(0, tab).trim(),
+    ids: raw
+      .slice(tab + 1)
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean),
+  };
+}
+
 export function needsYouCaydenButtons(
   groups: SpendDigestClientGroup[],
 ): Array<Record<string, unknown>> {
   return groups.slice(0, 5).map((group) => {
+    const isolationIds = group.items
+      .filter((row) => row.source === "isolation")
+      .map((row) => row.id);
     const button: Record<string, unknown> = {
       type: "button",
       text: { type: "plain_text", text: `Approve ${group.clientName}`.slice(0, 75) },
       style: "primary",
       action_id: `${NEEDS_YOU_APPROVE_ACTION}:${group.clientKey}`.slice(0, 255),
-      value: group.clientKey,
+      value: encodeNeedsYouButtonValue(group.clientKey, isolationIds),
       confirm: needsYouConfirmDialog(group.clientName),
     };
     return button;
@@ -116,6 +146,7 @@ export function buildNeedsYouDigest(
     | "upsertIsolationAction"
     | "upsertSpendApproval"
     | "listPoolMailboxes"
+    | "getAttachBlock"
   >,
 ): {
   cayden: SpendDigestClientGroup[];
@@ -141,7 +172,30 @@ export function isolationIdsForClient(
   items: SpendDigestItem[],
   clientKey: string,
 ): string[] {
+  const key = clientKey.trim();
+  if (!key) return [];
   return items
-    .filter((row) => row.clientKey === clientKey && row.source === "isolation")
+    .filter((row) => row.clientKey === key && row.source === "isolation")
     .map((row) => row.id);
+}
+
+/**
+ * Prefer ids stamped on the button so a later regroup (Unassigned →
+ * id:123) cannot empty the tap. Live pending / unfinished-approved
+ * rows for that client still join in.
+ */
+export function resolveNeedsYouIsolationIds(input: {
+  items: SpendDigestItem[];
+  clientKey: string;
+  stampedIds?: string[];
+  getAction?: (id: string) => IsolationActionRecord | undefined;
+}): string[] {
+  const stamped = (input.stampedIds ?? []).filter((id) => {
+    if (!input.getAction) return true;
+    const row = input.getAction(id);
+    if (!row) return false;
+    if (row.status === "pending") return true;
+    return row.status === "approved" && !row.executedAt;
+  });
+  return [...new Set([...stamped, ...isolationIdsForClient(input.items, input.clientKey)])];
 }

@@ -17863,8 +17863,8 @@ describe("owner intent — D293 D292 follow-up serialize/cleanup/log/timeout/Pow
 
     assert.match(
       canon,
-      /Canon as of \*\*D293\*\*/,
-      stop("CANON is dated D293.", "CANON.md header is not D293."),
+      /Canon as of \*\*D(293|294|29[5-9]|3[0-9]{2})\*\*/,
+      stop("CANON is dated D293+.", "CANON.md header is before D293."),
     );
     assert.match(
       canon,
@@ -17923,6 +17923,109 @@ describe("owner intent — D293 D292 follow-up serialize/cleanup/log/timeout/Pow
       locked,
       /POD-40: every client POD A and POD B must each hold >=40 warm seats/,
       stop("LOCKED POD-40 sentence unchanged (D293).", "docs/LOCKED-CANON.md LOCKED sentence drifted."),
+    );
+  });
+});
+
+describe("owner intent — D294 Needs-you Approve acks, persists, resumes", () => {
+  it("D294: durable tap, sidecar stamp, resume, digest prune, Slack id sanity", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const execute = await readFile(
+      new URL("../services/isolationExecute.ts", import.meta.url),
+      "utf8",
+    );
+    const store = await readFile(new URL("../state/store.ts", import.meta.url), "utf8");
+    const pause = await readFile(new URL("../lib/healthCpuPause.ts", import.meta.url), "utf8");
+    const approve = await readFile(new URL("../lib/needsYouApprove.ts", import.meta.url), "utf8");
+    const actors = await readFile(new URL("../lib/slackActorIds.ts", import.meta.url), "utf8");
+    const locked = await readFile(
+      new URL("../../docs/LOCKED-CANON.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D294\*\*/,
+      stop("CANON is dated D294.", "CANON.md header is not D294."),
+    );
+    assert.match(
+      canon,
+      /stamps every isolation id `approved` on the lastOk sidecar/,
+      stop("CANON names durable Needs-you approve (D294).", "CANON.md lost the sidecar stamp rule."),
+    );
+    assert.match(
+      decisions,
+      /## D294 — /,
+      stop("The ledger records D294.", "DECISIONS.md has no D294 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D294 \|/m,
+      stop("The status index lists D294 (D127).", "DECISIONS.md status index has no D294 row."),
+    );
+    assert.match(
+      index,
+      /handleNeedsYouApproveClient/,
+      stop("Needs-you taps go through the durable handler (D294).", "index.ts lost handleNeedsYouApproveClient."),
+    );
+    assert.match(
+      index,
+      /setSlackInteractionExclusive\(true\)/,
+      stop("A Slack tap pauses fleet CPU (D294).", "index.ts lost setSlackInteractionExclusive(true)."),
+    );
+    assert.match(
+      index,
+      /resumeDecided/,
+      stop("isolation-buy-resume finishes stamped approves (D294).", "index.ts lost resumeDecided."),
+    );
+    assert.match(
+      index,
+      /slackActorIdSanity/,
+      stop("Boot logs Slack Josh/Cayden ids (D294).", "index.ts lost slackActorIdSanity."),
+    );
+    assert.match(
+      execute,
+      /persistIsolationDecision/,
+      stop("decide persists approved before the buy (D294).", "isolationExecute.ts lost persistIsolationDecision."),
+    );
+    assert.match(
+      execute,
+      /async stampApprovals/,
+      stop("Needs-you stamps every id before execution (D294).", "isolationExecute.ts lost stampApprovals."),
+    );
+    assert.match(
+      execute,
+      /async resumeDecided/,
+      stop("Approved retires resume after a freeze-kill (D294).", "isolationExecute.ts lost resumeDecided."),
+    );
+    assert.match(
+      store,
+      /isolationDecisions/,
+      stop("Sidecar carries isolation decide receipts (D294).", "store.ts lost isolationDecisions."),
+    );
+    assert.match(
+      pause,
+      /setSlackInteractionExclusive/,
+      stop("Health CPU can pause for a Slack tap (D294).", "healthCpuPause.ts lost the Slack exclusive flag."),
+    );
+    assert.match(
+      approve,
+      /needs-you approve/,
+      stop("Every Needs-you tap logs one line (D294).", "needsYouApprove.ts lost the log line."),
+    );
+    assert.match(
+      actors,
+      /KNOWN_SLACK_CAYDEN_USER_ID/,
+      stop("Boot sanity knows Cayden's Slack id (D294).", "slackActorIds.ts lost the known Cayden id."),
+    );
+    assert.match(
+      locked,
+      /POD-40: every client POD A and POD B must each hold >=40 warm seats/,
+      stop("LOCKED POD-40 sentence unchanged (D294).", "docs/LOCKED-CANON.md LOCKED sentence drifted."),
     );
   });
 });

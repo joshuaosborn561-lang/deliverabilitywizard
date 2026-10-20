@@ -52,6 +52,11 @@ export class SpendDigestService {
       };
     }
     const digest = buildNeedsYouDigest(this.state);
+    try {
+      await this.state.saveHot();
+    } catch (error) {
+      console.warn("[spend-digest] prune saveHot failed", error);
+    }
     let posted = false;
     if (digest.text && this.slack?.send) {
       await this.slack.send(digest.text, digest.blocks, "burned_domain");

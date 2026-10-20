@@ -289,6 +289,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D291 | Live | Old-wizard fix: SalesGlider's own `salesglider*` Josh seats with client 345263 (unlinked or on SG campaigns) count for SalesGlider, never Insight. Insight-named Josh seats (`joshuaosborn*` / `joshosborn*` / `insight*`) and leftover Josh seats sitting on an Insight campaign still count for Insight, never SalesGlider. D288's remap of every Josh+salesglider* seat to Insight 582890 emptied SG POD-A/B (prod 2026-10-19 2:32pm CT under-floor: SG A 0/40, B 4/40) after D290 made joshuaosborn* fill Insight. Never both. Insight still no generics. CornerStone never. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
 | D292 | Live — overlap-with-health freeze / cleanup flap / silent errors / 10m timeout / PowerGRYD empty-by-design log amended by D293 | Old-wizard fix: min40 assigns free warm ledger seats into under-floor PODs even when leftover Smartlead marker `client_id` / pool assignment / POD tags / foreign signatures remain (rewrite client sig on assign); PowerGRYD empty-by-design no longer refuses that free-pool rotation; Insight still no generics. canonOps hold-enforcement + min40-topup run at least every 30 min in the weekday window even when health is long or back-to-back (waive health-running skip when overdue; share the Smartlead limiter). Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
 | D293 | Live | Old-wizard fix after D292 prod (deploy f446303c, 2026-10-19 ~5:10pm CT): overdue min40 serializes against health CPU (does not overlap client-rest / campaign-check scans); cleanup and min40 agree on assigned generics (ledger + owned POD count) so cleanup cannot undo a just-assigned under-floor seat; min40 logs each error and each POD's rejection reasons; one seat error does not abort the rest of the POD; min40-topup step budget 20m; PowerGRYD empty-by-design refuse-generics log/logic removed (Insight is the only no-generics client). Watchdog thresholds unchanged. Warm gate, CornerStone, ESP match, ≥33% mix unchanged. LOCKED section unchanged. |
+| D294 | Live | Needs-you Approve tap: Slack ack within 3s even during heavy health (scans yield + pause while the tap is live); decide stamps approved on the lastOk sidecar before any buy and isolation-buy-resume finishes an approved retire/buy after a freeze-kill; every tap logs one line and the card updates with per-item results including buy failures; digest drops executed / denied / superseded (burned attach-block, sibling approved/executed Retire); Josh-only stays Josh-only; boot logs Slack Josh/Cayden ids and warns on overlap or a known swap. LOCKED section unchanged. |
 
 ---
 
@@ -10671,5 +10672,73 @@ PowerGRYD empty-by-design log is gone. `src/guards/lockedCanon.test.ts`
 LOCKED section unchanged.
 
 ---
+
+## D294 — Needs-you Approve must ack, persist, and resume
+
+**Date.** 2026-10-20 (Cayden report; Josh-owned spend path).
+
+**Decision.** Weekday Needs-you Approve buttons in
+`#deliverability` did nothing on 2026-10-20. Cayden
+(U0BL8JT75KN) tapped repeatedly 06:43–07:02 CT. All 27
+`buy_domains` / `retire_domain` isolation actions stayed
+`pending` with no approver stamp. Railway logs 11:30–12:04
+UTC had zero `[slack-interactions]` lines. The process was
+frozen (event-loop delays 5.6s / 6.9s / 22s
+`scan:indexAccountsByCampaign` / 52.7s
+`fs.streamResponseToFile`) then `process.exit(1)` at
+12:01:25Z. Slack requires an ack within 3s — the taps
+never reached the handler. Separately, `decide()` wrote
+`approved` only in memory and saved after the slow
+retire/buy, so a freeze-kill after Slack announced
+"Josh approved — retired …" left the action pending and
+the next morning re-listed it (e.g.
+`boldercyperpartnerbiz.info`).
+
+1. **Ack within 3s.** `/slack/interactions` still acks 200
+   before any decide. Fleet scans yield every 64KB stream
+   slice and pause CPU while a Slack tap is exclusive so
+   the event loop can accept the POST.
+2. **Durable decide before execution.** The tap stamps
+   every isolation id `approved` on the lastOk sidecar
+   (compact receipts, never the isolation.actions map)
+   before Porkbun / InboxKit / Smartlead work. Isolation
+   ids are also stamped on the button value so a later
+   Unassigned → `id:N` regroup cannot empty the tap.
+3. **Resume after restart.** `isolation-buy-resume` runs
+   `resumeDecided()` for approved retires/buys that never
+   got `executedAt`.
+4. **Visible card + one log line.** Every tap logs
+   `[slack-interactions] needs-you approve client=… actor=…`.
+   The card updates with per-item results, including a
+   failed replacement buy.
+5. **Digest drops settled rows.** Pending Retire/Buy that
+   is already executed, denied, burned on the attach-block,
+   or superseded by a sibling approved/executed Retire is
+   pruned and stays out of the next morning's post.
+6. **Josh-only stays Josh-only.** Cayden may approve spend
+   (`retire_domain` / `buy_domains`). Canary fleet and
+   isolation-domain buys stay Josh-only. Boot logs Slack
+   Josh/Cayden user ids and warns on overlap or a known
+   swap (`U0AAX2XFJE7` / `U0BL8JT75KN`).
+
+**Why.** A silent Approve button is a broken human loop.
+Chat history is not durable; the sidecar is.
+
+**Rejected.** Widening freeze-watchdog thresholds.
+Letting Cayden approve Josh-only buys. Editing the LOCKED
+canon section. A second spend path. Spending from chat.
+
+**Supersedes / amends.** Amends D248 (Needs-you tap is
+durable and logged). Amends D266 (digest also drops
+attach-block-burned and sibling-settled leftovers).
+Amends D174 (resume still retries a failed buy; the
+parent Retire does not re-list). Does not reverse D4,
+D15, D190, D220, or Josh-only canary/isolation-domain.
+
+**Guards.** `src/lib/needsYouApprove.ts` + tests.
+`src/lib/slackActorIds.ts`. Sidecar `isolationDecisions`.
+`IsolationExecuteService.stampApprovals` /
+`resumeDecided`. `src/guards/canon.test.ts` D294.
+`src/guards/lockedCanon.test.ts` LOCKED section unchanged.
 
 

@@ -278,18 +278,19 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D270 | Live — stream/parse/stringify amended by D271 | Freeze/restart follow-up after D269: stream fat Smartlead OK bodies (never response.text of fetch_campaigns pages); exclusive health limiter lane; monitor waits on health and retries; leftover skip cannot hide a stale/empty inventory; failed inventory continues on the accepted book; copy-canary attach reuses the shared book |
 | D271 | Live — stringify/index yield amended by D272 | Freeze/restart follow-up after D270: stall logs name the in-flight stage plus sampled stack / async-hooks / perf_hooks attribution; state.json saves stream to disk without joining the blob; load parses off-thread in yielded key/slice chunks; OK Smartlead bodies always stream in 64KB slices; fat campaigns/health-metrics/account JSON stays off-thread; account-by-campaign index yields. Watchdog thresholds unchanged. |
 | D272 | Live | Freeze/restart follow-up after D271: stringify time-slices via setTimeout(0) and emits flushed slices (saveHot included); indexAccountsByCampaign yields on inner campaign ids; campaign-audit pauses CPU while health is live. Watchdog thresholds unchanged. |
-| D282 | Live — understaffed/min40 silence superseded by D285; no-generics stays; from-name matcher amended by D290 | Insight (Smartlead client 582890) campaigns may only send from Josh Osborn inboxes on SalesGlider or Insight domains; no generics / other named senders; Josh-only seats count toward the POD floor; `insight_non_josh_sender` flags existing violations; POD shortfalls still page Josh daily (D285) |
+| D282 | Live — understaffed/min40 silence superseded by D285; no-generics stays; from-name matcher amended by D290; Insight `client_id` domain signal added by D295 | Insight (Smartlead client 582890) campaigns may only send from Josh Osborn inboxes on SalesGlider or Insight domains; no generics / other named senders; Josh-only seats count toward the POD floor; `insight_non_josh_sender` flags existing violations; POD shortfalls still page Josh daily (D285) |
 | D283 | Live — never-generics onto PowerGRYD superseded by D285; freed-seat ownership stays | Onboarding-freed Smartlead `client_id=null` is authoritative over a stale PowerGRYD / `powergryd_dedicated` pool row (one-time cleanup of those generic-domain seats); those freed seats must not flip back onto 592842. CornerStone 574088 and unexpired HOLD-UNTIL never attach (`addEmailAccountsToCampaign` hard-reject, same shape as D282); leftover HOLD-UNTIL still does not pull; never START / unpause STOPPED. PowerGRYD otherwise takes generics (D285). |
 | D285 | Live — Generics Ledger fields / per-seat swap / new findings added by D286 | Min-40 is per POD owned inventory, never per campaign. POD A and POD B each hold >=40 warm seats the client owns (TechEvo 30). Borrowed seats never count. When under, rotate free warm generics in; never skip the off-week POD. Insight 582890 is the only client that never gets generics; alert Josh daily while under. PowerGRYD takes generics. LOCKED core canon — Josh-only; PRs that change the locked section must never auto-merge. |
 | D286 | Live | Generics Ledger: one row per generic (email, ESP, warmup on/off, assigned client, POD, assigned_at, covering_for). All generics warm continuously; seeder re-enables warmup the same day. Assigned only to fill one client's POD to 40 (TechEvo 30), one client + one POD, never moves PODs. Branded-preferred per-seat swap via covering_for + `returnGenericToUntaggedPool`; headcount is fallback for unlinked seats. No assign/release outside the ledger. Insight never receives generics; every other client including PowerGRYD does. CornerStone-domain inboxes are never generics. Findings `generic_outside_ledger` / `generic_not_warming` / `generic_on_insight` / `pod_short_no_free_generic` page Josh the same day. Optional upsert-only `wizard.generic_ledger` Supabase mirror. |
 | D287 | Live — saveHot maps / Insight unlinked count amended by D288 | Old-wizard fix: ledger assigns free warm generics into every under-floor POD (A and B) with covering_for; retire-pending domains last; CornerStone never; Insight still no generics. Owned-seat count includes Insight Josh seats (even SL 345263), PowerGRYD dedicated generics without a POD tag, and Peterson named-domain fallback. Peterson under-floor alerts suppressed (winding down). marekbrooks@meetconnectbox.com stays in the ledger and never re-links to PowerGRYD #4005226. isolation-buy-resume yields and skips idle full-state stringify. 0% canary-copy scores start isolation within 30 min; isolation never hold-pauses. Never START / PAUSE / touch STOPPED; never buy. LOCKED section unchanged. |
 | D288 | Live — min40 covering/owned-count yield amended by D289; Insight from-name/domain matcher amended by D290; unlinked salesglider* remap amended by D291 | Old-wizard fix: `saveHot` sidecar is stamps + goneIds + pool goneEmails only (never isolation score/suspect/canary maps); overlapping saveHot coalesces; nothing stringifies big state inside per-seat loops. Insight Josh seats count for Insight even when unlinked / leftover on SalesGlider 345263. Insight still gets no generics and a daily Josh alert. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
 | D289 | Live | Old-wizard fix: min40 owned-count, covering_for relink, and seat-index walks time-slice so a 514×1690 fleet pass cannot pin the event loop 6–18s after Smartlead pages stream to disk. Watchdog 3× ≥3s / 120s stays. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
-| D290 | Live — salesglider* owned remap amended by D291 | Old-wizard fix: Insight owned-count accepts production `Joshua Osborn` on `joshuaosborn*` / `joshosborn*` / `salesglider*` (D288 matcher required exact `Josh Osborn` and substring `joshosborn`, so 85 live `Joshua Osborn` @ `joshuaosborn*` seats counted 0). The 1:53pm CT min40 pass that assigned 0 was correct canon: all 122 free generics still owe warmup — do not loosen the warm filter; never assign unwarmed generics. PowerGRYD 0 owned is also correct: branded `*powergryd.info` seats created Oct 16–17 still owe 21 days; warm dedicated generics with `client_id=592842` still count (D287). Insight still no generics. CornerStone never. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
+| D290 | Live — salesglider* owned remap amended by D291; Insight `client_id` domain signal added by D295 | Old-wizard fix: Insight owned-count accepts production `Joshua Osborn` on `joshuaosborn*` / `joshosborn*` / `salesglider*` (D288 matcher required exact `Josh Osborn` and substring `joshosborn`, so 85 live `Joshua Osborn` @ `joshuaosborn*` seats counted 0). The 1:53pm CT min40 pass that assigned 0 was correct canon: all 122 free generics still owe warmup — do not loosen the warm filter; never assign unwarmed generics. PowerGRYD 0 owned is also correct: branded `*powergryd.info` seats created Oct 16–17 still owe 21 days; warm dedicated generics with `client_id=592842` still count (D287). Insight still no generics. CornerStone never. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
 | D291 | Live | Old-wizard fix: SalesGlider's own `salesglider*` Josh seats with client 345263 (unlinked or on SG campaigns) count for SalesGlider, never Insight. Insight-named Josh seats (`joshuaosborn*` / `joshosborn*` / `insight*`) and leftover Josh seats sitting on an Insight campaign still count for Insight, never SalesGlider. D288's remap of every Josh+salesglider* seat to Insight 582890 emptied SG POD-A/B (prod 2026-10-19 2:32pm CT under-floor: SG A 0/40, B 4/40) after D290 made joshuaosborn* fill Insight. Never both. Insight still no generics. CornerStone never. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
 | D292 | Live — overlap-with-health freeze / cleanup flap / silent errors / 10m timeout / PowerGRYD empty-by-design log amended by D293 | Old-wizard fix: min40 assigns free warm ledger seats into under-floor PODs even when leftover Smartlead marker `client_id` / pool assignment / POD tags / foreign signatures remain (rewrite client sig on assign); PowerGRYD empty-by-design no longer refuses that free-pool rotation; Insight still no generics. canonOps hold-enforcement + min40-topup run at least every 30 min in the weekday window even when health is long or back-to-back (waive health-running skip when overdue; share the Smartlead limiter). Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
 | D293 | Live | Old-wizard fix after D292 prod (deploy f446303c, 2026-10-19 ~5:10pm CT): overdue min40 serializes against health CPU (does not overlap client-rest / campaign-check scans); cleanup and min40 agree on assigned generics (ledger + owned POD count) so cleanup cannot undo a just-assigned under-floor seat; min40 logs each error and each POD's rejection reasons; one seat error does not abort the rest of the POD; min40-topup step budget 20m; PowerGRYD empty-by-design refuse-generics log/logic removed (Insight is the only no-generics client). Watchdog thresholds unchanged. Warm gate, CornerStone, ESP match, ≥33% mix unchanged. LOCKED section unchanged. |
 | D294 | Live | Needs-you Approve tap: Slack ack within 3s even during heavy health (scans yield + pause while the tap is live); decide stamps approved on the lastOk sidecar before any buy and isolation-buy-resume finishes an approved retire/buy after a freeze-kill; every tap logs one line and the card updates with per-item results including buy failures; digest drops executed / denied / superseded (burned attach-block, sibling approved/executed Retire); Josh-only stays Josh-only; boot logs Slack Josh/Cayden ids and warns on overlap or a known swap. LOCKED section unchanged. |
+| D295 | Live | Old-wizard fix: Insight Josh matcher accepts `client_id` 582890 as an Insight-domain signal when from-name is Josh / Joshua Osborn (prod 2026-10-20: 14 false `insight_non_josh_sender` on Insight Tix #4173509 — seven Joshua seats on joshosales.info / josbornsales.info / joshuaosales.info). Do not widen the `/josh(ua)?osborn/` regex. Generics, other brands, and non-Josh names stay blocked. One finding per account. LOCKED section unchanged. |
 
 ---
 
@@ -10743,5 +10744,73 @@ D15, D190, D220, or Josh-only canary/isolation-domain.
 `IsolationExecuteService.stampApprovals` /
 `resumeDecided`. `src/guards/canon.test.ts` D294.
 `src/guards/lockedCanon.test.ts` LOCKED section unchanged.
+
+---
+
+## D295 — Insight `client_id` 582890 is an Insight-domain signal
+
+**Date.** 2026-10-20 (Josh).
+
+**Decision.** Production `/health` on main 3598306 (2026-10-20
+~8:16am CT) reported `canonFindings.insight_non_josh_sender = 14`,
+all on Insight campaign #4173509 "Insight Tix" (Smartlead client
+582890). The campaign's 22 linked mailboxes are all
+`from_name` "Joshua Osborn" and `client_id` 582890. The seven
+flagged seats sit on short-form Insight/Josh domains that
+`/josh(ua)?osborn/` misses: `joshosales.info` (osbornjoshua@,
+joshuaosborn@; ids 18696498, 18695037), `josbornsales.info`
+(osbornjoshua@, joshuaosborn@; ids 18695036, 18694965),
+`joshuaosales.info` (osbornjoshua@, joshua_osborn@,
+joshuaosborn@; ids 18694973, 18694970, 18694885). Those seven
+accounts were emitted twice (14 findings). Fix the old wizard
+on main. Do not change the LOCKED canon section. Never START,
+pause, or touch STOPPED. Never buy. Insight still gets no
+generics. Never assign unwarmed generics. Never use
+CornerStone inboxes.
+
+1. **Insight `client_id` is the domain signal.**
+   `isInsightJoshAllowedSender` still requires from-name
+   Josh / Joshua Osborn. When `client_id === 582890` the seat
+   is Insight-owned by definition and is an allowed Insight
+   sender (campaign-check, owned-count, attach hard-reject).
+   Do not widen `/josh(ua)?osborn/` to catch `joshosales` /
+   `josbornsales` / `joshuaosales`.
+2. **The rest of the matcher stays tight.** A Joshua Osborn
+   seat on an unrelated non-Insight, non-salesglider domain
+   with a different or null `client_id` is still flagged.
+   Owen Sanchez or a generic on an Insight domain (including
+   `client_id` 582890) is still flagged. Other client brands
+   stay blocked.
+3. **One finding per account.** `insight_non_josh_sender`
+   dedupes by mailbox id (and the campaign index drops
+   duplicate `campaign_ids` / duplicate attached rows) so
+   seven seats cannot become fourteen findings.
+
+**Why.** The 14 findings were false positives on legitimate
+Insight-owned Josh seats. The same matcher skipped them from
+Insight's POD floor (inflating the daily shortfall alert) and
+blocked re-attach. Chat history is not durable; the matcher is.
+
+**Rejected.** Changing the LOCKED section. Widening the domain
+regex. Giving Insight generics. Loosening from-name. Allowing
+Owen / generics / other brands on Insight. Starting / pausing /
+touching STOPPED. Buying anything. Using CornerStone inboxes.
+Touching v2.
+
+**Supersedes / amends.** Amends D282 / D290 / D291 Insight
+matcher (`client_id` 582890 as domain signal; one finding per
+account). Does not reverse D1, D40, D4, D50, D122, D228, D234,
+D256, D282 no-generics, D283 idle Onboarding-freed seats,
+D285 POD-40, D291 SalesGlider salesglider* split, or the
+LOCKED text.
+
+**Guards.** `src/lib/insightCampaigns.test.ts` +
+`src/lib/podOwnedInventory.test.ts` +
+`src/services/campaignCheck.test.ts` +
+`src/clients/smartlead.test.ts` Joshua Osborn @ joshosales*
++ Insight 582890 allowed; Owen / off-client Joshua still
+blocked; findings not duplicated. `src/guards/canon.test.ts`
+D295. `src/guards/lockedCanon.test.ts` LOCKED section
+unchanged.
 
 

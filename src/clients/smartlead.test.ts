@@ -75,6 +75,53 @@ describe("SmartleadClient.addEmailAccountsToCampaign", () => {
     assert.equal(called, true);
   });
 
+  it("D295: allows Joshua Osborn + Insight 582890 on joshosales.info", async () => {
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response("{}", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const client = new SmartleadClient("test-key");
+    client.setInsightJoshLinkContext({
+      campaigns: [
+        {
+          id: 4173509,
+          name: "Insight Tix",
+          client_id: 582890,
+        },
+      ],
+      accounts: [
+        {
+          id: 18696498,
+          from_name: "Joshua Osborn",
+          from_email: "osbornjoshua@joshosales.info",
+          client_id: 582890,
+        },
+        {
+          id: 2,
+          from_name: "Owen Sanchez",
+          from_email: "owen@joshosales.info",
+          client_id: 582890,
+        },
+      ],
+    });
+    const { InsightNonJoshSenderBlockedError } = await import(
+      "../lib/insightCampaigns.js"
+    );
+    await client.addEmailAccountsToCampaign(4173509, [18696498]);
+    assert.equal(called, true);
+    called = false;
+    await assert.rejects(
+      () => client.addEmailAccountsToCampaign(4173509, [2]),
+      InsightNonJoshSenderBlockedError,
+    );
+    assert.equal(called, false);
+  });
+
   it("D283: refuses CornerStone and HOLD-UNTIL seats before any write", async () => {
     const { AttachForbiddenSeatError } = await import("../lib/attachGuard.js");
     let called = false;

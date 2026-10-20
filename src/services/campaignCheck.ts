@@ -1474,9 +1474,17 @@ export class CampaignCheckService {
     }
 
     if (isInsightJoshOnlyCampaign(campaign)) {
+      const seenSenders = new Set<string>();
       for (const account of attached) {
         if (isInsightJoshAllowedSender(account)) continue;
-        const email = insightSenderEmail(account) ?? accountEmail(account) ?? `#${account.id}`;
+        const email =
+          insightSenderEmail(account) ?? accountEmail(account) ?? `#${account.id}`;
+        const key =
+          typeof account.id === "number" && Number.isFinite(account.id)
+            ? `id:${account.id}`
+            : email.toLowerCase();
+        if (seenSenders.has(key)) continue;
+        seenSenders.add(key);
         findings.push({
           kind: "insight_non_josh_sender",
           detail: `${email} is not a Josh Osborn mailbox on a salesglider* or Insight domain (D282)`,

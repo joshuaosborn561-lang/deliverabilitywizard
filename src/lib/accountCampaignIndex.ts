@@ -39,17 +39,32 @@ export interface IndexAccountsOpts {
 function* membershipIds(
   account: SmartleadAccountWithCampaigns,
 ): Generator<number> {
+  const seen = new Set<number>();
   if (Array.isArray(account.campaign_ids) && account.campaign_ids.length) {
     for (const n of account.campaign_ids) {
-      if (typeof n === "number" && Number.isFinite(n)) yield n;
+      if (typeof n !== "number" || !Number.isFinite(n) || seen.has(n)) continue;
+      seen.add(n);
+      yield n;
     }
     return;
   }
   if (!Array.isArray(account.campaigns)) return;
   for (const row of account.campaigns) {
     const n = row && typeof row === "object" ? (row.id ?? row.campaign_id) : null;
-    if (typeof n === "number" && Number.isFinite(n)) yield n;
+    if (typeof n !== "number" || !Number.isFinite(n) || seen.has(n)) continue;
+    seen.add(n);
+    yield n;
   }
+}
+
+function accountIndexKey(
+  account: SmartleadAccountWithCampaigns,
+): string | null {
+  if (typeof account.id === "number" && Number.isFinite(account.id)) {
+    return `id:${account.id}`;
+  }
+  const email = accountEmail(account)?.toLowerCase();
+  return email ? `email:${email}` : null;
 }
 
 /** One pass so later walks do not rescan every mailbox for every campaign. */
@@ -61,6 +76,7 @@ export async function indexAccountsByCampaign(
     await yieldEventLoop();
     const slice = createTimeSlicer(INDEX_SLICE_MS);
     const byCampaign = new Map<number, SmartleadAccountWithCampaigns[]>();
+    const seenByCampaign = new Map<number, Set<string>>();
     let accountsN = 0;
     let idsN = 0;
     const yieldCpu = async (): Promise<void> => {
@@ -78,6 +94,13 @@ export async function indexAccountsByCampaign(
     };
     for (const account of accounts) {
       for (const id of membershipIds(account)) {
+        const key = accountIndexKey(account);
+        if (key) {
+          const seen = seenByCampaign.get(id) ?? new Set();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          seenByCampaign.set(id, seen);
+        }
         const list = byCampaign.get(id);
         if (list) list.push(account);
         else byCampaign.set(id, [account]);

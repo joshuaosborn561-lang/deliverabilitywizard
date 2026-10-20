@@ -403,6 +403,132 @@ describe("D282 Insight Josh-only senders", () => {
     assert.equal(isSalesGliderOrInsightSendingDomain("techevolution.com"), false);
   });
 
+  it("D295: Joshua Osborn + Insight client 582890 is allowed on short-form Josh domains", () => {
+    const seats = [
+      {
+        id: 18696498,
+        from_name: "Joshua Osborn",
+        from_email: "osbornjoshua@joshosales.info",
+        client_id: INSIGHT_CLIENT_ID,
+      },
+      {
+        id: 18695037,
+        from_name: "Joshua Osborn",
+        from_email: "joshuaosborn@joshosales.info",
+        client_id: INSIGHT_CLIENT_ID,
+      },
+      {
+        id: 18695036,
+        from_name: "Joshua Osborn",
+        from_email: "osbornjoshua@josbornsales.info",
+        client_id: INSIGHT_CLIENT_ID,
+      },
+      {
+        id: 18694965,
+        from_name: "Joshua Osborn",
+        from_email: "joshuaosborn@josbornsales.info",
+        client_id: INSIGHT_CLIENT_ID,
+      },
+      {
+        id: 18694973,
+        from_name: "Joshua Osborn",
+        from_email: "osbornjoshua@joshuaosales.info",
+        client_id: INSIGHT_CLIENT_ID,
+      },
+      {
+        id: 18694970,
+        from_name: "Joshua Osborn",
+        from_email: "joshua_osborn@joshuaosales.info",
+        client_id: INSIGHT_CLIENT_ID,
+      },
+      {
+        id: 18694885,
+        from_name: "Joshua Osborn",
+        from_email: "joshuaosborn@joshuaosales.info",
+        client_id: INSIGHT_CLIENT_ID,
+      },
+    ];
+    for (const seat of seats) {
+      assert.equal(
+        isInsightJoshAllowedSender(seat),
+        true,
+        `${seat.from_email} on Insight 582890 must be an allowed Insight sender (D295)`,
+      );
+      assert.equal(
+        canAttachMailboxToCampaign(
+          account([], seat),
+          insight,
+          insightById,
+        ),
+        true,
+        `${seat.from_email} must attach to Insight (D295)`,
+      );
+    }
+    assert.equal(isInsightNamedSendingDomain("joshosales.info"), false);
+    assert.equal(isInsightNamedSendingDomain("josbornsales.info"), false);
+    assert.equal(isInsightNamedSendingDomain("joshuaosales.info"), false);
+    assert.equal(isSalesGliderOrInsightSendingDomain("joshosales.info"), false);
+  });
+
+  it("D295: Joshua Osborn on an unrelated domain without Insight client_id stays blocked", () => {
+    assert.equal(
+      isInsightJoshAllowedSender({
+        from_name: "Joshua Osborn",
+        from_email: "joshua@techevolution.com",
+        client_id: 521881,
+      }),
+      false,
+    );
+    assert.equal(
+      isInsightJoshAllowedSender({
+        from_name: "Joshua Osborn",
+        from_email: "joshua@gmail.com",
+        client_id: null,
+      }),
+      false,
+    );
+    assert.equal(
+      isInsightJoshAllowedSender({
+        from_name: "Joshua Osborn",
+        from_email: "joshua@joshosales.info",
+      }),
+      false,
+      "short-form Josh domain without Insight client_id is not enough (D295)",
+    );
+  });
+
+  it("D295: Owen Sanchez or a generic on Insight 582890 stays blocked", () => {
+    assert.equal(
+      isInsightJoshAllowedSender({
+        from_name: "Owen Sanchez",
+        from_email: "owen@joshosales.info",
+        client_id: INSIGHT_CLIENT_ID,
+      }),
+      false,
+    );
+    assert.equal(
+      isInsightJoshAllowedSender({
+        from_name: "Ada Pool",
+        from_email: "ada@getinsight.co",
+        client_id: INSIGHT_CLIENT_ID,
+      }),
+      false,
+    );
+    assert.equal(
+      canAttachMailboxToCampaign(
+        account([], {
+          id: 8,
+          from_name: "Owen Sanchez",
+          from_email: "owen@joshosales.info",
+          client_id: INSIGHT_CLIENT_ID,
+        }),
+        insight,
+        insightById,
+      ),
+      false,
+    );
+  });
+
   it("rejects generics, Owen Sanchez, and off-brand domains", () => {
     assert.equal(
       isInsightJoshAllowedSender({
@@ -635,6 +761,42 @@ describe("D282 Insight Josh-only senders", () => {
         insightCampaignIds,
         accountsById,
       }),
+    );
+  });
+
+  it("D295: assertInsightJoshOnlyAccountIds allows Joshua + Insight 582890 on joshosales*", () => {
+    const accountsById = new Map([
+      [
+        18696498,
+        {
+          from_name: "Joshua Osborn",
+          from_email: "osbornjoshua@joshosales.info",
+          client_id: INSIGHT_CLIENT_ID,
+        },
+      ],
+      [
+        2,
+        {
+          from_name: "Owen Sanchez",
+          from_email: "owen@joshosales.info",
+          client_id: INSIGHT_CLIENT_ID,
+        },
+      ],
+    ]);
+    const insightCampaignIds = insightJoshLinkCampaignIds([insight]);
+    assert.doesNotThrow(() =>
+      assertInsightJoshOnlyAccountIds(3921647, [18696498], {
+        insightCampaignIds,
+        accountsById,
+      }),
+    );
+    assert.throws(
+      () =>
+        assertInsightJoshOnlyAccountIds(3921647, [2], {
+          insightCampaignIds,
+          accountsById,
+        }),
+      InsightNonJoshSenderBlockedError,
     );
   });
 });

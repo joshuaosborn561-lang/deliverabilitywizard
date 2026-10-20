@@ -10706,7 +10706,10 @@ the next morning re-listed it (e.g.
    Unassigned → `id:N` regroup cannot empty the tap.
 3. **Resume after restart.** `isolation-buy-resume` runs
    `resumeDecided()` for approved retires/buys that never
-   got `executedAt`.
+   got `executedAt`. `save()` / `saveHot()` now clear their
+   coalesce promise (they compared to the inner `run`, so
+   after the first write every later flush was a no-op —
+   including the approve stamp and the post-decide dump).
 4. **Visible card + one log line.** Every tap logs
    `[slack-interactions] needs-you approve client=… actor=…`.
    The card updates with per-item results, including a

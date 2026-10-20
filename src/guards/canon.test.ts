@@ -18008,6 +18008,11 @@ describe("owner intent — D294 Needs-you Approve acks, persists, resumes", () =
       stop("Sidecar carries isolation decide receipts (D294).", "store.ts lost isolationDecisions."),
     );
     assert.match(
+      store,
+      /coalesce must compare to the/,
+      stop("save()/saveHot clear coalesce on the finally promise (D294).", "store.ts lost the coalesce fix."),
+    );
+    assert.match(
       pause,
       /setSlackInteractionExclusive/,
       stop("Health CPU can pause for a Slack tap (D294).", "healthCpuPause.ts lost the Slack exclusive flag."),

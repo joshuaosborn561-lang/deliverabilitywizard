@@ -3119,14 +3119,18 @@ export class StateStore {
       }
     };
     const run = this.saveHotTail.then(write, write);
-    this.saveHotCoalesce = run.finally(() => {
-      if (this.saveHotCoalesce === run) this.saveHotCoalesce = null;
+    // D294 — coalesce is the *finally* promise, not `run`. Comparing to
+    // `run` left saveHotCoalesce set forever, so every later sidecar
+    // flush (including the Needs-you approve stamp) was a no-op.
+    const coalesce = run.finally(() => {
+      if (this.saveHotCoalesce === coalesce) this.saveHotCoalesce = null;
     });
+    this.saveHotCoalesce = coalesce;
     this.saveHotTail = run.then(
       () => undefined,
       () => undefined,
     );
-    return this.saveHotCoalesce;
+    return coalesce;
   }
 
   async save(opts: { debounceMs?: number } = {}): Promise<void> {
@@ -3164,14 +3168,17 @@ export class StateStore {
       }
     };
     const run = this.saveTail.then(write, write);
-    this.saveCoalesce = run.finally(() => {
-      if (this.saveCoalesce === run) this.saveCoalesce = null;
+    // D294 — same trap as saveHot: coalesce must compare to the
+    // finally promise or a second save() after boot never writes.
+    const coalesce = run.finally(() => {
+      if (this.saveCoalesce === coalesce) this.saveCoalesce = null;
     });
+    this.saveCoalesce = coalesce;
     this.saveTail = run.then(
       () => undefined,
       () => undefined,
     );
-    return this.saveCoalesce;
+    return coalesce;
   }
 }
 

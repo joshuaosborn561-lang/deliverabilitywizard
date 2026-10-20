@@ -1004,7 +1004,8 @@ actual tapper (Cayden or Josh), never a hardcoded Josh. The Needs-you
 per-client Approve acks Slack within 3s (fleet scans yield and pause
 while the tap is live), logs one `[slack-interactions] needs-you approve`
 line, stamps every isolation id `approved` on the lastOk sidecar
-*before* Porkbun / InboxKit / Smartlead work, and isolation-buy-resume
+*before* Porkbun / InboxKit / Smartlead work (`save` / `saveHot`
+must actually flush after the first write of the process), and isolation-buy-resume
 finishes an approved retire/buy that died before `executedAt`. The
 tapped card updates with per-item results, including a failed
 replacement buy ("0 available" / client-named spins only). Finished items

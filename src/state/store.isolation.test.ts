@@ -255,4 +255,35 @@ describe("isolation state", () => {
       sidecar.isolationDecisions?.receipts?.some((r) => r.id === "retire_domain-tap-1"),
     );
   });
+
+  it("D294: a second save() and saveHot() after the first actually write", async () => {
+    const path = `/tmp/dw-iso-save2-${process.pid}-${Date.now()}.json`;
+    const live = new StateStore(path);
+    await live.load();
+    live.upsertIsolationAction({
+      id: "retire_domain-first",
+      kind: "retire_domain",
+      status: "pending",
+      title: "first",
+      proof: "proof",
+      detail: { domain: "first.info" },
+      allowed: "owner_or_operator",
+      requestedAt: "2026-10-20T12:00:00.000Z",
+    });
+    await live.save();
+    live.upsertIsolationAction({
+      id: "retire_domain-second",
+      kind: "retire_domain",
+      status: "pending",
+      title: "second",
+      proof: "proof",
+      detail: { domain: "second.info" },
+      allowed: "owner_or_operator",
+      requestedAt: "2026-10-20T12:01:00.000Z",
+    });
+    await live.save();
+    const afterSecond = new StateStore(path);
+    await afterSecond.load();
+    assert.ok(afterSecond.getIsolationAction("retire_domain-second"));
+  });
 });

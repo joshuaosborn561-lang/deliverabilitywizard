@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   isOverdueCanonOpsExclusive,
+  isSlackInteractionExclusive,
   pauseWhileHealthLive,
   pauseWhileOverdueCanonOps,
+  pauseWhileSlackInteraction,
   setOverdueCanonOpsExclusive,
+  setSlackInteractionExclusive,
 } from "./healthCpuPause.js";
 
 describe("D272 pauseWhileHealthLive", () => {
@@ -49,5 +52,16 @@ describe("D272 pauseWhileHealthLive", () => {
     await pauseWhileOverdueCanonOps({ skip: true });
     assert.ok(Date.now() - started < 20);
     setOverdueCanonOpsExclusive(false);
+  });
+
+  it("D294: fleet scans wait while a Slack tap is exclusive", async () => {
+    setSlackInteractionExclusive(true);
+    assert.equal(isSlackInteractionExclusive(), true);
+    setTimeout(() => setSlackInteractionExclusive(false), 40);
+    const started = Date.now();
+    await pauseWhileSlackInteraction({ label: "scan:indexAccountsByCampaign" });
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed >= 30, `expected to wait ~40ms, waited ${elapsed}ms`);
+    assert.equal(isSlackInteractionExclusive(), false);
   });
 });

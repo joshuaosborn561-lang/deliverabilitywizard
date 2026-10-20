@@ -118,7 +118,7 @@ function spendLabel(record: SpendApprovalRecord): string {
 function isolationStillPending(
   store: Pick<
     StateStore,
-    "listIsolationActions" | "getDomainHistory"
+    "listIsolationActions" | "getDomainHistory" | "getAttachBlock"
   >,
   action: IsolationActionRecord,
 ): boolean {
@@ -128,6 +128,20 @@ function isolationStillPending(
   if (host && domainAlreadyRetired(store, host)) return false;
   if (host && retireAlreadySettled(store, host)) return false;
   if (host && domainRetireReplacementSpent(store, host)) return false;
+  if (host && store.getAttachBlock?.(host)?.reason === "burned") return false;
+  if (
+    host &&
+    action.kind === "retire_domain" &&
+    store.listIsolationActions().some(
+      (row) =>
+        row.id !== action.id &&
+        row.kind === "retire_domain" &&
+        domainOf(row.detail) === host &&
+        (row.status === "approved" || row.status === "executed"),
+    )
+  ) {
+    return false;
+  }
   return true;
 }
 
@@ -140,6 +154,7 @@ export function collectPendingSpendItems(
     | "upsertIsolationAction"
     | "upsertSpendApproval"
     | "listPoolMailboxes"
+    | "getAttachBlock"
   >,
 ): SpendDigestItem[] {
   dismissRetiredDomainAsks(store);
@@ -246,6 +261,7 @@ export function buildCaydenSpendDigest(
     | "upsertIsolationAction"
     | "upsertSpendApproval"
     | "listPoolMailboxes"
+    | "getAttachBlock"
   >,
 ): { groups: SpendDigestClientGroup[]; text: string | null; items: number } {
   const items = collectPendingSpendItems(store);

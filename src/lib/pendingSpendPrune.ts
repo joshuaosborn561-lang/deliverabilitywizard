@@ -20,8 +20,32 @@ function domainOf(detail: Record<string, unknown> | undefined): string {
     .toLowerCase();
 }
 
+function attachBurned(
+  store: Pick<StateStore, "getAttachBlock" | "listIsolationActions" | "getDomainHistory">,
+  host: string,
+): boolean {
+  return store.getAttachBlock?.(host)?.reason === "burned";
+}
+
+function siblingRetireSettled(
+  store: Pick<StateStore, "listIsolationActions">,
+  action: IsolationActionRecord,
+  host: string,
+): boolean {
+  return store.listIsolationActions().some(
+    (row) =>
+      row.id !== action.id &&
+      row.kind === "retire_domain" &&
+      domainOf(row.detail) === host &&
+      (row.status === "approved" || row.status === "executed"),
+  );
+}
+
 function isolationSatisfied(
-  store: Pick<StateStore, "listIsolationActions" | "getDomainHistory">,
+  store: Pick<
+    StateStore,
+    "listIsolationActions" | "getDomainHistory" | "getAttachBlock"
+  >,
   action: IsolationActionRecord,
 ): string | undefined {
   if (action.status !== "pending") return undefined;
@@ -29,6 +53,12 @@ function isolationSatisfied(
   if (!host) return undefined;
   if (action.kind === "retire_domain" && domainAlreadyRetired(store, host)) {
     return "Already retired — stale Retire ask closed (D266).";
+  }
+  if (action.kind === "retire_domain" && attachBurned(store, host)) {
+    return "Already retired — burned attach-block closed the leftover Retire (D294).";
+  }
+  if (action.kind === "retire_domain" && siblingRetireSettled(store, action, host)) {
+    return "Already retired — sibling Retire already approved or executed (D294).";
   }
   if (action.kind === "buy_domains" && retireAlreadySettled(store, host)) {
     return "Cover already bought or domain already retired — stale Buy ask closed (D266).";
@@ -97,6 +127,7 @@ export function pruneSatisfiedPendingSpend(
     | "listSpendApprovals"
     | "upsertSpendApproval"
     | "getDomainHistory"
+    | "getAttachBlock"
     | "listPoolMailboxes"
   >,
   now = new Date().toISOString(),

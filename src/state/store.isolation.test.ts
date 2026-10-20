@@ -219,4 +219,71 @@ describe("isolation state", () => {
     assert.ok(wall < 2_000, `saveHot of fat isolation maps took ${wall}ms`);
     assert.ok(ticks >= 0);
   });
+
+  it("D294: sidecar decide receipts upgrade a pending action after freeze-kill", async () => {
+    const path = `/tmp/dw-iso-decide-${process.pid}-${Date.now()}.json`;
+    const live = new StateStore(path);
+    await live.load();
+    live.upsertIsolationAction({
+      id: "retire_domain-tap-1",
+      kind: "retire_domain",
+      status: "pending",
+      title: "Retire leftover.info",
+      proof: "proof",
+      detail: { domain: "leftover.info" },
+      allowed: "owner_or_operator",
+      requestedAt: "2026-10-20T12:00:00.000Z",
+    });
+    await live.save();
+    live.upsertIsolationAction({
+      ...live.getIsolationAction("retire_domain-tap-1")!,
+      status: "approved",
+      decidedAt: "2026-10-20T12:01:00.000Z",
+      decidedBy: "Cayden",
+    });
+    await live.persistIsolationDecisions();
+
+    const reloaded = new StateStore(path);
+    await reloaded.load();
+    const row = reloaded.getIsolationAction("retire_domain-tap-1");
+    assert.equal(row?.status, "approved");
+    assert.equal(row?.decidedBy, "Cayden");
+    const sidecar = JSON.parse(await readFile(reloaded.stampsFilePath(), "utf8")) as {
+      isolationDecisions?: { receipts?: Array<{ id: string }> };
+    };
+    assert.ok(
+      sidecar.isolationDecisions?.receipts?.some((r) => r.id === "retire_domain-tap-1"),
+    );
+  });
+
+  it("D294: a second save() and saveHot() after the first actually write", async () => {
+    const path = `/tmp/dw-iso-save2-${process.pid}-${Date.now()}.json`;
+    const live = new StateStore(path);
+    await live.load();
+    live.upsertIsolationAction({
+      id: "retire_domain-first",
+      kind: "retire_domain",
+      status: "pending",
+      title: "first",
+      proof: "proof",
+      detail: { domain: "first.info" },
+      allowed: "owner_or_operator",
+      requestedAt: "2026-10-20T12:00:00.000Z",
+    });
+    await live.save();
+    live.upsertIsolationAction({
+      id: "retire_domain-second",
+      kind: "retire_domain",
+      status: "pending",
+      title: "second",
+      proof: "proof",
+      detail: { domain: "second.info" },
+      allowed: "owner_or_operator",
+      requestedAt: "2026-10-20T12:01:00.000Z",
+    });
+    await live.save();
+    const afterSecond = new StateStore(path);
+    await afterSecond.load();
+    assert.ok(afterSecond.getIsolationAction("retire_domain-second"));
+  });
 });

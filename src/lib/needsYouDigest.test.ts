@@ -68,6 +68,11 @@ describe("D248 — Needs you digest lumps Cayden spend per client", () => {
     assert.equal("url" in approve, false);
     assert.ok(approve.confirm, "lumped Approve must confirm before spend");
     assert.match(String(approve.action_id), /needs_you_approve_client/);
+    assert.match(String(approve.value), /^id:521881\t/);
+    assert.ok(
+      String(approve.value).includes(digest.cayden[0]!.items[0]!.id),
+      "button value stamps isolation ids (D294)",
+    );
     assert.equal(
       isolationBlockActionShouldDecide({
         action_id: String(approve.action_id),

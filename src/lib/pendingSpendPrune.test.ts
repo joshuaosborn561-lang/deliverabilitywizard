@@ -71,6 +71,26 @@ describe("D266 — prune finished pendingSpend", () => {
     assert.equal(collectPendingSpendItems(store).length, 0);
   });
 
+  it("D294: drops a leftover pending Retire when the domain is already burned on the attach-block", () => {
+    const store = tempStore();
+    store.upsertAttachBlock({
+      domain: "boldercyperpartnerbiz.info",
+      reason: "burned",
+      source: "retire:boldercyperpartnerbiz.info",
+    });
+    store.upsertIsolationAction(
+      buildIsolationAction({
+        kind: "retire_domain",
+        title: "Retire boldercyperpartnerbiz.info",
+        proof: "Josh approved yesterday",
+        detail: { domain: "boldercyperpartnerbiz.info" },
+      }),
+    );
+    const pruned = pruneSatisfiedPendingSpend(store);
+    assert.ok(pruned.isolation >= 1);
+    assert.equal(collectPendingSpendItems(store).length, 0);
+  });
+
   it("markSpendDoneForAsk consumes the tap's leftover pending rows", () => {
     const store = tempStore();
     store.upsertSpendApproval({

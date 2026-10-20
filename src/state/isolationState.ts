@@ -150,6 +150,16 @@ export type IsolationActionStatus =
   | "executed"
   | "failed";
 
+/** D294 — compact sidecar stamp so an approve survives a freeze-kill. */
+export interface IsolationDecisionReceipt {
+  id: string;
+  status: IsolationActionStatus;
+  kind: string;
+  decidedBy?: string;
+  decidedAt?: string;
+  domain?: string;
+}
+
 export interface IsolationActionRecord {
   id: string;
   kind: IsolationActionKind;

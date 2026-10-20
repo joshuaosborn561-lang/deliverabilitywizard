@@ -6,6 +6,7 @@ import { runWithStallScopeAsync } from "./eventLoopAttribution.js";
 import {
   pauseWhileHealthLive,
   pauseWhileOverdueCanonOps,
+  pauseWhileSlackInteraction,
 } from "./healthCpuPause.js";
 import {
   createTimeSlicer,
@@ -71,6 +72,9 @@ export async function indexAccountsByCampaign(
         label: "scan:indexAccountsByCampaign",
         skip: opts.skipOverduePause,
       });
+      await pauseWhileSlackInteraction({
+        label: "scan:indexAccountsByCampaign",
+      });
     };
     for (const account of accounts) {
       for (const id of membershipIds(account)) {
@@ -109,6 +113,9 @@ export async function indexAccountsByEmail(
         await pauseWhileOverdueCanonOps({
           label: "scan:indexAccountsByEmail",
           skip: opts.skipOverduePause,
+        });
+        await pauseWhileSlackInteraction({
+          label: "scan:indexAccountsByEmail",
         });
       } else {
         await slice();

@@ -94,10 +94,9 @@ import {
   isolationBlockActionShouldDecide,
   NEEDS_YOU_APPROVE_ACTION,
 } from "./lib/slackConfirmButtons.js";
-import {
-  isolationIdsForClient,
-} from "./lib/needsYouDigest.js";
-import { collectPendingSpendItems } from "./lib/spendDigest.js";
+import { handleNeedsYouApproveClient } from "./lib/needsYouApprove.js";
+import { parseNeedsYouButtonValue } from "./lib/needsYouDigest.js";
+import { slackActorIdSanity } from "./lib/slackActorIds.js";
 import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { CampaignHealthService } from "./services/campaignHealth.js";
 import { ClientFanOutService } from "./services/clientFanOut.js";
@@ -145,6 +144,7 @@ import { startFreezeWatchdog } from "./lib/freezeWatchdog.js";
 import {
   HEALTH_CPU_PAUSE_MS,
   setOverdueCanonOpsExclusive,
+  setSlackInteractionExclusive,
 } from "./lib/healthCpuPause.js";
 import { yieldEventLoop } from "./lib/stringifyYielding.js";
 import { PodControlService } from "./services/podControls.js";
@@ -1213,7 +1213,10 @@ async function main(): Promise<void> {
         inventory.clients,
         config,
       );
-      await stage("isolation-buy-resume", () => isolationBuy.resume(), {
+      await stage("isolation-buy-resume", async () => {
+        const resumed = await isolationExecute.resumeDecided();
+        return resumed + (await isolationBuy.resume());
+      }, {
         skipIfFreshMs,
         skipIfBeforeStage,
       });
@@ -1624,7 +1627,10 @@ async function main(): Promise<void> {
         await stage("domain-lifecycle", () => domainLifecycle.run(), {
           skipIfFreshMs,
         });
-        await stage("isolation-buy-resume", () => isolationBuy.resume(), {
+        await stage("isolation-buy-resume", async () => {
+          const resumed = await isolationExecute.resumeDecided();
+          return resumed + (await isolationBuy.resume());
+        }, {
           skipIfFreshMs,
         });
         await stage("canary-buy-resume", () => copyCanaryBuy.resume(), {
@@ -2485,7 +2491,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         }
 
         const actionId = clicked.action_id ?? "";
-        // D248 — lumped Cayden spend: needs_you_approve_client
+        // D248 / D294 — lumped Cayden spend: needs_you_approve_client
         if (
           actionId === NEEDS_YOU_APPROVE_ACTION ||
           actionId.startsWith(`${NEEDS_YOU_APPROVE_ACTION}:`)
@@ -2496,47 +2502,55 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
             });
             return;
           }
-          const clientKey = String(clicked.value ?? "");
-          res.status(200).send();
-          const ids = isolationIdsForClient(
-            collectPendingSpendItems(state),
-            clientKey,
+          const fromActionId = actionId.startsWith(`${NEEDS_YOU_APPROVE_ACTION}:`)
+            ? actionId.slice(NEEDS_YOU_APPROVE_ACTION.length + 1)
+            : "";
+          const buttonValue =
+            String(clicked.value ?? "").trim() || fromActionId;
+          const parsedTap = parseNeedsYouButtonValue(buttonValue);
+          console.log(
+            `[slack-interactions] needs-you approve client=${parsedTap.clientKey || "(empty)"} actor=${name} role=${role} stamped=${parsedTap.ids.length}`,
           );
-          void (async () => {
-            const messages: string[] = [];
-            let failed = false;
-            for (const id of ids) {
-              const result = await isolationExecute.decide(id, "approve", {
-                name,
-                role,
+          res.status(200).send();
+          setSlackInteractionExclusive(true);
+          void handleNeedsYouApproveClient({
+            actor: { name, role },
+            buttonValue,
+            actionId,
+            state,
+            isolationExecute,
+            updateCard: async (text) => {
+              await updateTappedCard({
+                responseUrl: payload.response_url,
+                text,
               });
-              messages.push(result.message);
-              if (!result.ok) failed = true;
-              const ask = state.getIsolationAction(id);
+              if (!payload.response_url) {
+                await slack.notifyActionResult(text);
+              }
+            },
+            stripAsk: async (opts) => {
               await stripResolvedAsk({
-                actionId: id,
-                kind: ask?.kind ?? "retire_domain",
-                decision: "approve",
-                resolvedBy: name,
-                detail: result.message,
+                actionId: opts.actionId,
+                kind: opts.kind,
+                decision: opts.decision,
+                resolvedBy: opts.resolvedBy,
+                detail: opts.detail,
               });
-            }
-            const text =
-              messages.join("\n") ||
-              `Done by ${name}: nothing pending for that client.`;
-            await updateTappedCard({
-              responseUrl: payload.response_url,
-              text,
+            },
+          })
+            .then((result) => {
+              if (result.failed) {
+                console.warn(
+                  `[slack-interactions] needs-you approve had errors client=${parsedTap.clientKey} ids=${result.ids.length}`,
+                );
+              }
+            })
+            .catch((error) => {
+              console.error("[slack-interactions] needs-you approve failed", error);
+            })
+            .finally(() => {
+              setSlackInteractionExclusive(false);
             });
-            if (!payload.response_url) {
-              await slack.notifyActionResult(text);
-            }
-            if (failed) {
-              console.warn("[slack-interactions] needs-you approve had errors");
-            }
-          })().catch((error) => {
-            console.error("[slack-interactions] needs-you approve failed", error);
-          });
           return;
         }
 
@@ -3677,6 +3691,12 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     console.log(
       `[boot] Auto bug remediator: ${bugRemediator.enabled() ? `ENABLED (min ${config.bugRemediatorMinHits} hits, ${config.bugRemediatorCooldownHours}h cooldown, auto-merge ${config.bugRemediatorAutoMerge ? "on" : "off"})` : "disabled (needs ENABLE_BUG_REMEDIATOR + CURSOR_API_KEY)"}`,
     );
+    const slackActors = slackActorIdSanity(
+      config.slackJoshUserIds,
+      config.slackCaydenUserIds,
+    );
+    if (slackActors.ok) console.log(slackActors.line);
+    else console.warn(slackActors.line);
     console.log(
       "[boot] Slack (D71/D149): burned-domain replace, isolated-word replace, EOD sends/spam, ops alerts (stage watchdog + deploy identity)",
     );

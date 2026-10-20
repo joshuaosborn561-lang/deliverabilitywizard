@@ -2099,4 +2099,137 @@ describe("D241 GABE-VM-RESERVED campaign-check", () => {
     );
     assert.deepEqual(removed, [], "D282 flags Owen; it does not auto-unlink");
   });
+
+  it("D295: Insight 582890 Joshua seats on joshosales* are not flagged; duplicates emit once", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const sl = {
+      listCampaigns: async () => [
+        {
+          id: 4173509,
+          name: "Insight Tix",
+          status: "ACTIVE",
+          client_id: 582890,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 18696498,
+          from_email: "osbornjoshua@joshosales.info",
+          from_name: "Joshua Osborn",
+          signature: "Josh Osborn\nStrategic Account Executive\nInsight",
+          client_id: 582890,
+          campaign_ids: [4173509, 4173509],
+          is_smtp_success: true,
+          is_imap_success: true,
+          message_per_day: 30,
+          created_at: "2026-05-13T00:00:00.000Z",
+        },
+        {
+          id: 18696498,
+          from_email: "osbornjoshua@joshosales.info",
+          from_name: "Joshua Osborn",
+          signature: "Josh Osborn\nStrategic Account Executive\nInsight",
+          client_id: 582890,
+          campaign_ids: [4173509],
+          is_smtp_success: true,
+          is_imap_success: true,
+          message_per_day: 30,
+          created_at: "2026-05-13T00:00:00.000Z",
+        },
+        {
+          id: 18695037,
+          from_email: "joshuaosborn@joshosales.info",
+          from_name: "Joshua Osborn",
+          signature: "Josh Osborn\nStrategic Account Executive\nInsight",
+          client_id: 582890,
+          campaign_ids: [4173509],
+          is_smtp_success: true,
+          is_imap_success: true,
+          message_per_day: 30,
+          created_at: "2026-05-13T00:00:00.000Z",
+        },
+        {
+          id: 2,
+          from_email: "owen@joshosales.info",
+          from_name: "Owen Sanchez",
+          signature: "",
+          client_id: 582890,
+          campaign_ids: [4173509, 4173509],
+          is_smtp_success: true,
+          is_imap_success: true,
+          message_per_day: 30,
+          created_at: "2026-05-13T00:00:00.000Z",
+        },
+        {
+          id: 2,
+          from_email: "owen@joshosales.info",
+          from_name: "Owen Sanchez",
+          signature: "",
+          client_id: 582890,
+          campaign_ids: [4173509],
+          is_smtp_success: true,
+          is_imap_success: true,
+          message_per_day: 30,
+          created_at: "2026-05-13T00:00:00.000Z",
+        },
+        {
+          id: 3,
+          from_email: "joshua@techevolution.com",
+          from_name: "Joshua Osborn",
+          signature: "",
+          client_id: 521881,
+          campaign_ids: [4173509],
+          is_smtp_success: true,
+          is_imap_success: true,
+          message_per_day: 30,
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      listClients: async () => [{ id: 582890, name: "Insight", logo: "Insight" }],
+      getCampaignSequences: async () => [
+        { seq_number: 1, email_body: "<div>A note from Insight</div><div>%signature%</div>" },
+      ],
+      updateEmailAccount: async () => {
+        throw new Error("must not rewrite Insight senders for D295");
+      },
+      removeEmailAccountsFromCampaign: async () => {
+        throw new Error("must not auto-unlink Insight senders for D295");
+      },
+    } as unknown as SmartleadClient;
+    const service = mkCheck(loadConfig({}), sl, delivery(), state);
+    const hourly = await service.run({ mode: "hourly" });
+    const row = hourly.findings.find((item) => item.campaignId === 4173509);
+    const senderFindings = (row?.findings ?? []).filter(
+      (finding) => finding.kind === "insight_non_josh_sender",
+    );
+    assert.equal(
+      senderFindings.some((finding) =>
+        finding.detail.includes("osbornjoshua@joshosales.info"),
+      ),
+      false,
+      "Joshua + Insight 582890 on joshosales.info is allowed (D295)",
+    );
+    assert.equal(
+      senderFindings.some((finding) =>
+        finding.detail.includes("joshuaosborn@joshosales.info"),
+      ),
+      false,
+    );
+    assert.equal(
+      senderFindings.filter((finding) =>
+        finding.detail.includes("owen@joshosales.info"),
+      ).length,
+      1,
+      "Owen on Insight 582890 is flagged once (D295)",
+    );
+    assert.equal(
+      senderFindings.filter((finding) =>
+        finding.detail.includes("joshua@techevolution.com"),
+      ).length,
+      1,
+      "Joshua on a non-Insight client_id / domain is flagged once (D295)",
+    );
+    assert.equal(senderFindings.length, 2);
+  });
 });

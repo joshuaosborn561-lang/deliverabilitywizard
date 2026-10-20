@@ -116,10 +116,12 @@ function seatSitsOnInsightJoshCampaign(
 }
 
 /**
- * D287 / D288 / D291 — owner for the POD-40 count.
+ * D287 / D288 / D291 / D295 — owner for the POD-40 count.
  * Insight-named Josh seats (`joshuaosborn*` / `joshosborn*` /
  * `insight*`) count for Insight even when Smartlead still has
  * SalesGlider 345263 and even when they are unlinked.
+ * A Josh / Joshua Osborn seat with live Insight `client_id`
+ * 582890 also counts (D295 — Insight-owned by definition).
  * Leftover Josh seats sitting on an Insight campaign also count
  * for Insight, never SalesGlider (D287).
  * SalesGlider's own `salesglider*` Josh seats with client 345263

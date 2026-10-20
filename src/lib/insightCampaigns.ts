@@ -7,6 +7,9 @@
  * D282 — Insight live campaigns send only from Josh Osborn inboxes
  * on a salesglider* or Insight domain. Generics and other named
  * senders never attach. Mix with ACTIVE SalesGlider still refuses.
+ * D295 — a Josh / Joshua Osborn seat whose Smartlead client_id is
+ * Insight 582890 is Insight-owned by definition (short-form Josh
+ * domains like joshosales.info do not have to match the name regex).
  */
 
 import {
@@ -121,6 +124,8 @@ export type InsightJoshSenderAccount = {
   email?: string | null;
   username?: string | null;
   signature?: string | null;
+  /** D295 — Insight 582890 is an Insight-domain signal when from-name matches. */
+  client_id?: number | null;
 };
 
 export function insightSenderEmail(
@@ -135,9 +140,12 @@ export function insightSenderEmail(
 }
 
 /**
- * D282 / D290 — a Josh / Joshua Osborn mailbox on a salesglider*
- * or Insight (`joshosborn*` / `joshuaosborn*` / `insight*`) domain.
- * Generics and other named senders (Owen Sanchez, …) never qualify.
+ * D282 / D290 / D295 — a Josh / Joshua Osborn mailbox on a
+ * salesglider* or Insight (`joshosborn*` / `joshuaosborn*` /
+ * `insight*`) domain, or a Josh / Joshua Osborn mailbox whose
+ * Smartlead `client_id` is Insight 582890 (Insight-owned by
+ * definition). Generics and other named senders (Owen Sanchez, …)
+ * never qualify — from-name must still match.
  */
 export function isInsightJoshAllowedSender(
   account: InsightJoshSenderAccount | null | undefined,
@@ -145,6 +153,7 @@ export function isInsightJoshAllowedSender(
   if (!account) return false;
   const from = String(account.from_name ?? "").trim();
   if (!INSIGHT_JOSH_FROM_NAME.test(from)) return false;
+  if (isInsightClientId(account.client_id)) return true;
   const email = insightSenderEmail(account);
   return isSalesGliderOrInsightSendingDomain(emailDomainOf(email));
 }

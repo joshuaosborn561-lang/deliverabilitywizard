@@ -38,4 +38,20 @@ describe("D271 account campaign index yields", () => {
     assert.equal(byCampaign.get(120)?.length, 40);
     assert.ok(ticks > 0, "inner campaign-id walk must yield");
   });
+
+  it("D295: duplicate campaign_ids or duplicate account rows index once", async () => {
+    const byCampaign = await indexAccountsByCampaign([
+      {
+        id: 18696498,
+        from_email: "osbornjoshua@joshosales.info",
+        campaign_ids: [4173509, 4173509],
+      },
+      {
+        id: 18696498,
+        from_email: "osbornjoshua@joshosales.info",
+        campaign_ids: [4173509],
+      },
+    ]);
+    assert.equal(byCampaign.get(4173509)?.length, 1);
+  });
 });

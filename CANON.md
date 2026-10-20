@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D294** (2026-10-20). One page of current truth. When a new
+Canon as of **D295** (2026-10-20). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -259,7 +259,11 @@ Caps ramp manually (35 on Oct 12).
   client 582890** (D192 / **D282**). Insight campaigns may only send
   from **Josh Osborn** / **Joshua Osborn** inboxes on a
   `salesglider*` or Insight (`insight` / `joshosborn*` /
-  `joshuaosborn*`) domain (D290). No generics and no other named
+  `joshuaosborn*`) domain (D290), **or on a seat whose Smartlead
+  `client_id` is Insight 582890** (D295 — Insight-owned by
+  definition; short-form Josh domains like `joshosales.info` /
+  `josbornsales.info` / `joshuaosales.info` do not have to match
+  the name regex). No generics and no other named
   senders (Owen Sanchez, …), even when Insight PODs sit under 40.
   Insight's floor is whatever Josh-seats exist; never backfill
   (`insightExemptFromSenderTopUp`). Insight is still counted
@@ -405,8 +409,10 @@ Caps ramp manually (35 on Oct 12).
   on SG campaigns) count for SalesGlider, never Insight —
   D288's unlinked salesglider* remap is retired (D291).
   Production from-name is **Joshua Osborn** on
-  `joshuaosborn*` / `joshosborn*` / `salesglider*` (D290). A
-  short POD pages Josh daily (D282/D285). PowerGRYD 592842
+  `joshuaosborn*` / `joshosborn*` / `salesglider*` (D290) **or
+  on Insight `client_id` 582890** (D295). A
+  short POD pages Josh daily (D282/D285). `insight_non_josh_sender`
+  is one finding per account (D295). PowerGRYD 592842
   takes generics like any named client; dedicated generic
   seats without a POD tag still count when they are warm
   (A/B split). Branded `*powergryd.info` seats still owing
@@ -512,10 +518,11 @@ Caps ramp manually (35 on Oct 12).
   client even if it currently sits on zero campaigns (D84). Insight
   (582890) and SalesGlider (345263) are **different clients** (D192)
   — do not fan 345263 inventory onto Insight campaigns; do not rewrite
-  Insight campaign `client_id` off 582890. **D282:** staffing, restaff,
+  Insight campaign `client_id` off 582890.   **D282 / D295:** staffing, restaff,
   POD rotation, generic backfill, and isolation restaff exclude any
   sender that is not a Josh Osborn mailbox on a salesglider* or Insight
-  domain from Insight campaigns   (`canAttachMailboxToCampaign` /
+  domain, or Insight `client_id` 582890, from Insight campaigns
+  (`canAttachMailboxToCampaign` /
   `assertInsightJoshOnlyAccountIds`). **D283** also excludes
   CornerStone 574088 and HOLD-UNTIL from every attach path.
   Insight off-week seats

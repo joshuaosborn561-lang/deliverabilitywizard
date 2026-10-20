@@ -17949,8 +17949,8 @@ describe("owner intent — D294 Needs-you Approve acks, persists, resumes", () =
 
     assert.match(
       canon,
-      /Canon as of \*\*D294\*\*/,
-      stop("CANON is dated D294.", "CANON.md header is not D294."),
+      /Canon as of \*\*D(294|29[5-9]|3[0-9]{2})\*\*/,
+      stop("CANON is dated D294 or later.", "CANON.md header is before D294."),
     );
     assert.match(
       canon,
@@ -18031,6 +18031,131 @@ describe("owner intent — D294 Needs-you Approve acks, persists, resumes", () =
       locked,
       /POD-40: every client POD A and POD B must each hold >=40 warm seats/,
       stop("LOCKED POD-40 sentence unchanged (D294).", "docs/LOCKED-CANON.md LOCKED sentence drifted."),
+    );
+  });
+});
+
+describe("owner intent — D295 Insight client_id 582890 is a domain signal", () => {
+  it("D295: Joshua + Insight 582890 allowed; regex not widened; LOCKED unchanged", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const {
+      isInsightJoshAllowedSender,
+      isInsightNamedSendingDomain,
+      INSIGHT_CLIENT_ID,
+    } = await import("../lib/insightCampaigns.js");
+    const locked = await readFile(
+      new URL("../../docs/LOCKED-CANON.md", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    const helper = await readFile(
+      new URL("../lib/insightCampaigns.ts", import.meta.url),
+      "utf8",
+    );
+    const check = await readFile(
+      new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.equal(INSIGHT_CLIENT_ID, 582890);
+    assert.equal(
+      isInsightJoshAllowedSender({
+        from_name: "Joshua Osborn",
+        from_email: "osbornjoshua@joshosales.info",
+        client_id: 582890,
+      }),
+      true,
+      stop(
+        "Joshua Osborn + Insight 582890 on joshosales.info is allowed (D295).",
+        "isInsightJoshAllowedSender rejected an Insight-owned Josh seat.",
+      ),
+    );
+    assert.equal(
+      isInsightNamedSendingDomain("joshosales.info"),
+      false,
+      stop(
+        "Do not widen the Insight domain regex (D295).",
+        "isInsightNamedSendingDomain now matches joshosales.info.",
+      ),
+    );
+    assert.equal(
+      isInsightJoshAllowedSender({
+        from_name: "Joshua Osborn",
+        from_email: "joshua@techevolution.com",
+        client_id: 521881,
+      }),
+      false,
+      stop(
+        "Joshua on a non-Insight client stays blocked (D295).",
+        "isInsightJoshAllowedSender allowed a TechEvo Joshua seat.",
+      ),
+    );
+    assert.equal(
+      isInsightJoshAllowedSender({
+        from_name: "Owen Sanchez",
+        from_email: "owen@joshosales.info",
+        client_id: 582890,
+      }),
+      false,
+      stop(
+        "Owen Sanchez on Insight 582890 stays blocked (D295).",
+        "isInsightJoshAllowedSender allowed Owen Sanchez.",
+      ),
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D295\*\*/,
+      stop("CANON is dated D295.", "CANON.md header is not D295."),
+    );
+    assert.match(
+      canon,
+      /client_id` is Insight 582890/,
+      stop(
+        "CANON names Insight client_id as a domain signal (D295).",
+        "CANON.md lost the D295 client_id rule.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D295 — /,
+      stop("The ledger records D295.", "DECISIONS.md has no D295 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D295 \|/m,
+      stop("The status index lists D295 (D127).", "DECISIONS.md status index has no D295 row."),
+    );
+    assert.match(
+      helper,
+      /if \(isInsightClientId\(account\.client_id\)\) return true;/,
+      stop(
+        "Insight client_id is a domain signal (D295).",
+        "insightCampaigns.ts lost the D295 client_id check.",
+      ),
+    );
+    assert.match(
+      helper,
+      /INSIGHT_JOSH_FROM_NAME = \/\^josh\(ua\)\?\\s\+osborn\$\/i/,
+      stop(
+        "From-name still requires Josh / Joshua Osborn (D295).",
+        "insightCampaigns.ts loosened INSIGHT_JOSH_FROM_NAME.",
+      ),
+    );
+    assert.match(
+      check,
+      /seenSenders/,
+      stop(
+        "insight_non_josh_sender dedupes per account (D295).",
+        "campaignCheck.ts lost seenSenders.",
+      ),
+    );
+    assert.match(
+      locked,
+      /POD-40: every client POD A and POD B must each hold >=40 warm seats/,
+      stop("LOCKED POD-40 sentence unchanged (D295).", "docs/LOCKED-CANON.md LOCKED sentence drifted."),
     );
   });
 });

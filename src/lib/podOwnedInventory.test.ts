@@ -497,6 +497,119 @@ describe("podOwnedInventory (D285)", () => {
     assert.equal(namedTotal, 7, "seven seats must appear once, never both clients");
   });
 
+  it("D295: Joshua Osborn + Insight 582890 on joshosales* counts; Owen and off-client do not", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const config = loadConfig({});
+    const joshosales = namedSeat({
+      id: 18696498,
+      email: "osbornjoshua@joshosales.info",
+      clientId: INSIGHT_CLIENT_ID,
+      pod: "A",
+      campaignIds: [4173509],
+      fromName: "Joshua Osborn",
+    });
+    const josbornsales = namedSeat({
+      id: 18695036,
+      email: "osbornjoshua@josbornsales.info",
+      clientId: INSIGHT_CLIENT_ID,
+      pod: "A",
+      campaignIds: [4173509],
+      fromName: "Joshua Osborn",
+    });
+    const joshuaosales = namedSeat({
+      id: 18694973,
+      email: "osbornjoshua@joshuaosales.info",
+      clientId: INSIGHT_CLIENT_ID,
+      pod: "B",
+      campaignIds: [4173509],
+      fromName: "Joshua Osborn",
+    });
+    const owenInsight = namedSeat({
+      id: 99,
+      email: "owen@joshosales.info",
+      clientId: INSIGHT_CLIENT_ID,
+      pod: "A",
+      campaignIds: [4173509],
+      fromName: "Owen Sanchez",
+    });
+    const joshuaForeign = namedSeat({
+      id: 100,
+      email: "joshua@techevolution.com",
+      clientId: TECHEVO_CLIENT_ID,
+      pod: "A",
+      campaignIds: [20],
+      fromName: "Joshua Osborn",
+    });
+    const campaignById = new Map([
+      [
+        4173509,
+        {
+          id: 4173509,
+          client_id: INSIGHT_CLIENT_ID,
+          name: "Insight Tix",
+        },
+      ],
+      [
+        20,
+        {
+          id: 20,
+          client_id: TECHEVO_CLIENT_ID,
+          name: "TechEvo A",
+        },
+      ],
+    ]);
+    assert.equal(
+      ownedNamedClientIdForSeat({
+        account: joshosales,
+        email: joshosales.from_email,
+        campaignIds: [4173509],
+        campaignById,
+      }),
+      INSIGHT_CLIENT_ID,
+    );
+    const rows = await countOwnedClientPods({
+      accounts: [
+        joshosales,
+        josbornsales,
+        joshuaosales,
+        owenInsight,
+        joshuaForeign,
+      ],
+      campaigns: [
+        {
+          id: 4173509,
+          name: "Insight Tix",
+          status: "ACTIVE",
+          client_id: INSIGHT_CLIENT_ID,
+        },
+        {
+          id: 20,
+          name: "TechEvo A",
+          status: "ACTIVE",
+          client_id: TECHEVO_CLIENT_ID,
+        },
+      ],
+      config,
+      state,
+      clientIds: [INSIGHT_CLIENT_ID, TECHEVO_CLIENT_ID],
+    });
+    const insightA = rows.find(
+      (row) => row.clientId === INSIGHT_CLIENT_ID && row.pod === "A",
+    );
+    const insightB = rows.find(
+      (row) => row.clientId === INSIGHT_CLIENT_ID && row.pod === "B",
+    );
+    const teA = rows.find(
+      (row) => row.clientId === TECHEVO_CLIENT_ID && row.pod === "A",
+    );
+    assert.equal(insightA?.named, 2, "joshosales + josbornsales count for Insight A");
+    assert.equal(insightB?.named, 1, "joshuaosales counts for Insight B");
+    assert.equal(insightA?.owned, 2);
+    assert.equal(insightB?.owned, 1);
+    assert.equal(teA?.named, 1, "Joshua on TechEvo stays TechEvo, not Insight");
+  });
+
   it("D287: Insight Josh seats with SalesGlider client_id still count", async () => {
     const state = new StateStore(stateFile());
     await state.load();

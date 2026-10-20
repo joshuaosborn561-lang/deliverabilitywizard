@@ -329,4 +329,28 @@ describe("SpendGateway", () => {
     await gateway.consume(decision, request);
     assert.equal(state.getSpendApproval(request.key)?.status, "consumed");
   });
+
+  it("D296: a consumed isolation InboxKit key does not open a new :cycle: buy", async () => {
+    const state = fakeState();
+    const { sent, client } = fakeSlack();
+    const gateway = new SpendGateway(state, client, true);
+    const request = {
+      key: "inboxkit:isolation:crosslaunchcohq.info:GOOGLE:n3",
+      scope: "generic_pool" as const,
+      kind: "inboxkit_mailbox_purchase",
+      description: "Replacement mailboxes",
+    };
+    const first = await gateway.recordOwnerApproved(request, "Cayden");
+    await gateway.consume(first, request);
+    const second = await gateway.recordOwnerApproved(request, "Cayden");
+    assert.equal(second.record.status, "consumed");
+    assert.equal(second.record.id, request.key);
+    assert.equal(
+      state.listSpendApprovals().filter((row) =>
+        (row.requestKey ?? row.id).startsWith(request.key),
+      ).length,
+      1,
+    );
+    assert.equal(sent.length, 0);
+  });
 });

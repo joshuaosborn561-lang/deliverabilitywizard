@@ -11,6 +11,14 @@ describe("isolation actors", () => {
     assert.equal(canDecideIsolationAction("retire_domain", "operator"), true);
     assert.equal(canDecideIsolationAction("buy_canary_fleet", "owner"), true);
     assert.equal(canDecideIsolationAction("buy_canary_fleet", "operator"), false);
+    assert.equal(
+      canDecideIsolationAction("buy_domains", "operator", { insight: true }),
+      false,
+    );
+    assert.equal(
+      canDecideIsolationAction("buy_domains", "owner", { insight: true }),
+      true,
+    );
     assert.equal(canDecideIsolationAction("swap_copy", "operator"), true);
   });
 });

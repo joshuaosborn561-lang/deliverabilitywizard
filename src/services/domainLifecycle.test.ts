@@ -40,6 +40,41 @@ describe("DomainLifecycleService", () => {
     assert.equal(slack.actions.length, 1);
   });
 
+  it("D296: does not buy cover off a seat that is gone from Smartlead", async () => {
+    const state = await store();
+    const slack = new FakeSlack();
+    const svc = new DomainLifecycleService(
+      loadConfig({} as NodeJS.ProcessEnv),
+      state,
+      slack as never,
+    );
+    await svc.afterReadings(
+      [
+        {
+          email: "latoyaflatley@culturefitsaio.info",
+          placement: "SPAM",
+          ranAt: "t1",
+        },
+        {
+          email: "other@culturefitsaio.info",
+          placement: "SPAM",
+          ranAt: "t1",
+        },
+      ],
+      {
+        accounts: [
+          {
+            from_email: "stillhere@otherdomain.info",
+            client_id: 418275,
+          },
+        ],
+        clients: [{ id: 418275, name: "Culture Fits" }],
+      },
+    );
+    assert.equal(state.listIsolationActions().length, 0);
+    assert.equal(slack.actions.length, 0);
+  });
+
   it("D190: same first-strike on crossscaleco.com does not re-Slack on remind", async () => {
     const state = await store();
     const slack = new FakeSlack();

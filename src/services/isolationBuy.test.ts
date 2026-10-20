@@ -364,6 +364,40 @@ describe("IsolationBuyService.resume — InboxKit inventory reconcile", () => {
     assert.equal(inboxkit.buys.length, 0);
   });
 
+  it("D296: a consumed isolation InboxKit key does not buy mailboxes again", async () => {
+    const state = await buyStore();
+    const action = awaitingAction(["MICROSOFT", "MICROSOFT", "MICROSOFT"]);
+    state.upsertIsolationAction(action);
+    state.upsertSpendApproval({
+      id: spendKey,
+      requestKey: spendKey,
+      kind: "inboxkit_mailbox_purchase",
+      description: `Mailboxes on replacement domain ${domain} (MICROSOFT).`,
+      detail: { domain, platform: "MICROSOFT", count: 3, actionId: action.id },
+      requestedAt: "2026-10-20T07:30:00.000Z",
+      status: "consumed",
+      decidedAt: "2026-10-20T07:30:00.000Z",
+      decidedBy: "Cayden",
+    });
+    const inboxkit = mockInboxkit({ rows: [] });
+    const spend = new SpendGateway(
+      state,
+      { send: async () => undefined } as never,
+      true,
+    );
+    const svc = new IsolationBuyService(
+      liveConfig(),
+      inboxkit.client,
+      null,
+      state,
+      spend,
+    );
+    const finished = await svc.resume();
+    assert.equal(finished, 1);
+    assert.equal(inboxkit.buys.length, 0);
+    assert.equal(state.getSpendApproval(spendKey)?.status, "consumed");
+  });
+
   it("partial fill only buys the remainder", async () => {
     const state = await buyStore();
     const action = awaitingAction(["MICROSOFT", "MICROSOFT", "MICROSOFT"]);

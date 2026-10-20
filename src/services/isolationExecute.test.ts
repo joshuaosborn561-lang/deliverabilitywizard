@@ -1226,7 +1226,7 @@ describe("D266 — one-tap spend/retire cards", () => {
     state.upsertIsolationAction({
       ...action,
       status: "approved",
-      decidedAt: "2026-10-20T12:00:00.000Z",
+      decidedAt: new Date().toISOString(),
       decidedBy: "Cayden",
     });
     const sl = {
@@ -1279,5 +1279,124 @@ describe("D266 — one-tap spend/retire cards", () => {
     });
     assert.deepEqual(stamped, []);
     assert.equal(state.getIsolationAction(canary.id)?.status, "pending");
+  });
+
+  it("D296: Cayden cannot stamp or execute Insight spend", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-insight-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "buy_domains",
+      title: "Buy cover for joshuaosbornsalestry.info",
+      proof: "proof",
+      detail: {
+        domain: "joshuaosbornsalestry.info",
+        ownerClientId: 582890,
+        ownerClientName: "Insight",
+        triggerSeatClientId: 582890,
+      },
+    });
+    state.upsertIsolationAction(action);
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {} as never,
+      { send: async () => undefined } as never,
+      state,
+      { run: async () => ({ domains: ["bought.info"], mailboxesOrdered: 0, awaitingNameservers: false }) } as never,
+    );
+    const stamped = await svc.stampApprovals([action.id], {
+      name: "Cayden",
+      role: "operator",
+    });
+    assert.deepEqual(stamped, []);
+    const decided = await svc.decide(action.id, "approve", {
+      name: "Cayden",
+      role: "operator",
+    });
+    assert.equal(decided.ok, false);
+    assert.match(decided.message, /Insight spend stays Josh-only/);
+    assert.equal(state.getIsolationAction(action.id)?.status, "pending");
+  });
+
+  it("D296: retire+buy Slack is announced once per domain", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-announce-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const leftover = buildIsolationAction({
+      kind: "retire_domain",
+      title: "Retire crosslaunchcohq.info",
+      proof: "second fire",
+      detail: { domain: "crosslaunchcohq.info" },
+    });
+    state.upsertIsolationAction(leftover);
+    const again = buildIsolationAction({
+      kind: "retire_domain",
+      title: "Retire crosslaunchcohq.info again",
+      proof: "duplicate fire",
+      detail: { domain: "crosslaunchcohq.info" },
+    });
+    state.upsertIsolationAction(again);
+    const sent: string[] = [];
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {
+        listCampaigns: async () => [],
+        listAllEmailAccounts: async () => [],
+        listClients: async () => [],
+      } as never,
+      { send: async (text: string) => sent.push(text) } as never,
+      state,
+      { run: async () => ({ domains: ["x.info"], mailboxesOrdered: 0, awaitingNameservers: false }) } as never,
+    );
+    const first = await svc.decide(leftover.id, "approve", {
+      name: "Cayden",
+      role: "operator",
+    });
+    const second = await svc.decide(again.id, "approve", {
+      name: "Cayden",
+      role: "operator",
+    });
+    assert.equal(first.ok, true);
+    assert.equal(second.ok, true);
+    assert.equal(sent.length, 1, `duplicate announce: ${sent.join(" | ")}`);
+  });
+
+  it("D296: resumeDecided does not execute a 48h-stale approval", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-stale-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "buy_domains",
+      title: "Buy cover for labgoliath",
+      proof: "proof",
+      detail: { domain: "meetconnectnow.com", quantity: 1 },
+      now: "2026-10-17T12:00:00.000Z",
+    });
+    state.upsertIsolationAction({
+      ...action,
+      status: "approved",
+      decidedAt: "2026-10-17T12:00:00.000Z",
+      decidedBy: "Cayden",
+    });
+    let bought = 0;
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {} as never,
+      { send: async () => undefined } as never,
+      state,
+      {
+        run: async () => {
+          bought += 1;
+          return { domains: ["labgoliathcybersecurity.info"], mailboxesOrdered: 0, awaitingNameservers: false };
+        },
+      } as never,
+    );
+    const n = await svc.resumeDecided(new Date("2026-10-20T14:00:00.000Z"));
+    assert.equal(n, 0);
+    assert.equal(bought, 0);
+    assert.equal(state.getIsolationAction(action.id)?.status, "pending");
   });
 });

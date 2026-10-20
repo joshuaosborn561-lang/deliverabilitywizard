@@ -710,7 +710,7 @@ async function main(): Promise<void> {
     inventoryBook,
   );
   const terlHold = new TerlHoldService(config, smartlead, state, slack);
-  const spendDigest = new SpendDigestService(state, slack);
+  const spendDigest = new SpendDigestService(state, slack, inventoryBook);
   const inboxkitLicenseSweep = new InboxkitLicenseSweepService(
     config,
     smartlead,

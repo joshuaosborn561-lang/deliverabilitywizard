@@ -25,6 +25,11 @@ import {
   requestIsolationAction,
   burnStrikeKey,
 } from "./isolationActions.js";
+import {
+  domainHasLiveOrPendingCover,
+  liveTriggerSeats,
+  type LiveSeat,
+} from "./liveSpendNeed.js";
 
 export function refreshDomainOwnerCache(
   store: Pick<StateStore, "replaceDomainOwners" | "isMarkerClientId">,
@@ -99,6 +104,7 @@ export async function requestRetireOrCover(input: {
   proof: string;
   owner?: DomainOwnerRecord;
   extraDetail?: Record<string, unknown>;
+  liveSeats?: Map<string, LiveSeat>;
 }): Promise<{
   opened: IsolationActionRecord | null;
   covered: boolean;
@@ -109,15 +115,50 @@ export async function requestRetireOrCover(input: {
   if (domainAlreadyRetired(input.store, host)) {
     return { opened: null, covered: false };
   }
+  if (!input.preferRetire) {
+    const cover = domainHasLiveOrPendingCover(input.store, host);
+    if (cover?.kind === "live") {
+      return { opened: null, covered: true, reason: "cover-exists" };
+    }
+  }
+  const failingEmails = Array.isArray(input.extraDetail?.failingEmails)
+    ? (input.extraDetail.failingEmails as string[])
+    : [];
+  const liveHits = input.liveSeats
+    ? liveTriggerSeats(
+        failingEmails,
+        { seats: input.liveSeats },
+      )
+    : [];
+  if (input.liveSeats && input.liveSeats.size > 0 && failingEmails.length > 0 && !liveHits.length) {
+    return { opened: null, covered: false, reason: "seat-gone" };
+  }
+  const trigger = liveHits[0];
+  const triggerDetail: Record<string, unknown> = {};
+  if (failingEmails.length) triggerDetail.triggerEmails = failingEmails;
+  if (trigger?.email) triggerDetail.triggerSeatEmail = trigger.email;
+  if (trigger?.clientId) {
+    triggerDetail.triggerSeatClientId = trigger.clientId;
+    triggerDetail.ownerClientId = trigger.clientId;
+    if (trigger.clientName) {
+      triggerDetail.triggerSeatClientName = trigger.clientName;
+      triggerDetail.ownerClientName = trigger.clientName;
+      triggerDetail.ownerKind = "client";
+    }
+  }
   const parent = replacementParentForRetiredDomain(host, input.config, {
     kind: input.preferRetire ? "retire_domain" : "buy_domains",
     owner,
   });
   const ownerDetail = ownerOnActionDetail(owner);
-  const failingEmails = Array.isArray(input.extraDetail?.failingEmails)
-    ? (input.extraDetail.failingEmails as string[])
-    : undefined;
   const as42004 = Boolean(input.extraDetail?.as42004);
+  const seatOwner = trigger?.clientId
+    ? {
+        ownerKind: "client" as const,
+        ownerClientId: trigger.clientId,
+        ownerClientName: trigger.clientName,
+      }
+    : ownerDetail;
 
   if (input.preferRetire) {
     const opened = await requestIsolationAction({
@@ -137,8 +178,9 @@ export async function requestRetireOrCover(input: {
             failingEmails,
             as42004,
           }),
-          ...ownerDetail,
+          ...seatOwner,
           ...input.extraDetail,
+          ...triggerDetail,
         },
       }),
     });
@@ -163,8 +205,9 @@ export async function requestRetireOrCover(input: {
           failingEmails,
           as42004,
         }),
-        ...ownerDetail,
+        ...seatOwner,
         ...input.extraDetail,
+        ...triggerDetail,
       },
     }),
   });

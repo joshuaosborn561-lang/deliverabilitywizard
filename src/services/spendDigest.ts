@@ -5,8 +5,10 @@
  */
 import type { SlackClient } from "../clients/slack.js";
 import { canonOpsIdleReason, chicagoWallClock } from "../lib/canonOpsHours.js";
+import { indexLiveSeats, type SpendNeedLive } from "../lib/liveSpendNeed.js";
 import { buildNeedsYouDigest } from "../lib/needsYouDigest.js";
 import { remindPendingIsolationActions } from "../lib/isolationActions.js";
+import type { InventoryBook } from "./inventory.js";
 import type { StateStore } from "../state/store.js";
 
 export interface SpendDigestResult {
@@ -23,6 +25,7 @@ export class SpendDigestService {
     private readonly state: StateStore,
     private readonly slack?: Pick<SlackClient, "send"> &
       Partial<Pick<SlackClient, "notifyIsolationAction" | "postThreadReply">>,
+    private readonly book?: InventoryBook,
   ) {}
 
   async postDigest(
@@ -51,7 +54,7 @@ export class SpendDigestService {
         items: 0,
       };
     }
-    const digest = buildNeedsYouDigest(this.state);
+    const digest = buildNeedsYouDigest(this.state, await this.liveNeed());
     try {
       await this.state.saveHot();
     } catch (error) {
@@ -90,5 +93,17 @@ export class SpendDigestService {
       items: digest.items.length + digest.josh.length,
       flushed,
     };
+  }
+
+  private async liveNeed(): Promise<SpendNeedLive | undefined> {
+    if (!this.book) return undefined;
+    try {
+      const snap = this.book.peek?.() ?? (await this.book.get());
+      if (!snap?.accounts.length) return undefined;
+      return { seats: indexLiveSeats(snap.accounts, snap.clients), now: new Date() };
+    } catch (error) {
+      console.warn("[spend-digest] live Smartlead snapshot skipped", error);
+      return undefined;
+    }
   }
 }

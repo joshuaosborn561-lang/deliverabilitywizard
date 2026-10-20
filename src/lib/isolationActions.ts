@@ -9,6 +9,10 @@ import type {
   IsolationActionRecord,
 } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
+import {
+  domainHasLiveOrPendingCover,
+  spendSourceDomain,
+} from "./liveSpendNeed.js";
 
 export function buildIsolationAction(input: {
   kind: IsolationActionKind;
@@ -126,7 +130,7 @@ export function shouldRemindBurnAsk(
 }
 
 function domainOfAction(action: IsolationActionRecord): string {
-  return String(action.detail.domain ?? "").toLowerCase();
+  return spendSourceDomain(action.detail);
 }
 
 function retireInFlightForDomain(
@@ -187,12 +191,11 @@ function samePending(
     );
   }
   if (next.kind === "retire_domain" || next.kind === "buy_domains") {
-    // D179 / D190 — an executed / in-flight retire or cover buy is the
-    // durable dedupe. A denied ask may be re-opened; failed stays
-    // retryable via the same record.
+    // D179 / D190 / D296 — an executed / in-flight retire or cover buy is the
+    // durable dedupe (source domain, including retiredDomain). A denied
+    // ask may be re-opened; failed stays retryable via the same record.
     return (
-      String(existing.detail.domain ?? "").toLowerCase() ===
-        String(next.detail.domain ?? "").toLowerCase() &&
+      spendSourceDomain(existing.detail) === spendSourceDomain(next.detail) &&
       (existing.status === "pending" ||
         existing.status === "approved" ||
         existing.status === "executed")
@@ -311,7 +314,10 @@ export function persistRetiredDomainHistory(
     status: "retired",
     readings: prev?.readings ?? [],
     lastReason: prev?.lastReason,
+    skipCount: prev?.skipCount,
     retiredAt: prev?.retiredAt ?? now,
+    coverDomains: prev?.coverDomains,
+    announcedKinds: prev?.announcedKinds,
   };
   store.upsertDomainHistory(next);
   return next;
@@ -337,8 +343,11 @@ export async function requestIsolationAction(input: {
     }
   }
   if (input.action.kind === "buy_domains") {
-    const host = String(input.action.detail.domain ?? "").toLowerCase();
+    const host = spendSourceDomain(input.action.detail);
     if (host && retireInFlightForDomain(input.store, host)) {
+      return null;
+    }
+    if (host && domainHasLiveOrPendingCover(input.store, host)?.kind === "live") {
       return null;
     }
   }

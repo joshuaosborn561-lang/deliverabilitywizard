@@ -13,6 +13,8 @@ import {
   refreshDomainOwnerCache,
   requestRetireOrCover,
 } from "../lib/retireAsk.js";
+import { indexLiveSeats } from "../lib/liveSpendNeed.js";
+import { accountEmail } from "../clients/smartlead.js";
 import type { DomainControlHistoryRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
 import type { InventoryBook } from "./inventory.js";
@@ -70,8 +72,23 @@ export class DomainLifecycleService {
     const result = { domains: 0, buyAhead: 0, retire: 0, covered: 0 };
     if (!readings.length) return result;
 
+    const liveSeats = inventory?.accounts
+      ? indexLiveSeats(inventory.accounts, inventory.clients ?? [])
+      : undefined;
+    const liveEmails = liveSeats
+      ? new Set(liveSeats.keys())
+      : inventory?.accounts
+        ? new Set(
+            inventory.accounts
+              .map((account) => accountEmail(account)?.toLowerCase())
+              .filter((email): email is string => Boolean(email)),
+          )
+        : undefined;
     const byDomain = new Map<string, Array<DomainMailboxReading & { ranAt?: string }>>();
     for (const row of readings) {
+      if (liveEmails && liveEmails.size > 0 && !liveEmails.has(row.email.toLowerCase())) {
+        continue;
+      }
       const domain = row.email.split("@")[1]?.toLowerCase();
       if (!domain) continue;
       const list = byDomain.get(domain) ?? [];
@@ -131,6 +148,9 @@ export class DomainLifecycleService {
           ].slice(-8),
           lastReason: verdict.reason,
           skipCount: prev?.skipCount,
+          retiredAt: prev?.retiredAt,
+          coverDomains: prev?.coverDomains,
+          announcedKinds: prev?.announcedKinds,
         };
         this.store.upsertDomainHistory(history);
         if (!verdict.domainFailed) continue;
@@ -147,6 +167,7 @@ export class DomainLifecycleService {
           proof,
           owner,
           extraDetail: { failingEmails: verdict.failingEmails },
+          liveSeats,
         });
         if (asked.covered) result.covered += 1;
         else if (asked.opened?.kind === "retire_domain") result.retire += 1;
@@ -167,6 +188,8 @@ export class DomainLifecycleService {
           lastReason: message,
           skipCount: (prev?.skipCount ?? 0) + 1,
           retiredAt: prev?.retiredAt,
+          coverDomains: prev?.coverDomains,
+          announcedKinds: prev?.announcedKinds,
         });
       }
     }

@@ -141,4 +141,45 @@ describe("Cayden per-client spend digest (D220)", () => {
     assert.equal(items.length, 0);
     assert.equal(spendDigestText(groupSpendItemsByClient(items)), null);
   });
+
+  it("D296: Insight spend is not lumped into Cayden; seat client_id wins the card", () => {
+    const store = tempStore();
+    store.upsertIsolationAction(
+      buildIsolationAction({
+        kind: "buy_domains",
+        title: "Buy cover for joshuaosbornsalestry.info",
+        proof: "Insight",
+        detail: {
+          domain: "joshuaosbornsalestry.info",
+          ownerClientId: 582890,
+          ownerClientName: "Insight",
+          triggerSeatClientId: 582890,
+          failingEmails: ["josh@joshuaosbornsalestry.info"],
+        },
+      }),
+    );
+    store.upsertIsolationAction(
+      buildIsolationAction({
+        kind: "buy_domains",
+        title: "Buy cover for culturefitsaio.info",
+        proof: "stale BCP label",
+        detail: {
+          domain: "culturefitsaio.info",
+          ownerClientId: 542838,
+          ownerClientName: "Bolder Cyber Partners",
+          triggerSeatClientId: 418275,
+          triggerSeatEmail: "latoyaflatley@culturefitsaio.info",
+          failingEmails: ["latoyaflatley@culturefitsaio.info"],
+        },
+      }),
+    );
+    const items = collectPendingSpendItems(store);
+    const insight = items.find((row) => row.domain === "joshuaosbornsalestry.info");
+    assert.equal(insight?.joshOnly, true);
+    const groups = groupSpendItemsByClient(items);
+    assert.ok(!groups.some((g) => /insight/i.test(g.clientName)));
+    const culture = items.find((row) => row.domain === "culturefitsaio.info");
+    assert.equal(culture?.clientKey, "id:418275");
+    assert.match(culture?.reason ?? culture?.label ?? "", /latoyaflatley@/);
+  });
 });

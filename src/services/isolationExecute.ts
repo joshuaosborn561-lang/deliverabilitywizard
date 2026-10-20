@@ -18,6 +18,20 @@ import type { InventoryBook } from "./inventory.js";
 import type { SmartleadSequence } from "../types/index.js";
 import { canDecideIsolationAction } from "../lib/isolationActors.js";
 import {
+  domainAlreadyAnnounced,
+  domainHasLiveOrPendingCover,
+  expireStaleApprovals,
+  indexLiveSeats,
+  isFreshApproval,
+  isInsightSpendDetail,
+  liveTriggerSeats,
+  markDomainAnnounced,
+  persistCoverDomains,
+  spendNeedDisappeared,
+  spendSourceDomain,
+  triggerEmailsOf,
+} from "../lib/liveSpendNeed.js";
+import {
   buildIsolationAction,
   persistRetiredDomainHistory,
   retireAlreadySettled,
@@ -61,6 +75,7 @@ import { doneByLine } from "../lib/slackAskResolve.js";
 
 export class IsolationExecuteService {
   private readonly inFlight = new Set<string>();
+  private readonly inFlightDomains = new Set<string>();
 
   constructor(
     private readonly config: AppConfig,
@@ -86,7 +101,13 @@ export class IsolationExecuteService {
     for (const id of ids) {
       const action = this.state.getIsolationAction(id);
       if (!action || action.status !== "pending") continue;
-      if (!canDecideIsolationAction(action.kind, actor.role)) continue;
+      if (
+        !canDecideIsolationAction(action.kind, actor.role, {
+          insight: isInsightSpendDetail(action.detail),
+        })
+      ) {
+        continue;
+      }
       this.state.upsertIsolationAction({
         ...action,
         status: "approved",
@@ -99,15 +120,25 @@ export class IsolationExecuteService {
     return stamped;
   }
 
-  /** D294 — finish approved retires / buys that died before executedAt. */
-  async resumeDecided(): Promise<number> {
+  /** D294 / D296 — finish approved retires / buys that died before executedAt. */
+  async resumeDecided(now = new Date()): Promise<number> {
+    expireStaleApprovals(this.state, now);
     let n = 0;
     for (const action of this.state.listIsolationActions()) {
       if (!this.shouldResumeApproved(action, "approve")) continue;
+      if (!isFreshApproval(action, now.getTime())) continue;
       const name = action.decidedBy?.trim() || "the wizard";
+      const role = /cayden/i.test(name) ? "operator" : "owner";
+      if (
+        !canDecideIsolationAction(action.kind, role, {
+          insight: isInsightSpendDetail(action.detail),
+        })
+      ) {
+        continue;
+      }
       const result = await this.decide(action.id, "approve", {
         name,
-        role: "owner",
+        role,
       });
       if (result.ok) n += 1;
     }
@@ -122,6 +153,8 @@ export class IsolationExecuteService {
     if (action.status !== "approved") return false;
     if (action.executedAt) return false;
     if (this.inFlight.has(action.id)) return false;
+    const host = spendSourceDomain(action.detail);
+    if (host && this.inFlightDomains.has(`${action.kind}:${host}`)) return false;
     if (action.kind === "retire_domain") return true;
     if (
       (action.kind === "buy_domains" || action.kind === "buy_isolation_domain") &&
@@ -160,6 +193,8 @@ export class IsolationExecuteService {
       this.state.upsertIsolationAction(approved);
       await this.state.persistIsolationDecision(approved);
       this.inFlight.add(actionId);
+      const resumeHost = spendSourceDomain(approved.detail);
+      if (resumeHost) this.inFlightDomains.add(`${approved.kind}:${resumeHost}`);
       try {
         const summary = await withTransientRetry(
           () => this.runApproved(approved, actor.name),
@@ -201,6 +236,7 @@ export class IsolationExecuteService {
         return { ok: false, message: doneByLine(actor.name, message) };
       } finally {
         this.inFlight.delete(actionId);
+        if (resumeHost) this.inFlightDomains.delete(`${approved.kind}:${resumeHost}`);
       }
     }
     if (action.status !== "pending") {
@@ -253,12 +289,18 @@ export class IsolationExecuteService {
         ),
       };
     }
-    if (!canDecideIsolationAction(action.kind, actor.role)) {
+    if (
+      !canDecideIsolationAction(action.kind, actor.role, {
+        insight: isInsightSpendDetail(action.detail),
+      })
+    ) {
       return {
         ok: false,
         message:
           action.kind === "swap_copy" || action.kind === "add_signature_tag"
             ? "Josh or Cayden can approve this copy edit."
+            : isInsightSpendDetail(action.detail)
+              ? "Insight spend stays Josh-only (D296)."
             : action.kind === "retire_domain" || action.kind === "buy_domains"
               ? "Cayden or Josh can approve this retire or replacement buy."
               : "Only Josh can approve buying the canary fleet, the isolation domain, or generic backfill.",
@@ -325,6 +367,8 @@ export class IsolationExecuteService {
     this.state.upsertIsolationAction(approved);
     await this.state.persistIsolationDecision(approved);
     this.inFlight.add(actionId);
+    const host = spendSourceDomain(approved.detail);
+    if (host) this.inFlightDomains.add(`${approved.kind}:${host}`);
     try {
       const summary = await withTransientRetry(
         () => this.runApproved(approved, actor.name),
@@ -399,13 +443,57 @@ export class IsolationExecuteService {
       return { ok: false, message: doneByLine(actor.name, message) };
     } finally {
       this.inFlight.delete(actionId);
+      if (host) this.inFlightDomains.delete(`${approved.kind}:${host}`);
     }
+  }
+
+  private async liveNeedSnapshot() {
+    try {
+      const snap = await this.book.get();
+      if (!snap.accounts.length) return undefined;
+      return {
+        seats: indexLiveSeats(snap.accounts, snap.clients),
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async dropIfNeedGone(
+    action: IsolationActionRecord,
+  ): Promise<string | undefined> {
+    if (action.kind !== "retire_domain" && action.kind !== "buy_domains") {
+      return undefined;
+    }
+    const live = await this.liveNeedSnapshot();
+    const gone = spendNeedDisappeared(action, this.state, live);
+    if (!gone.gone) {
+      const emails = triggerEmailsOf(action.detail);
+      if (live && live.seats.size > 0 && emails.length > 0) {
+        const hits = liveTriggerSeats(emails, live);
+        if (!hits.length) {
+          return `Trigger seat ${emails[0]} is not in live Smartlead — need disappeared (D296).`;
+        }
+      }
+      return undefined;
+    }
+    return `${gone.detail} (D296).`;
   }
 
   private async runApproved(
     approved: IsolationActionRecord,
     actor: string,
   ): Promise<string> {
+    const gone = await this.dropIfNeedGone(approved);
+    if (gone) {
+      this.state.upsertIsolationAction({
+        ...approved,
+        status: "executed",
+        executedAt: new Date().toISOString(),
+        error: gone,
+      });
+      return gone;
+    }
     if (approved.kind === "retire_domain") return this.retire(approved, actor);
     if (approved.kind === "swap_copy") return this.swapCopy(approved, actor);
     if (approved.kind === "add_signature_tag") {
@@ -453,7 +541,12 @@ export class IsolationExecuteService {
         "No inboxes were pulled and no replacement was bought (D179).",
         action.proof,
       ].join("\n");
-      await this.announce("retire_domain", doneByLine(actor, already));
+      await this.announce(
+        "retire_domain",
+        doneByLine(actor, already),
+        domain,
+        action.id,
+      );
       return already;
     }
     const onDomain = accounts.filter(
@@ -515,78 +608,90 @@ export class IsolationExecuteService {
     // D150 — same tap also buys the replacement domain with ESP-matched
     // mailboxes. Josh's retire approve is the spend approval; do not open a
     // second buy ask. Failures after the pull still leave D134 backfill on.
+    // D296 — skip the buy when this domain already has a live or pending cover.
+    const existingCover = domainHasLiveOrPendingCover(this.state, domain);
     const espMix = espMixFromAccountTypes(onDomain.map((account) => account.type));
     const platforms = platformsMatchingEspMix(
       espMix,
       this.config.isolationMailboxesPerBuyDomain,
     );
     let buySummary: string | undefined;
-    const buyAction = buildIsolationAction({
-      kind: "buy_domains",
-      title: `Replacement for retired ${domain}`,
-      proof: action.proof,
-      detail: {
-        domain,
-        quantity: 1,
-        parentDomain: replacementParentForRetiredDomain(
-          domain,
-          this.config,
-          { kind: "buy_domains", owner },
-        ),
-        espMix,
-        platforms,
-        retiredDomain: domain,
-        phase: AWAITING_PURCHASE,
-        ...ownerOnActionDetail(owner),
-      },
-    });
-    buyAction.status = "approved";
-    buyAction.decidedAt = new Date().toISOString();
-    buyAction.decidedBy = action.decidedBy || actor;
-    this.state.upsertIsolationAction(buyAction);
-    try {
-      const result = await this.buy.run(buyAction);
-      this.state.upsertIsolationAction({
-        ...this.state.getIsolationAction(buyAction.id)!,
-        status: "executed",
-        executedAt: new Date().toISOString(),
-        detail: {
-          ...buyAction.detail,
-          domains: result.domains,
-          phase: result.awaitingNameservers ? "awaiting_mailboxes" : "complete",
-          ...(result.espSkipReason
-            ? { espSkipReason: result.espSkipReason }
-            : {}),
-        },
-      });
-      buySummary = [
-        `Bought replacement ${result.domains.join(", ") || "domain"} with ${platforms.join("/") || "mixed"} mailboxes to match the retired mix (G${espMix.GOOGLE}/M${espMix.MICROSOFT}).`,
-        result.mailboxesOrdered
-          ? `${result.mailboxesOrdered} mailbox${result.mailboxesOrdered === 1 ? "" : "es"} ordered — they owe 21 days before live send.`
-          : undefined,
-        mailboxOrderFollowup(result),
-        result.espSkipReason
-          ? `InboxKit is one ESP per domain — ${result.espSkipReason}`
-          : undefined,
-      ]
-        .filter(Boolean)
-        .join(" ");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const current = this.state.getIsolationAction(buyAction.id);
-      if (current) {
-        this.state.upsertIsolationAction({
-          ...current,
-          status: "approved",
-          error: message,
+    if (existingCover) {
+      buySummary = existingCover.cover
+        ? `Cover already live (${existingCover.cover}) — no second domain (D296).`
+        : "Cover already pending or bought — no second domain (D296).";
+    }
+    const buyAction = existingCover
+      ? null
+      : buildIsolationAction({
+          kind: "buy_domains",
+          title: `Replacement for retired ${domain}`,
+          proof: action.proof,
           detail: {
-            ...current.detail,
+            domain,
+            quantity: 1,
+            parentDomain: replacementParentForRetiredDomain(
+              domain,
+              this.config,
+              { kind: "buy_domains", owner },
+            ),
+            espMix,
+            platforms,
+            retiredDomain: domain,
             phase: AWAITING_PURCHASE,
-            retryReason: message,
+            ...ownerOnActionDetail(owner),
           },
         });
+    if (buyAction) {
+      buyAction.status = "approved";
+      buyAction.decidedAt = new Date().toISOString();
+      buyAction.decidedBy = action.decidedBy || actor;
+      this.state.upsertIsolationAction(buyAction);
+      try {
+        const result = await this.buy.run(buyAction);
+        this.state.upsertIsolationAction({
+          ...this.state.getIsolationAction(buyAction.id)!,
+          status: "executed",
+          executedAt: new Date().toISOString(),
+          detail: {
+            ...buyAction.detail,
+            domains: result.domains,
+            phase: result.awaitingNameservers ? "awaiting_mailboxes" : "complete",
+            ...(result.espSkipReason
+              ? { espSkipReason: result.espSkipReason }
+              : {}),
+          },
+        });
+        persistCoverDomains(this.state, domain, result.domains);
+        buySummary = [
+          `Bought replacement ${result.domains.join(", ") || "domain"} with ${platforms.join("/") || "mixed"} mailboxes to match the retired mix (G${espMix.GOOGLE}/M${espMix.MICROSOFT}).`,
+          result.mailboxesOrdered
+            ? `${result.mailboxesOrdered} mailbox${result.mailboxesOrdered === 1 ? "" : "es"} ordered — they owe 21 days before live send.`
+            : undefined,
+          mailboxOrderFollowup(result),
+          result.espSkipReason
+            ? `InboxKit is one ESP per domain — ${result.espSkipReason}`
+            : undefined,
+        ]
+          .filter(Boolean)
+          .join(" ");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const current = this.state.getIsolationAction(buyAction.id);
+        if (current) {
+          this.state.upsertIsolationAction({
+            ...current,
+            status: "approved",
+            error: message,
+            detail: {
+              ...current.detail,
+              phase: AWAITING_PURCHASE,
+              retryReason: message,
+            },
+          });
+        }
+        buySummary = `Replacement buy failed after the pull: ${message}. I will retry the purchase myself — no second tap (D174).`;
       }
-      buySummary = `Replacement buy failed after the pull: ${message}. I will retry the purchase myself — no second tap (D174).`;
     }
 
     const cancelNote = await this.scheduleRetiredInboxkitSeats(
@@ -608,7 +713,7 @@ export class IsolationExecuteService {
     ]
       .filter((line): line is string => Boolean(line))
       .join("\n");
-    await this.announce("retire_domain", summary);
+    await this.announce("retire_domain", summary, domain, action.id);
     return summary;
   }
 
@@ -616,7 +721,18 @@ export class IsolationExecuteService {
     action: IsolationActionRecord,
     actor: string,
   ): Promise<string> {
+    const host = spendSourceDomain(action.detail);
+    const existingCover = domainHasLiveOrPendingCover(this.state, host, {
+      ignoreActionId: action.id,
+    });
+    if (existingCover) {
+      const summary = existingCover.cover
+        ? `Cover already live (${existingCover.cover}) — no second buy (D296).`
+        : "Cover already pending or bought — no second buy (D296).";
+      return summary;
+    }
     const result = await this.buy.run(action);
+    persistCoverDomains(this.state, host, result.domains);
     const summary = [
       `${actor} approved — bought ${result.domains.join(", ") || "the replacement domain"}.`,
       result.mailboxesOrdered
@@ -627,7 +743,7 @@ export class IsolationExecuteService {
     ]
       .filter((line): line is string => Boolean(line))
       .join("\n");
-    await this.announce("buy_domains", summary);
+    await this.announce("buy_domains", summary, host, action.id);
     return summary;
   }
 
@@ -941,14 +1057,25 @@ export class IsolationExecuteService {
   private async announce(
     kind: IsolationActionRecord["kind"],
     text: string,
+    domain?: string,
+    actionId?: string,
   ): Promise<void> {
+    const host = (domain ?? "").trim().toLowerCase();
+    if (host && domainAlreadyAnnounced(this.state, kind, host)) {
+      console.log(
+        `[isolation-execute] skip duplicate ${kind} announce for ${host} (D296)`,
+      );
+      return;
+    }
     if (!slackKindForIsolationAction(kind)) {
       console.log(
         `[slack-quiet] ${kind}: ${text.replace(/\n/g, " ").slice(0, 160)}`,
       );
+      if (host) markDomainAnnounced(this.state, kind, host, actionId);
       return;
     }
     await this.slack.send(text, undefined, "action_result");
+    if (host) markDomainAnnounced(this.state, kind, host, actionId);
   }
 }
 

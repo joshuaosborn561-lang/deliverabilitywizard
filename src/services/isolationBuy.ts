@@ -33,6 +33,14 @@ import type { SpendGateway, SpendRequest } from "../lib/spendGateway.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
 import { yieldEventLoop } from "../lib/stringifyYielding.js";
+import {
+  domainHasLiveOrPendingCover,
+  isolationMailboxOrderConsumed,
+  isFreshApproval,
+  isInsightSpendDetail,
+  persistCoverDomains,
+  spendSourceDomain,
+} from "../lib/liveSpendNeed.js";
 
 export const ISOLATION_BUY_RESUME_YIELD_EVERY = 4;
 
@@ -177,6 +185,8 @@ export function isolationMailboxSpendKey(
 }
 
 export class IsolationBuyService {
+  private readonly orderingDomains = new Set<string>();
+
   constructor(
     private readonly config: AppConfig,
     private readonly inboxkit: InboxKitClient | null,
@@ -200,6 +210,11 @@ export class IsolationBuyService {
       existing.length > 0
         ? existing
         : await this.purchaseDomains(quantity, decidedBy, action);
+    persistCoverDomains(
+      this.store,
+      spendSourceDomain(action.detail),
+      domains,
+    );
 
     const mailboxes = await this.orderMailboxes(domains, decidedBy, action);
     const after = this.store.getIsolationAction(action.id) ?? action;
@@ -236,6 +251,24 @@ export class IsolationBuyService {
         await yieldEventLoop();
       }
       if (needsPurchaseRetry(action)) {
+        if (!isFreshApproval(action)) {
+          continue;
+        }
+        if (
+          isInsightSpendDetail(action.detail) &&
+          /cayden/i.test(action.decidedBy ?? "")
+        ) {
+          continue;
+        }
+        const source = spendSourceDomain(action.detail);
+        if (
+          action.kind === "buy_domains" &&
+          domainHasLiveOrPendingCover(this.store, source, {
+            ignoreActionId: action.id,
+          })
+        ) {
+          continue;
+        }
         try {
           const result = await this.run(action);
           const after = this.store.getIsolationAction(action.id) ?? action;
@@ -255,6 +288,11 @@ export class IsolationBuyService {
                 : {}),
             },
           });
+          persistCoverDomains(
+            this.store,
+            spendSourceDomain(action.detail),
+            result.domains,
+          );
           dirty = true;
           if (!result.awaitingNameservers) finished += 1;
         } catch (error) {
@@ -461,6 +499,15 @@ export class IsolationBuyService {
     const pending: string[] = [];
     const skipReasons: string[] = [];
     for (const [index, domain] of domains.entries()) {
+      const orderKey = domain.toLowerCase();
+      if (this.orderingDomains.has(orderKey)) {
+        console.log(
+          `[isolation-buy] ${domain} InboxKit order already in flight — skip (D296)`,
+        );
+        continue;
+      }
+      this.orderingDomains.add(orderKey);
+      try {
       const rawPlatforms = platformsForDomain(action.detail, perDomain, index);
       const existing = await this.listDomainMailboxes(domain, workspaceId);
       for (const username of existingUsernames(existing)) taken.add(username);
@@ -548,10 +595,22 @@ export class IsolationBuyService {
           action.id,
           workspaceId,
         );
+        if (isolationMailboxOrderConsumed(this.store, spendReq.key)) {
+          console.log(
+            `[isolation-buy] ${domain} ${platform} already ordered — skip InboxKit (D296)`,
+          );
+          continue;
+        }
         const decision = await this.spend.recordOwnerApproved(
           spendReq,
           decidedBy,
         );
+        if (decision.record.status === "consumed") {
+          console.log(
+            `[isolation-buy] ${domain} ${platform} spend already consumed — skip InboxKit (D296)`,
+          );
+          continue;
+        }
         try {
           await this.inboxkit.buyMailboxes(batch, {
             workspaceId: workspaceId || undefined,
@@ -587,6 +646,9 @@ export class IsolationBuyService {
           });
         }
         ordered += names.length;
+      }
+      } finally {
+        this.orderingDomains.delete(orderKey);
       }
     }
     await this.store.save();

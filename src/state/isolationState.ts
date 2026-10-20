@@ -192,6 +192,10 @@ export interface DomainControlHistoryRecord {
   /** D260 — per-domain retire/cover refusals that must not fail the stage. */
   skipCount?: number;
   retiredAt?: string;
+  /** D296 — replacement domains already bought or pending for this source. */
+  coverDomains?: string[];
+  /** D296 — spend Slack kinds already posted for this domain. */
+  announcedKinds?: string[];
 }
 
 export interface IsolationState {

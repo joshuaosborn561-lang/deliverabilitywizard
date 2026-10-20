@@ -127,6 +127,14 @@ export class SpendGateway {
       return { approved: true, record: existing };
     }
     if (existing?.status === "consumed") {
+      // D296 — isolation Porkbun / InboxKit keys are one-shot per domain.
+      // A new :cycle: key is what double-fired InboxKit orders.
+      if (
+        req.key.startsWith("inboxkit:isolation:") ||
+        req.key.startsWith("porkbun:isolation:")
+      ) {
+        return { approved: true, record: existing };
+      }
       return this.recordOwnerApproved(
         { ...req, key: `${req.key}:cycle:${Date.now()}` },
         decidedBy,

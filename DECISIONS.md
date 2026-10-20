@@ -289,7 +289,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D291 | Live | Old-wizard fix: SalesGlider's own `salesglider*` Josh seats with client 345263 (unlinked or on SG campaigns) count for SalesGlider, never Insight. Insight-named Josh seats (`joshuaosborn*` / `joshosborn*` / `insight*`) and leftover Josh seats sitting on an Insight campaign still count for Insight, never SalesGlider. D288's remap of every Josh+salesglider* seat to Insight 582890 emptied SG POD-A/B (prod 2026-10-19 2:32pm CT under-floor: SG A 0/40, B 4/40) after D290 made joshuaosborn* fill Insight. Never both. Insight still no generics. CornerStone never. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
 | D292 | Live — overlap-with-health freeze / cleanup flap / silent errors / 10m timeout / PowerGRYD empty-by-design log amended by D293 | Old-wizard fix: min40 assigns free warm ledger seats into under-floor PODs even when leftover Smartlead marker `client_id` / pool assignment / POD tags / foreign signatures remain (rewrite client sig on assign); PowerGRYD empty-by-design no longer refuses that free-pool rotation; Insight still no generics. canonOps hold-enforcement + min40-topup run at least every 30 min in the weekday window even when health is long or back-to-back (waive health-running skip when overdue; share the Smartlead limiter). Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
 | D293 | Live | Old-wizard fix after D292 prod (deploy f446303c, 2026-10-19 ~5:10pm CT): overdue min40 serializes against health CPU (does not overlap client-rest / campaign-check scans); cleanup and min40 agree on assigned generics (ledger + owned POD count) so cleanup cannot undo a just-assigned under-floor seat; min40 logs each error and each POD's rejection reasons; one seat error does not abort the rest of the POD; min40-topup step budget 20m; PowerGRYD empty-by-design refuse-generics log/logic removed (Insight is the only no-generics client). Watchdog thresholds unchanged. Warm gate, CornerStone, ESP match, ≥33% mix unchanged. LOCKED section unchanged. |
-| D294 | Live | Needs-you Approve tap: Slack ack within 3s even during heavy health (scans yield + pause while the tap is live); decide stamps approved on the lastOk sidecar before any buy and isolation-buy-resume finishes an approved retire/buy after a freeze-kill; every tap logs one line and the card updates with per-item results including buy failures; digest drops executed / denied / superseded (burned attach-block, sibling approved/executed Retire); Josh-only stays Josh-only; boot logs Slack Josh/Cayden ids and warns on overlap or a known swap. LOCKED section unchanged. |
+| D294 | Live — buy-resume of stale approvals / Cayden Insight spend / duplicate cover buys amended by D296 | Needs-you Approve tap: Slack ack within 3s even during heavy health (scans yield + pause while the tap is live); decide stamps approved on the lastOk sidecar before any buy and isolation-buy-resume finishes an approved retire/buy after a freeze-kill; every tap logs one line and the card updates with per-item results including buy failures; digest drops executed / denied / superseded (burned attach-block, sibling approved/executed Retire); Josh-only stays Josh-only; boot logs Slack Josh/Cayden ids and warns on overlap or a known swap. LOCKED section unchanged. |
+| D296 | Live | Old-wizard fix: Needs-you / digest / buy-resume only list and execute current needs. Cover dedupe (no second cover when live or pending cover exists). No buy from a Smartlead-deleted seat; re-validate SL + InboxKit at card-build and execute. Client from trigger seat `client_id`. Per-domain announce + InboxKit order. Approvals expire after 48h. Insight spend is Josh-only, never Cayden. One-line reason; drop vanished needs. LOCKED section unchanged. |
 
 ---
 
@@ -10742,6 +10743,64 @@ D15, D190, D220, or Josh-only canary/isolation-domain.
 `src/lib/slackActorIds.ts`. Sidecar `isolationDecisions`.
 `IsolationExecuteService.stampApprovals` /
 `resumeDecided`. `src/guards/canon.test.ts` D294.
+`src/guards/lockedCanon.test.ts` LOCKED section unchanged.
+
+---
+
+## D296 — Needs-you / buy-resume only for a live, current need
+
+**Date.** 2026-10-20 (Josh).
+
+**Decision.** Today's loose domain/inbox buy prompts to Cayden
+were not current needs. `labgoliathcybersecurity.info` was
+bought as cover for `meetconnectnow.com`, which already had
+cover `goliathcybersecuritygo.info` from Sep 8.
+`culturefitsaiotry.info` was bought for `culturefitsaio.info`
+off a failed test on `latoyaflatley@`, an inbox already deleted
+from Smartlead, and the card labeled it Bolder Cyber Partners
+(542838). `crosslaunchcohq.info`'s retire+buy was announced
+twice (~7:30 and 7:59) and the InboxKit order for two domains
+fired twice. Buy-resume executed stale old approvals
+(`labgoliath`, `joshuaosbornsalestry.info` for Insight) with no
+fresh tap. Fix the old wizard on main. Do not change the LOCKED
+canon section.
+
+1. **Cover dedupe.** No cover buy when the sending domain
+   already has a live or pending cover (executed/approved/pending
+   `buy_domains`, purchased domains still in the pool / InboxKit,
+   or `coverDomains` on history).
+2. **Live seat.** No buy triggered by a seat no longer in
+   Smartlead. Re-validate against live Smartlead and InboxKit at
+   card-build and again right before execute.
+3. **Client from the seat.** Card attribution is the trigger
+   seat's `client_id`, not a leftover owner label.
+4. **Idempotent per domain.** Retire+buy Slack and InboxKit
+   mailbox orders fire once per domain. Consumed isolation spend
+   keys do not open a new `:cycle:` buy.
+5. **Approvals expire in 48 hours.** Stale approved rows revert
+   to pending and do not execute on buy-resume. Insight (582890)
+   spend stays Josh-only and never goes to Cayden.
+6. **One-line reason.** Each card item states why (trigger seat,
+   failure, POD shortfall). Items whose need disappeared are
+   dropped.
+
+**Why.** A Needs-you card that asks Cayden to buy a second cover,
+a deleted inbox, or a two-day-old Insight domain is spending
+real money on a need that is gone.
+
+**Rejected.** Changing the LOCKED section. Letting Cayden approve
+Insight spend. A second spend path. Widening freeze-watchdog
+thresholds. Spending from chat.
+
+**Supersedes / amends.** Amends D294 (buy-resume of stale
+approvals; Cayden must not execute Insight). Amends D174 (resume
+retries a failed replacement buy only while the approval is
+fresh and the need still exists). Amends D220/D248/D266 (digest
+is live-need only, seat client_id, 48h expiry). Does not reverse
+D4, D15, D190, or Josh-only canary/isolation-domain.
+
+**Guards.** `src/lib/liveSpendNeed.ts` + tests.
+`src/guards/canon.test.ts` D296.
 `src/guards/lockedCanon.test.ts` LOCKED section unchanged.
 
 

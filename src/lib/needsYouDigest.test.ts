@@ -87,4 +87,39 @@ describe("D248 — Needs you digest lumps Cayden spend per client", () => {
       2,
     );
   });
+
+  it("D296: Insight spend is Josh-only once, never on Cayden's Approve", () => {
+    const store = tempStore();
+    store.upsertIsolationAction(
+      buildIsolationAction({
+        kind: "buy_domains",
+        title: "Buy cover for joshuaosbornsalestry.info",
+        proof: "Insight",
+        detail: {
+          domain: "joshuaosbornsalestry.info",
+          ownerClientId: 582890,
+          ownerClientName: "Insight",
+          triggerSeatClientId: 582890,
+        },
+      }),
+    );
+    store.upsertIsolationAction(
+      buildIsolationAction({
+        kind: "buy_canary_fleet",
+        title: "Buy canary fleet",
+        proof: "fleet",
+        detail: {},
+      }),
+    );
+    const digest = buildNeedsYouDigest(store);
+    assert.ok(digest.text);
+    assert.match(digest.text!, /Josh only/);
+    assert.match(digest.text!, /joshuaosbornsalestry\.info/);
+    assert.equal(
+      (digest.text!.match(/joshuaosbornsalestry\.info/g) ?? []).length,
+      1,
+    );
+    assert.equal(digest.cayden.length, 0);
+    assert.doesNotMatch(digest.text!, /Approve Insight/);
+  });
 });

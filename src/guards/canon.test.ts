@@ -17949,11 +17949,6 @@ describe("owner intent — D294 Needs-you Approve acks, persists, resumes", () =
 
     assert.match(
       canon,
-      /Canon as of \*\*D294\*\*/,
-      stop("CANON is dated D294.", "CANON.md header is not D294."),
-    );
-    assert.match(
-      canon,
       /stamps every isolation id `approved` on the lastOk sidecar/,
       stop("CANON names durable Needs-you approve (D294).", "CANON.md lost the sidecar stamp rule."),
     );
@@ -18031,6 +18026,114 @@ describe("owner intent — D294 Needs-you Approve acks, persists, resumes", () =
       locked,
       /POD-40: every client POD A and POD B must each hold >=40 warm seats/,
       stop("LOCKED POD-40 sentence unchanged (D294).", "docs/LOCKED-CANON.md LOCKED sentence drifted."),
+    );
+  });
+});
+
+describe("owner intent — D296 Needs-you / buy-resume only for a live need", () => {
+  it("D296: cover dedupe, live seats, seat client_id, 48h expiry, Insight Josh-only, LOCKED untouched", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    const liveNeed = await readFile(new URL("../lib/liveSpendNeed.ts", import.meta.url), "utf8");
+    const gateway = await readFile(new URL("../lib/spendGateway.ts", import.meta.url), "utf8");
+    const actors = await readFile(new URL("../lib/isolationActors.ts", import.meta.url), "utf8");
+    const execute = await readFile(
+      new URL("../services/isolationExecute.ts", import.meta.url),
+      "utf8",
+    );
+    const buy = await readFile(new URL("../services/isolationBuy.ts", import.meta.url), "utf8");
+    const locked = await readFile(
+      new URL("../../docs/LOCKED-CANON.md", import.meta.url),
+      "utf8",
+    );
+    const { extractLockedCanonSection } = await import("../lib/lockedCanon.js");
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D296\*\*/,
+      stop("CANON is dated D296.", "CANON.md header is not D296."),
+    );
+    assert.match(
+      canon,
+      /D296 — live need only/,
+      stop("CANON names live-need spend (D296).", "CANON.md lost the live-need rule."),
+    );
+    assert.match(
+      canon,
+      /Approvals older\s+than 48 hours revert to pending/,
+      stop("CANON names 48h approval expiry (D296).", "CANON.md lost the 48h expiry."),
+    );
+    assert.match(
+      canon,
+      /Insight \(582890\) domain \/ inbox spend stays Josh-only/,
+      stop("CANON keeps Insight Josh-only (D296).", "CANON.md lost Insight Josh-only."),
+    );
+    assert.match(
+      decisions,
+      /## D296 — /,
+      stop("The ledger records D296.", "DECISIONS.md has no D296 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D296 \|/m,
+      stop("The status index lists D296 (D127).", "DECISIONS.md status index has no D296 row."),
+    );
+    assert.match(
+      liveNeed,
+      /SPEND_APPROVAL_TTL_MS = 48 \* 60 \* 60 \* 1000/,
+      stop("Approvals expire after 48h (D296).", "liveSpendNeed.ts lost the 48h TTL."),
+    );
+    assert.match(
+      liveNeed,
+      /domainHasLiveOrPendingCover/,
+      stop("Cover buys are one-per-source (D296).", "liveSpendNeed.ts lost domainHasLiveOrPendingCover."),
+    );
+    assert.match(
+      liveNeed,
+      /seat_gone/,
+      stop("A deleted Smartlead seat cannot trigger a buy (D296).", "liveSpendNeed.ts lost seat_gone."),
+    );
+    assert.match(
+      liveNeed,
+      /triggerSeatClientId/,
+      stop("Client attribution is the seat's client_id (D296).", "liveSpendNeed.ts lost triggerSeatClientId."),
+    );
+    assert.match(
+      execute,
+      /dropIfNeedGone/,
+      stop("Execute re-validates the need (D296).", "isolationExecute.ts lost dropIfNeedGone."),
+    );
+    assert.match(
+      execute,
+      /domainAlreadyAnnounced/,
+      stop("Retire\+buy Slack is one-shot per domain (D296).", "isolationExecute.ts lost domainAlreadyAnnounced."),
+    );
+    assert.match(
+      buy,
+      /isolationMailboxOrderConsumed/,
+      stop("InboxKit isolation orders are one-shot (D296).", "isolationBuy.ts lost isolationMailboxOrderConsumed."),
+    );
+    assert.match(
+      gateway,
+      /inboxkit:isolation:/,
+      stop("Consumed isolation spend keys do not open a new cycle (D296).", "spendGateway.ts lost the isolation one-shot."),
+    );
+    assert.match(
+      actors,
+      /opts\?\.insight/,
+      stop("Insight spend stays Josh-only (D296).", "isolationActors.ts lost the insight gate."),
+    );
+    assert.match(
+      locked,
+      /POD-40: every client POD A and POD B must each hold >=40 warm seats/,
+      stop("LOCKED POD-40 sentence unchanged (D296).", "docs/LOCKED-CANON.md LOCKED sentence drifted."),
+    );
+    assert.doesNotMatch(
+      extractLockedCanonSection(canon),
+      /D296/,
+      stop("LOCKED section is untouched (D296).", "CANON.md LOCKED section mentions D296."),
     );
   });
 });

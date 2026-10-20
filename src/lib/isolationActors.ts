@@ -22,9 +22,13 @@ export function canDecideIsolationAction(
     | "generic_backfill"
     | "add_signature_tag",
   role: IsolationActorRole | "owner" | "operator",
+  opts?: { insight?: boolean },
 ): boolean {
   // Copy edits plus burned-domain Retire / replacement Buy (D190).
-  // Canary fleet and isolation-domain buy stay Josh-only.
+  // Canary fleet, isolation-domain buy, and Insight spend stay Josh-only (D296).
+  if (opts?.insight && (kind === "retire_domain" || kind === "buy_domains")) {
+    return role === "owner";
+  }
   if (
     kind === "swap_copy" ||
     kind === "add_signature_tag" ||

@@ -7,9 +7,12 @@
 import {
   collectPendingSpendItems,
   groupSpendItemsByClient,
+  isSpendDigestKind,
   type SpendDigestClientGroup,
   type SpendDigestItem,
 } from "./spendDigest.js";
+import { isInsightSpendDetail } from "./liveSpendNeed.js";
+import type { SpendNeedLive } from "./liveSpendNeed.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
 import {
@@ -22,8 +25,21 @@ export const JOSH_ONLY_KINDS = new Set([
   "buy_isolation_domain",
 ]);
 
-export function isJoshOnlyAsk(kind: string): boolean {
-  return JOSH_ONLY_KINDS.has(kind);
+export function isJoshOnlyAsk(
+  kind: string,
+  detail?: Record<string, unknown>,
+): boolean {
+  if (JOSH_ONLY_KINDS.has(kind)) return true;
+  if (
+    (kind === "retire_domain" ||
+      kind === "buy_domains" ||
+      kind === "porkbun_domain" ||
+      kind === "inboxkit_mailbox_purchase") &&
+    isInsightSpendDetail(detail)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export function isQueuedForNeedsYou(action: IsolationActionRecord): boolean {
@@ -38,7 +54,8 @@ export function collectJoshOnlyItems(
     .filter(
       (row) =>
         row.status === "pending" &&
-        (isJoshOnlyAsk(row.kind) ||
+        ((isJoshOnlyAsk(row.kind, row.detail) &&
+          !isSpendDigestKind(row.kind)) ||
           (row.kind === "swap_copy" && isQueuedForNeedsYou(row))),
     )
     .sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
@@ -47,8 +64,11 @@ export function collectJoshOnlyItems(
 export function needsYouText(input: {
   cayden: SpendDigestClientGroup[];
   josh: IsolationActionRecord[];
+  joshSpend?: SpendDigestItem[];
 }): string | null {
-  if (!input.cayden.length && !input.josh.length) return null;
+  if (!input.cayden.length && !input.josh.length && !input.joshSpend?.length) {
+    return null;
+  }
   const lines = [
     "*Needs you* — weekday morning. Cayden spend is one approve per client. Josh-only is listed separately.",
     "",
@@ -63,10 +83,13 @@ export function needsYouText(input: {
       lines.push("");
     }
   }
-  if (input.josh.length) {
+  if (input.josh.length || input.joshSpend?.length) {
     lines.push("*Josh only*");
     for (const row of input.josh) {
       lines.push(`• ${row.title}`);
+    }
+    for (const item of input.joshSpend ?? []) {
+      lines.push(`• ${item.label}`);
     }
     lines.push("");
   }
@@ -148,6 +171,7 @@ export function buildNeedsYouDigest(
     | "listPoolMailboxes"
     | "getAttachBlock"
   >,
+  live?: SpendNeedLive,
 ): {
   cayden: SpendDigestClientGroup[];
   josh: IsolationActionRecord[];
@@ -155,10 +179,11 @@ export function buildNeedsYouDigest(
   text: string | null;
   blocks: unknown[] | undefined;
 } {
-  const items = collectPendingSpendItems(store);
+  const items = collectPendingSpendItems(store, live);
   const cayden = groupSpendItemsByClient(items);
   const josh = collectJoshOnlyItems(store);
-  const text = needsYouText({ cayden, josh });
+  const joshSpend = items.filter((row) => row.joshOnly);
+  const text = needsYouText({ cayden, josh, joshSpend });
   return {
     cayden,
     josh,

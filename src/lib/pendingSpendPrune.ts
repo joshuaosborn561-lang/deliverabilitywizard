@@ -11,6 +11,10 @@ import {
   isBurnAskKind,
   retireAlreadySettled,
 } from "./isolationActions.js";
+import {
+  spendNeedDisappeared,
+  type SpendNeedLive,
+} from "./liveSpendNeed.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { SpendApprovalRecord, StateStore } from "../state/store.js";
 
@@ -44,7 +48,10 @@ function siblingRetireSettled(
 function isolationSatisfied(
   store: Pick<
     StateStore,
-    "listIsolationActions" | "getDomainHistory" | "getAttachBlock"
+    | "listIsolationActions"
+    | "getDomainHistory"
+    | "getAttachBlock"
+    | "listPoolMailboxes"
   >,
   action: IsolationActionRecord,
 ): string | undefined {
@@ -74,6 +81,10 @@ function isolationSatisfied(
         action.detail.phase !== "awaiting_purchase"))
   ) {
     return "Buy already finished — pending stamp closed (D266).";
+  }
+  const disappeared = spendNeedDisappeared(action, store);
+  if (disappeared.gone && disappeared.why === "cover_exists") {
+    return `${disappeared.detail} — stale Buy ask closed (D296).`;
   }
   return undefined;
 }
@@ -131,11 +142,24 @@ export function pruneSatisfiedPendingSpend(
     | "listPoolMailboxes"
   >,
   now = new Date().toISOString(),
+  live?: SpendNeedLive,
 ): { isolation: number; spend: number } {
   let isolation = 0;
   let spend = 0;
   for (const action of store.listIsolationActions()) {
-    const reason = isolationSatisfied(store, action);
+    const reason =
+      isolationSatisfied(store, action) ??
+      (() => {
+        const gone = spendNeedDisappeared(action, store, live);
+        if (!gone.gone) return undefined;
+        if (gone.why === "seat_gone") {
+          return `${gone.detail} — need disappeared (D296).`;
+        }
+        if (gone.why === "cover_exists") {
+          return `${gone.detail} — stale Buy ask closed (D296).`;
+        }
+        return undefined;
+      })();
     if (!reason) continue;
     store.upsertIsolationAction({
       ...action,

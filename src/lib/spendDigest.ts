@@ -15,6 +15,17 @@ import {
   isBurnAskKind,
   retireAlreadySettled,
 } from "./isolationActions.js";
+import {
+  clientAttributionFromSeats,
+  clientIdOfSpendDetail,
+  expireStaleApprovals,
+  isInsightClientId,
+  liveTriggerSeats,
+  spendNeedDisappeared,
+  spendNeedReason,
+  triggerEmailsOf,
+  type SpendNeedLive,
+} from "./liveSpendNeed.js";
 import { pruneSatisfiedPendingSpend } from "./pendingSpendPrune.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { SpendApprovalRecord, StateStore } from "../state/store.js";
@@ -33,10 +44,12 @@ export interface SpendDigestItem {
   id: string;
   kind: SpendDigestKind;
   label: string;
+  reason?: string;
   domain?: string;
   clientKey: string;
   clientName: string;
   requestedAt: string;
+  joshOnly?: boolean;
 }
 
 export interface SpendDigestClientGroup {
@@ -51,39 +64,52 @@ export function isSpendDigestKind(kind: string): kind is SpendDigestKind {
   return SPEND_KIND_SET.has(kind);
 }
 
-function clientOfIsolation(action: IsolationActionRecord): {
+function clientOfDetail(
+  detail: Record<string, unknown>,
+  live?: SpendNeedLive,
+): {
   clientKey: string;
   clientName: string;
+  clientId: number | null;
 } {
-  const id = Number(action.detail.ownerClientId);
-  const name =
-    typeof action.detail.ownerClientName === "string"
-      ? action.detail.ownerClientName.trim()
-      : "";
-  if (Number.isFinite(id) && id > 0) {
-    return { clientKey: `id:${id}`, clientName: name || `Client ${id}` };
+  const liveSeats = liveTriggerSeats(triggerEmailsOf(detail), live);
+  const fallbackId = clientIdOfSpendDetail(detail);
+  const fallbackName =
+    typeof detail.ownerClientName === "string"
+      ? detail.ownerClientName.trim()
+      : typeof detail.clientName === "string"
+        ? detail.clientName.trim()
+        : "";
+  const attr = clientAttributionFromSeats(liveSeats, {
+    clientId: fallbackId,
+    clientName: fallbackName,
+  });
+  if (attr.clientKey === "unassigned") {
+    if (String(detail.ownerKind ?? "") === "generic") {
+      return {
+        clientKey: "generic-pool",
+        clientName: "Generic pool",
+        clientId: null,
+      };
+    }
   }
-  if (name) return { clientKey: `name:${name.toLowerCase()}`, clientName: name };
-  if (String(action.detail.ownerKind ?? "") === "generic") {
-    return { clientKey: "generic-pool", clientName: "Generic pool" };
-  }
-  return { clientKey: "unassigned", clientName: "Unassigned" };
+  return attr;
 }
 
-function clientOfSpend(record: SpendApprovalRecord): {
-  clientKey: string;
-  clientName: string;
-} {
-  const detail = record.detail ?? {};
-  const id = Number(detail.clientId ?? detail.ownerClientId);
-  const name = String(
-    detail.clientName ?? detail.ownerClientName ?? "",
-  ).trim();
-  if (Number.isFinite(id) && id > 0) {
-    return { clientKey: `id:${id}`, clientName: name || `Client ${id}` };
-  }
-  if (name) return { clientKey: `name:${name.toLowerCase()}`, clientName: name };
-  return { clientKey: "unassigned", clientName: "Unassigned" };
+function itemReason(
+  kind: string,
+  detail: Record<string, unknown>,
+  fallback: string,
+): string {
+  return spendNeedReason({
+    kind,
+    domain: domainOf(detail),
+    triggerEmails: triggerEmailsOf(detail),
+    proof: fallback,
+    podShortfall:
+      typeof detail.podShortfall === "string" ? detail.podShortfall : undefined,
+    failure: typeof detail.failure === "string" ? detail.failure : undefined,
+  });
 }
 
 function domainOf(detail: Record<string, unknown>): string {
@@ -92,15 +118,27 @@ function domainOf(detail: Record<string, unknown>): string {
     .toLowerCase();
 }
 
-function isolationLabel(action: IsolationActionRecord): string {
+function isolationLabel(action: IsolationActionRecord, reason: string): string {
   const host = domainOf(action.detail);
-  if (action.kind === "retire_domain") {
-    return host ? `Retire ${host}` : action.title;
+  const base =
+    action.kind === "retire_domain"
+      ? host
+        ? `Retire ${host}`
+        : action.title
+      : action.kind === "buy_domains"
+        ? host
+          ? `Buy cover for ${host}`
+          : action.title
+        : action.title;
+  if (!reason || reason === base) return base;
+  if (
+    reason.startsWith("Retire ") ||
+    reason.startsWith("Buy cover for ") ||
+    reason.startsWith("Buy inboxes")
+  ) {
+    return reason;
   }
-  if (action.kind === "buy_domains") {
-    return host ? `Buy cover for ${host}` : action.title;
-  }
-  return action.title;
+  return `${base} - ${reason}`;
 }
 
 function spendLabel(record: SpendApprovalRecord): string {
@@ -156,10 +194,16 @@ export function collectPendingSpendItems(
     | "listPoolMailboxes"
     | "getAttachBlock"
   >,
+  live?: SpendNeedLive,
 ): SpendDigestItem[] {
+  expireStaleApprovals(store, live?.now ?? new Date());
   dismissRetiredDomainAsks(store);
   healStaleBurnAsks(store);
-  pruneSatisfiedPendingSpend(store);
+  pruneSatisfiedPendingSpend(
+    store,
+    (live?.now ?? new Date()).toISOString(),
+    live,
+  );
 
   const items: SpendDigestItem[] = [];
   const seen = new Set<string>();
@@ -167,39 +211,62 @@ export function collectPendingSpendItems(
   for (const action of store.listIsolationActions()) {
     if (!isSpendDigestKind(action.kind)) continue;
     if (!isolationStillPending(store, action)) continue;
-    const client = clientOfIsolation(action);
+    const disappeared = spendNeedDisappeared(action, store, live);
+    if (disappeared.gone) continue;
+    const client = clientOfDetail(action.detail, live);
     const host = domainOf(action.detail);
     const dedupe = `${action.kind}:${host || action.id}`;
     if (seen.has(dedupe)) continue;
     seen.add(dedupe);
+    const reason = itemReason(action.kind, action.detail, action.proof);
     items.push({
       source: "isolation",
       id: action.id,
       kind: action.kind,
-      label: isolationLabel(action),
+      label: isolationLabel(action, reason),
+      reason,
       domain: host || undefined,
       clientKey: client.clientKey,
       clientName: client.clientName,
       requestedAt: action.requestedAt,
+      joshOnly: isInsightClientId(client.clientId),
     });
   }
 
   for (const record of store.listSpendApprovals()) {
     if (record.status !== "pending" || !isSpendDigestKind(record.kind)) continue;
+    const disappeared = spendNeedDisappeared(
+      {
+        kind: record.kind,
+        detail: record.detail ?? {},
+        status: record.status,
+        id: record.id,
+      },
+      store,
+      live,
+    );
+    if (disappeared.gone) continue;
     const host = domainOf(record.detail);
     const dedupe = `${record.kind}:${host || record.id}`;
     if (seen.has(dedupe)) continue;
     seen.add(dedupe);
-    const client = clientOfSpend(record);
+    const client = clientOfDetail(record.detail ?? {}, live);
+    const reason = itemReason(
+      record.kind,
+      record.detail ?? {},
+      record.description,
+    );
     items.push({
       source: "spend",
       id: record.id,
       kind: record.kind,
-      label: spendLabel(record),
+      label: record.description.trim() || reason || spendLabel(record),
+      reason,
       domain: host || undefined,
       clientKey: client.clientKey,
       clientName: client.clientName,
       requestedAt: record.requestedAt,
+      joshOnly: isInsightClientId(client.clientId),
     });
   }
 
@@ -216,6 +283,7 @@ export function groupSpendItemsByClient(
 ): SpendDigestClientGroup[] {
   const byKey = new Map<string, SpendDigestClientGroup>();
   for (const item of items) {
+    if (item.joshOnly) continue;
     const existing = byKey.get(item.clientKey);
     if (existing) {
       existing.items.push(item);
@@ -263,8 +331,9 @@ export function buildCaydenSpendDigest(
     | "listPoolMailboxes"
     | "getAttachBlock"
   >,
+  live?: SpendNeedLive,
 ): { groups: SpendDigestClientGroup[]; text: string | null; items: number } {
-  const items = collectPendingSpendItems(store);
+  const items = collectPendingSpendItems(store, live);
   const groups = groupSpendItemsByClient(items);
   return { groups, text: spendDigestText(groups), items: items.length };
 }

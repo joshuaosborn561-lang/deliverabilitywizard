@@ -25,6 +25,7 @@ import {
   shouldRemindBurnAsk,
   BURN_ASK_REMIND_MS,
 } from "./isolationActions.js";
+import { persistCoverDomains } from "./liveSpendNeed.js";
 
 function slackCapture() {
   const notified: string[] = [];
@@ -917,6 +918,58 @@ describe("D190 — burn-ask Slack is once per strike, Cayden CTA", () => {
     assert.equal(await remindPendingIsolationActions({ store, slack }), 0);
     assert.deepEqual(notified, []);
     assert.equal(shouldRemindBurnAsk(healed!, Date.now()), false);
+  });
+
+  it("D296: retiring a domain keeps its coverDomains stamp", () => {
+    const store = tempStore();
+    persistCoverDomains(store, "meetconnectnow.com", [
+      "goliathcybersecuritygo.info",
+    ]);
+    persistRetiredDomainHistory(store, "meetconnectnow.com");
+    assert.deepEqual(store.getDomainHistory("meetconnectnow.com")?.coverDomains, [
+      "goliathcybersecuritygo.info",
+    ]);
+    assert.equal(store.getDomainHistory("meetconnectnow.com")?.status, "retired");
+  });
+
+  it("D296: does not open a cover buy when a live cover domain already exists", async () => {
+    const store = tempStore();
+    const { slack, notified } = slackCapture();
+    const bought = buildIsolationAction({
+      kind: "buy_domains",
+      title: "Buy a replacement for meetconnectnow.com",
+      proof: "Sep 8 cover.",
+      detail: {
+        domain: "meetconnectnow.com",
+        domains: ["goliathcybersecuritygo.info"],
+      },
+    });
+    store.upsertIsolationAction({
+      ...bought,
+      status: "executed",
+      executedAt: "2026-09-08T12:00:00.000Z",
+    });
+    store.upsertPoolMailbox({
+      email: "a@goliathcybersecuritygo.info",
+      domain: "goliathcybersecuritygo.info",
+      platform: "GOOGLE",
+      firstName: "A",
+      lastName: "Go",
+      status: "warming",
+      warmedAt: "2026-09-08T12:00:00.000Z",
+    });
+    const again = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "buy_domains",
+        title: "Buy a replacement for meetconnectnow.com",
+        proof: "Would have bought labgoliathcybersecurity.info.",
+        detail: { domain: "meetconnectnow.com" },
+      }),
+    });
+    assert.equal(again, null);
+    assert.deepEqual(notified, []);
   });
 
   it("does not re-ask Buy cover after the cover buy already executed", async () => {

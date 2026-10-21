@@ -625,3 +625,87 @@ describe("CampaignScanner — status re-check before creation", () => {
     assert.equal(quotaNotices, 1);
   });
 });
+
+describe("CampaignScanner — D297 abort signal", () => {
+  it("stops and does not list campaigns when the stage signal is already aborted", async () => {
+    let listed = 0;
+    const smartlead = {
+      listCampaigns: async () => {
+        listed += 1;
+        return [campaign(1, "ACTIVE")];
+      },
+      getCampaignEmailAccounts: async () => {
+        throw new Error("should not fetch accounts after abort");
+      },
+      getCampaignSequences: async () => {
+        throw new Error("should not fetch sequences after abort");
+      },
+    } as unknown as SmartleadClient;
+
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(
+      () =>
+        new CampaignScanner(
+          loadConfig({}),
+          smartlead,
+          {
+            assertAccessActive: async () => "ok",
+            listTests: async () => [],
+            enrichCampaignIds: async <T,>(tests: T[]) => tests,
+            resolveProviderIds: async () => [],
+          } as unknown as SmartDeliveryClient,
+          fakeSlack(),
+          fakeState(),
+        ).run({ trigger: "canon-sweep", signal: controller.signal }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.equal(error.name, "AbortError");
+        return true;
+      },
+    );
+    assert.equal(listed, 0, "an aborted scan must not start Smartlead listCampaigns");
+  });
+
+  it("forwards the stage signal into listCampaigns and stops the walk", async () => {
+    const seen: Array<AbortSignal | undefined> = [];
+    const controller = new AbortController();
+    const smartlead = {
+      listCampaigns: async (_clientId?: number, opts?: { signal?: AbortSignal }) => {
+        seen.push(opts?.signal);
+        controller.abort();
+        const error = new Error("This operation was aborted");
+        error.name = "AbortError";
+        throw error;
+      },
+      getCampaignEmailAccounts: async () => {
+        throw new Error("should not fetch accounts after abort");
+      },
+      getCampaignSequences: async () => {
+        throw new Error("should not fetch sequences after abort");
+      },
+    } as unknown as SmartleadClient;
+
+    await assert.rejects(
+      () =>
+        new CampaignScanner(
+          loadConfig({}),
+          smartlead,
+          {
+            assertAccessActive: async () => "ok",
+            listTests: async () => [],
+            enrichCampaignIds: async <T,>(tests: T[]) => tests,
+            resolveProviderIds: async () => [],
+          } as unknown as SmartDeliveryClient,
+          fakeSlack(),
+          fakeState(),
+        ).run({ trigger: "canon-sweep", signal: controller.signal }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.equal(error.name, "AbortError");
+        return true;
+      },
+    );
+    assert.equal(seen[0], controller.signal);
+  });
+});

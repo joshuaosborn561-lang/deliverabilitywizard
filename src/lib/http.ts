@@ -187,13 +187,18 @@ export async function apiRequest<T>(
 
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
+    if (signal?.aborted) throw abortError();
     const controller = new AbortController();
     const onParentAbort = (): void => controller.abort();
+    let timedOut = false;
     if (signal) {
       if (signal.aborted) controller.abort();
       else signal.addEventListener("abort", onParentAbort, { once: true });
     }
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
     try {
       const response = await fetch(url, {
         method,
@@ -217,11 +222,12 @@ export async function apiRequest<T>(
 
       if (transient) {
         if (response.status === 429) {
+          logSmartleadRateLimit(baseUrl, method, path);
           onRateLimit?.(Math.min(30_000, 500 * 2 ** attempt));
         }
         if (attempt < retries) {
           const backoff = Math.min(30_000, 500 * 2 ** attempt);
-          await sleep(backoff);
+          await sleep(backoff, signal);
           continue;
         }
       }
@@ -241,10 +247,12 @@ export async function apiRequest<T>(
 
       return parsed as T;
     } catch (error) {
+      if (signal?.aborted) throw abortError();
       // Our AbortController fired — rewrite the opaque DOMException
       // ("This operation was aborted") into a clear timeout so callers and
       // the failure classifier can treat it as transient network noise.
-      if (controller.signal.aborted && isAbortError(error)) {
+      // A parent/stage abort is not a timeout and must not retry (D297).
+      if (timedOut && controller.signal.aborted && isAbortError(error)) {
         lastError = timeoutError(timeoutMs);
       } else {
         lastError = error;
@@ -252,7 +260,7 @@ export async function apiRequest<T>(
       if (lastError instanceof ApiError) throw lastError;
       if (attempt < retries) {
         const backoff = Math.min(30_000, 500 * 2 ** attempt);
-        await sleep(backoff);
+        await sleep(backoff, signal);
         continue;
       }
       throw lastError instanceof Error
@@ -268,8 +276,25 @@ export async function apiRequest<T>(
     : new Error(String(lastError ?? "request failed"));
 }
 
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(abortError());
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(abortError());
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 /** Slack / InboxKit fetches — 30s so a hung webhook cannot pin a stage (D247). */
@@ -310,6 +335,22 @@ function timeoutError(timeoutMs: number): Error {
   const error = new Error(`request timed out after ${timeoutMs}ms`);
   error.name = "TimeoutError";
   return error;
+}
+
+function abortError(): Error {
+  const error = new Error("This operation was aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+/** D297 — name the Smartlead path that 429'd so the streak is diagnosable. */
+export function logSmartleadRateLimit(
+  baseUrl: string,
+  method: string,
+  path: string,
+): void {
+  if (!/smartlead\.ai/i.test(baseUrl)) return;
+  console.warn(`[smartlead] HTTP 429 ${method} ${path}`);
 }
 
 export function chunkArray<T>(items: T[], size: number): T[][] {

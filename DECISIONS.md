@@ -291,6 +291,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D293 | Live | Old-wizard fix after D292 prod (deploy f446303c, 2026-10-19 ~5:10pm CT): overdue min40 serializes against health CPU (does not overlap client-rest / campaign-check scans); cleanup and min40 agree on assigned generics (ledger + owned POD count) so cleanup cannot undo a just-assigned under-floor seat; min40 logs each error and each POD's rejection reasons; one seat error does not abort the rest of the POD; min40-topup step budget 20m; PowerGRYD empty-by-design refuse-generics log/logic removed (Insight is the only no-generics client). Watchdog thresholds unchanged. Warm gate, CornerStone, ESP match, ≥33% mix unchanged. LOCKED section unchanged. |
 | D294 | Live | Needs-you Approve tap: Slack ack within 3s even during heavy health (scans yield + pause while the tap is live); decide stamps approved on the lastOk sidecar before any buy and isolation-buy-resume finishes an approved retire/buy after a freeze-kill; every tap logs one line and the card updates with per-item results including buy failures; digest drops executed / denied / superseded (burned attach-block, sibling approved/executed Retire); Josh-only stays Josh-only; boot logs Slack Josh/Cayden ids and warns on overlap or a known swap. LOCKED section unchanged. |
 | D295 | Live | Old-wizard fix: Insight Josh matcher accepts `client_id` 582890 as an Insight-domain signal when from-name is Josh / Joshua Osborn (prod 2026-10-20: 14 false `insight_non_josh_sender` on Insight Tix #4173509 — seven Joshua seats on joshosales.info / josbornsales.info / joshuaosales.info). Do not widen the `/josh(ua)?osborn/` regex. Generics, other brands, and non-Josh names stay blocked. One finding per account. LOCKED section unchanged. |
+| D297 | Live | Old-wizard fix: health-pass scan-backfill honors the stage AbortSignal (and Smartlead fetches stop, no retry-as-timeout), runs after isolation-buy-resume, skips when less than ~20 minutes remain in the 45-minute health lock, and HTTP 429s log the Smartlead endpoint. LOCKED section unchanged. |
 
 ---
 
@@ -10812,5 +10813,65 @@ LOCKED text.
 blocked; findings not duplicated. `src/guards/canon.test.ts`
 D295. `src/guards/lockedCanon.test.ts` LOCKED section
 unchanged.
+
+## D297 — Scan-backfill abort, tail order, 429 path
+
+**Date.** 2026-10-21 (Josh).
+
+**Decision.** Production health on main has stalled on
+`scan-backfill` about six times since 2026-10-20 and been
+taken over after 45 minutes. `runScan` / `CampaignScanner.run`
+did not take the stage AbortSignal, so a timed-out scan kept
+running and the next pass skipped as already-running. Earlier
+stages ate most of the 45-minute budget, so pod-cover,
+reconnect, mailbox-gap, isolation-branch, and
+isolation-buy-resume never ran. Fix the old wizard on main.
+Do not change the LOCKED canon section. Never START, pause,
+or touch STOPPED. Never buy. Insight still gets no generics.
+Never assign unwarmed generics. Never use CornerStone
+inboxes. Touching v2 is out of scope.
+
+1. **Abort the scan.** `runScan` and `CampaignScanner.run`
+   take the stage AbortSignal and pass it into Smartlead
+   `listCampaigns` / `getCampaignEmailAccounts` /
+   `getCampaignSequences`. `apiRequest` stops on a parent
+   abort — it does not rewrite that as a timeout and does
+   not retry. A 20-minute stage timeout really stops the
+   walk so `scanInFlight` clears.
+2. **After the tail, or skip.** scan-backfill runs after
+   isolation-buy-resume on the health pass. If less than
+   ~20 minutes remain in the 45-minute health lock, skip
+   and log `skip — Nm remain in 45m health lock`. Missing
+   placement tests are still fixed on that pass when the
+   budget allows (D116).
+3. **429 path.** A Smartlead HTTP 429 logs
+   `[smartlead] HTTP 429 METHOD path` so the rate-limit
+   streak can be diagnosed.
+
+**Why.** A hung scan that ignores abort occupies
+`scanInFlight` across the 45-minute takeover. The next
+health sitting then skips the scan and still never reaches
+the tail. Chat history is not durable; the abort and the
+order are.
+
+**Rejected.** Changing the LOCKED section. Putting
+scan-backfill on the leftover-tail list (it stays
+event-driven / never overdue, D116/D131). Widening
+freeze-watchdog thresholds. Starting / pausing / touching
+STOPPED. Buying anything. Using CornerStone inboxes.
+Giving Insight generics. Touching v2.
+
+**Supersedes / amends.** Amends D116 order (still on that
+pass, after the tail) and D247/D257 abort-through / 429
+visibility. Does not reverse D1, D40, D50, D116
+event-driven, D122, D131 never-overdue, D211/D214/D215
+leftover math, D247 lock/step budgets, D257 limiter, or
+the LOCKED text.
+
+**Guards.** `src/lib/scanBackfill.test.ts` +
+`src/lib/http.test.ts` parent-abort / 429 path +
+`src/services/campaignScanner.test.ts` signal. 
+`src/guards/canon.test.ts` D297.
+`src/guards/lockedCanon.test.ts` LOCKED section unchanged.
 
 

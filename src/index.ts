@@ -183,6 +183,10 @@ import {
   type HealthLoopStage,
 } from "./lib/healthResume.js";
 import {
+  scanBackfillBudgetSkipReason,
+  shouldSkipScanBackfillForLockBudget,
+} from "./lib/scanBackfill.js";
+import {
   inWeekdayCatchUpWindow,
   terlEodCatchUpDue,
   weekdayJobMissed,
@@ -427,14 +431,17 @@ async function main(): Promise<void> {
     campaigns: unknown;
   }> | null = null;
 
-  const runScan = async (trigger: "cron" | "manual" | "canon-sweep") => {
+  const runScan = async (
+    trigger: "cron" | "manual" | "canon-sweep",
+    signal?: AbortSignal,
+  ) => {
     assertRuntimeSecrets(config);
     if (scanInFlight) {
       console.log("[scan] Already running — skipping overlapping trigger");
       return { skipped: true as const, reason: "already-running" };
     }
     scanInFlight = (async () => {
-      const result = await scanner.run({ trigger });
+      const result = await scanner.run({ trigger, signal });
       feedBugRemediator(
         "scan",
         (result as { errors?: string[] })?.errors ?? [],
@@ -1108,42 +1115,6 @@ async function main(): Promise<void> {
         { skipIfFreshMs, skipIfBeforeStage },
       );
 
-      // D84 / D116 — placement coverage is fixed on the pass that finds
-      // it, not only at the daily 9:00 scan. The D84 hourly throttle
-      // left new ACTIVE campaigns uncovered for ~55 minutes after the
-      // 04:54 scan (live 2026-08-26: no_placement_test=20).
-      if (config.autoPlacementTests) {
-        const missingTest = state
-          .listCampaignChecks()
-          .some((record) =>
-            (record.findings ?? []).some((f) => f.startsWith("no_placement_test")),
-          );
-        if (missingTest) {
-          await stage("scan-backfill", async () => {
-            const started = Date.now();
-            console.log("[scan-backfill] start trigger=canon-sweep");
-            try {
-              const result = await runScan("canon-sweep");
-              console.log(
-                `[scan-backfill] end ${Date.now() - started}ms`,
-                result && typeof result === "object"
-                  ? result
-                  : { skipped: true },
-              );
-              return result;
-            } catch (error) {
-              console.warn(
-                `[scan-backfill] end ${Date.now() - started}ms failed`,
-                error,
-              );
-              throw error;
-            }
-          });
-        } else {
-          console.log("[scan-backfill] skip — no missing placement test");
-        }
-      }
-
       // D89 / D166 — serving inboxes missing a living known-good canary
       // get a pod-control test on this pass (throttled hourly), not only
       // at the 6-hour monitor. The watchdog tick always runs so lastOkAt
@@ -1220,6 +1191,47 @@ async function main(): Promise<void> {
         skipIfFreshMs,
         skipIfBeforeStage,
       });
+
+      // D84 / D116 / D297 — placement coverage is fixed on the pass
+      // that finds it, after the tail so a 20m scan cannot starve
+      // pod-cover / reconnect / mailbox-gap / isolation. Skip when
+      // the 45m health lock has less than the scan's 20m budget.
+      if (config.autoPlacementTests) {
+        const missingTest = state
+          .listCampaignChecks()
+          .some((record) =>
+            (record.findings ?? []).some((f) => f.startsWith("no_placement_test")),
+          );
+        const remainingLockMs = HEALTH_LOCK_MAX_MS - (Date.now() - passStart);
+        if (!missingTest) {
+          console.log("[scan-backfill] skip — no missing placement test");
+        } else if (shouldSkipScanBackfillForLockBudget(remainingLockMs)) {
+          console.log(
+            `[scan-backfill] ${scanBackfillBudgetSkipReason(remainingLockMs)}`,
+          );
+        } else {
+          await stage("scan-backfill", async (signal) => {
+            const started = Date.now();
+            console.log("[scan-backfill] start trigger=canon-sweep");
+            try {
+              const result = await runScan("canon-sweep", signal);
+              console.log(
+                `[scan-backfill] end ${Date.now() - started}ms`,
+                result && typeof result === "object"
+                  ? result
+                  : { skipped: true },
+              );
+              return result;
+            } catch (error) {
+              console.warn(
+                `[scan-backfill] end ${Date.now() - started}ms failed`,
+                error,
+              );
+              throw error;
+            }
+          });
+        }
+      }
 
       // D221 — rebuild the fleet-wide generics table from this pass's
       // shared book and page idle / multi-client assignments. Not a

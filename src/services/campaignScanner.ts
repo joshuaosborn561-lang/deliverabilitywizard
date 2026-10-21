@@ -14,6 +14,7 @@ import {
 } from "../clients/smartdelivery.js";
 import { type EspFamily, normalizeSenderEspFamily } from "../lib/esp.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
+import { isAbortError, throwIfAborted } from "../lib/abortWork.js";
 import { chunkArray, sleep } from "../lib/http.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
 import { quotaWouldBlock, remainingTestSlots } from "../lib/testQuota.js";
@@ -189,7 +190,10 @@ export class CampaignScanner {
   ) {}
 
   async run(
-    options: { trigger: "cron" | "manual" | "canon-sweep" } = { trigger: "cron" },
+    options: {
+      trigger: "cron" | "manual" | "canon-sweep";
+      signal?: AbortSignal;
+    } = { trigger: "cron" },
   ): Promise<ScanResult> {
     const result: ScanResult = {
       scanned: 0,
@@ -218,8 +222,10 @@ export class CampaignScanner {
     };
 
     try {
+      throwIfAborted(options.signal);
       await this.smartDelivery.assertAccessActive();
     } catch (error) {
+      if (isAbortError(error)) throw error;
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(message);
       await this.slack.send(
@@ -231,11 +237,15 @@ export class CampaignScanner {
 
     let campaigns: SmartleadCampaign[] = [];
     try {
-      campaigns = await this.smartlead.listCampaigns();
+      throwIfAborted(options.signal);
+      campaigns = await this.smartlead.listCampaigns(undefined, {
+        signal: options.signal,
+      });
       if (!Array.isArray(campaigns)) {
         throw new Error("Unexpected campaigns response (not an array)");
       }
     } catch (error) {
+      if (isAbortError(error)) throw error;
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(`Failed to list campaigns: ${message}`);
       await this.slack.send(
@@ -308,13 +318,15 @@ export class CampaignScanner {
     const plans: CampaignTestPlan[] = [];
     for (const campaign of candidates) {
       try {
-        const plan = await this.buildPlan(campaign);
+        throwIfAborted(options.signal);
+        const plan = await this.buildPlan(campaign, options.signal);
         if (!plan) {
           result.skipped += 1;
           continue;
         }
         plans.push(plan);
       } catch (error) {
+        if (isAbortError(error)) throw error;
         const message = error instanceof Error ? error.message : String(error);
         result.errors.push(`Campaign ${campaign.id}: ${message}`);
         result.skipped += 1;
@@ -383,11 +395,15 @@ export class CampaignScanner {
     // this run processes plans one at a time with a pause between each.
     let freshStatusById: Map<number, string>;
     try {
-      const freshCampaigns = await this.smartlead.listCampaigns();
+      throwIfAborted(options.signal);
+      const freshCampaigns = await this.smartlead.listCampaigns(undefined, {
+        signal: options.signal,
+      });
       freshStatusById = new Map(
         freshCampaigns.map((c) => [c.id, String(c.status ?? "").toUpperCase()]),
       );
     } catch (error) {
+      if (isAbortError(error)) throw error;
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(`Pre-creation status re-check failed: ${message}`);
       freshStatusById = new Map();
@@ -416,9 +432,11 @@ export class CampaignScanner {
     }
 
     for (const plan of eligiblePlans) {
+      throwIfAborted(options.signal);
       const createdIds: string[] = [];
       try {
         for (let i = 0; i < plan.batches.length; i += 1) {
+          throwIfAborted(options.signal);
           let batch = plan.batches[i]!;
           const batchLabel =
             plan.batches.length > 1 ? ` (${i + 1}/${plan.batches.length})` : "";
@@ -510,7 +528,7 @@ export class CampaignScanner {
           console.log(
             `[scan] Created ${recurring ? `recurring (every ${this.config.placementTestEveryDays}d)` : "manual"} test ${id} for campaign ${plan.campaign.id} (${batch.length} mailboxes)`,
           );
-          await sleep(500);
+          await sleep(500, options.signal);
         }
 
         this.state.markCampaignTested({
@@ -522,6 +540,7 @@ export class CampaignScanner {
           testsCreated: createdIds.length,
         });
       } catch (error) {
+        if (isAbortError(error)) throw error;
         const message = error instanceof Error ? error.message : String(error);
         result.errors.push(
           `Failed creating tests for campaign ${plan.campaign.id}: ${message}`,
@@ -547,10 +566,14 @@ export class CampaignScanner {
     return result;
   }
 
-  private async buildPlan(campaign: SmartleadCampaign): Promise<CampaignTestPlan | null> {
+  private async buildPlan(
+    campaign: SmartleadCampaign,
+    signal?: AbortSignal,
+  ): Promise<CampaignTestPlan | null> {
+    throwIfAborted(signal);
     const [accounts, sequences] = await Promise.all([
-      this.smartlead.getCampaignEmailAccounts(campaign.id),
-      this.smartlead.getCampaignSequences(campaign.id),
+      this.smartlead.getCampaignEmailAccounts(campaign.id, { signal }),
+      this.smartlead.getCampaignSequences(campaign.id, { signal }),
     ]);
 
     const senderEmails = interleaveSendersByEsp(accounts ?? []);

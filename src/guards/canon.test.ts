@@ -3414,7 +3414,7 @@ describe("owner intent — D89 leftover canon holes", () => {
     const smartlead = await read("../clients/smartlead.ts");
     assert.match(
       smartlead,
-      /listCampaigns\(clientId\?: number\): Promise<SmartleadCampaign\[]> \{\s*return this\.mutate\(/,
+      /listCampaigns\([\s\S]*?clientId\?: number[\s\S]*?\): Promise<SmartleadCampaign\[]> \{\s*return this\.mutate\(/,
       stop(
         "listCampaigns shares the write queue (D89).",
         "listCampaigns is an unqueued read again — four deploys will 429 inventory.",
@@ -4086,7 +4086,15 @@ describe("owner intent — D116 missing placement scans on that pass", () => {
     );
     assert.match(
       index,
-      /if \(missingTest\) \{\s*await stage\("scan-backfill"/,
+      /missingTest/,
+      stop(
+        "A missing placement test is still evaluated on that health pass (D116).",
+        "index.ts lost the missingTest gate.",
+      ),
+    );
+    assert.match(
+      index,
+      /await stage\("scan-backfill"/,
       stop(
         "A missing placement test is fixed on that health pass (D116).",
         "index.ts still waits 55 minutes before scan-backfill.",
@@ -18107,8 +18115,8 @@ describe("owner intent — D295 Insight client_id 582890 is a domain signal", ()
 
     assert.match(
       canon,
-      /Canon as of \*\*D295\*\*/,
-      stop("CANON is dated D295.", "CANON.md header is not D295."),
+      /Canon as of \*\*D(295|29[6-9]|3[0-9]{2})\*\*/,
+      stop("CANON is dated D295+.", "CANON.md header is before D295."),
     );
     assert.match(
       canon,
@@ -18156,6 +18164,146 @@ describe("owner intent — D295 Insight client_id 582890 is a domain signal", ()
       locked,
       /POD-40: every client POD A and POD B must each hold >=40 warm seats/,
       stop("LOCKED POD-40 sentence unchanged (D295).", "docs/LOCKED-CANON.md LOCKED sentence drifted."),
+    );
+  });
+});
+
+describe("owner intent — D297 scan-backfill abort, tail order, 429 path", () => {
+  it("D297: abort the scan, run it after isolation-buy-resume, log 429 endpoints", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const scanner = await readFile(
+      new URL("../services/campaignScanner.ts", import.meta.url),
+      "utf8",
+    );
+    const client = await readFile(
+      new URL("../clients/smartlead.ts", import.meta.url),
+      "utf8",
+    );
+    const http = await readFile(new URL("../lib/http.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const locked = await readFile(
+      new URL("../../docs/LOCKED-CANON.md", import.meta.url),
+      "utf8",
+    );
+
+    const healthStart = index.indexOf("const runHealth = async");
+    const healthEnd = index.indexOf("healthInFlight = run.finally");
+    assert.ok(healthStart >= 0 && healthEnd > healthStart);
+    const health = index.slice(healthStart, healthEnd);
+    const buyAt = health.lastIndexOf('await stage("isolation-buy-resume"');
+    const scanAt = health.lastIndexOf('await stage("scan-backfill"');
+    assert.ok(
+      buyAt >= 0 && scanAt > buyAt,
+      stop(
+        "scan-backfill runs after isolation-buy-resume (D297).",
+        "index.ts still starts scan-backfill before the health tail.",
+      ),
+    );
+    assert.match(
+      health,
+      /shouldSkipScanBackfillForLockBudget/,
+      stop(
+        "scan-backfill skips when the 45m lock is short (D297).",
+        "index.ts lost the remaining-lock budget skip.",
+      ),
+    );
+    assert.match(
+      health,
+      /runScan\("canon-sweep", signal\)/,
+      stop(
+        "scan-backfill passes the stage AbortSignal into runScan (D297).",
+        "index.ts still calls runScan without the signal.",
+      ),
+    );
+    assert.match(
+      index,
+      /scanner\.run\(\{ trigger, signal \}\)/,
+      stop(
+        "runScan forwards the AbortSignal into CampaignScanner.run (D297).",
+        "index.ts lost the scan signal.",
+      ),
+    );
+    assert.match(
+      scanner,
+      /throwIfAborted\(options\.signal\)/,
+      stop(
+        "CampaignScanner honors the stage AbortSignal (D297).",
+        "campaignScanner.ts lost throwIfAborted.",
+      ),
+    );
+    assert.match(
+      scanner,
+      /listCampaigns\(undefined, \{\s*signal: options\.signal/,
+      stop(
+        "CampaignScanner passes the signal into listCampaigns (D297).",
+        "campaignScanner.ts still lists campaigns without the signal.",
+      ),
+    );
+    assert.match(
+      scanner,
+      /getCampaignEmailAccounts\(campaign\.id, \{ signal \}\)/,
+      stop(
+        "CampaignScanner passes the signal into email-account reads (D297).",
+        "campaignScanner.ts lost the account-read signal.",
+      ),
+    );
+    assert.match(
+      client,
+      /signal: opts\?\.signal/,
+      stop(
+        "Smartlead list/account/sequence reads accept an AbortSignal (D297).",
+        "smartlead.ts lost the signal option.",
+      ),
+    );
+    assert.match(
+      http,
+      /if \(signal\?\.aborted\) throw abortError\(\)/,
+      stop(
+        "A parent abort stops Smartlead retries (D297).",
+        "http.ts still retries after a stage abort.",
+      ),
+    );
+    assert.match(
+      http,
+      /\[smartlead\] HTTP 429 \$\{method\} \$\{path\}/,
+      stop(
+        "HTTP 429 logs the Smartlead endpoint (D297).",
+        "http.ts lost the 429 path log.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D297\*\*/,
+      stop("CANON is dated D297.", "CANON.md header is not D297."),
+    );
+    assert.match(
+      canon,
+      /scan-backfill[\s\S]{0,220}after the tail|after isolation-buy-resume[\s\S]{0,80}scan-backfill/,
+      stop(
+        "CANON names scan-backfill after the health tail (D297).",
+        "CANON.md lost the D297 scan-backfill order.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D297 — /,
+      stop("The ledger records D297.", "DECISIONS.md has no D297 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D297 \|/m,
+      stop("The status index lists D297 (D127).", "DECISIONS.md status index has no D297 row."),
+    );
+    assert.match(
+      locked,
+      /POD-40: every client POD A and POD B must each hold >=40 warm seats/,
+      stop("LOCKED POD-40 sentence unchanged (D297).", "docs/LOCKED-CANON.md LOCKED sentence drifted."),
     );
   });
 });

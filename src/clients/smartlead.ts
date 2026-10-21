@@ -78,6 +78,11 @@ export class SmartleadClient {
 
   /** D257 — every Smartlead HTTP call (read or write) takes a limiter slot. */
   private request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+    if (options.signal?.aborted) {
+      const error = new Error("This operation was aborted");
+      error.name = "AbortError";
+      return Promise.reject(error);
+    }
     return this.limiter.schedule(() =>
       apiRequest<T>(BASE_URL, this.apiKey, path, {
         ...options,
@@ -148,12 +153,16 @@ export class SmartleadClient {
     return this.mutationQueue ? this.mutationQueue.enqueue(fn) : fn();
   }
 
-  listCampaigns(clientId?: number): Promise<SmartleadCampaign[]> {
+  listCampaigns(
+    clientId?: number,
+    opts?: { signal?: AbortSignal },
+  ): Promise<SmartleadCampaign[]> {
     return this.mutate(() =>
       this.request<SmartleadCampaign[]>("campaigns/", {
         query: clientId === undefined ? undefined : { client_id: clientId },
         // D271 — campaigns[] with sequences can be multi-MB; stream + parse off-thread.
         parseJsonFile: (filePath) => parseFileOffThread(filePath),
+        signal: opts?.signal,
       }),
     );
   }
@@ -213,8 +222,13 @@ export class SmartleadClient {
     );
   }
 
-  getCampaignEmailAccounts(campaignId: number): Promise<SmartleadEmailAccount[]> {
-    return this.request<SmartleadEmailAccount[]>(`campaigns/${campaignId}/email-accounts`,
+  getCampaignEmailAccounts(
+    campaignId: number,
+    opts?: { signal?: AbortSignal },
+  ): Promise<SmartleadEmailAccount[]> {
+    return this.request<SmartleadEmailAccount[]>(
+      `campaigns/${campaignId}/email-accounts`,
+      { signal: opts?.signal },
     );
   }
 
@@ -246,8 +260,13 @@ export class SmartleadClient {
     );
   }
 
-  getCampaignSequences(campaignId: number): Promise<SmartleadSequence[]> {
-    return this.request<SmartleadSequence[]>(`campaigns/${campaignId}/sequences`,
+  getCampaignSequences(
+    campaignId: number,
+    opts?: { signal?: AbortSignal },
+  ): Promise<SmartleadSequence[]> {
+    return this.request<SmartleadSequence[]>(
+      `campaigns/${campaignId}/sequences`,
+      { signal: opts?.signal },
     );
   }
 

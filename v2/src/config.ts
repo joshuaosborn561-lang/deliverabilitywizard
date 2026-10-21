@@ -30,6 +30,7 @@ const ConfigSchema = z.object({
   smartleadApiKey: z.string().default(""),
   smartDeliveryApiKey: z.string().default(""),
   inboxkitApiKey: z.string().default(""),
+  inboxkitWorkspaceId: z.string().default(""),
   slackBotToken: z.string().default(""),
   slackChannelId: z.string().default(""),
   oldWizardHealthUrl: z
@@ -103,6 +104,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     smartleadApiKey: env.SMARTLEAD_API_KEY,
     smartDeliveryApiKey: env.SMARTDELIVERY_API_KEY,
     inboxkitApiKey: env.INBOXKIT_API_KEY,
+    inboxkitWorkspaceId: env.INBOXKIT_WORKSPACE_ID,
     slackBotToken: env.SLACK_BOT_TOKEN,
     slackChannelId: env.SLACK_CHANNEL_ID,
     oldWizardHealthUrl: env.OLD_WIZARD_HEALTH_URL,

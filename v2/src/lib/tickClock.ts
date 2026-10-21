@@ -214,3 +214,18 @@ export function leaseIsStale(
   if (!Number.isFinite(at)) return true;
   return now - at >= ttlMs;
 }
+
+/**
+ * Child signal that aborts at `budgetMs` from now or when `parent` aborts.
+ * Used to cap SmartDelivery hydration so scoring keeps part of the tick.
+ */
+export function budgetSignal(parent: AbortSignal | undefined, budgetMs: number): { signal: AbortSignal; dispose: () => void } {
+  const ac = new AbortController();
+  const timer = setTimeout(() => {
+    ac.abort(Object.assign(new Error(`stage budget ${budgetMs}ms`), { name: "AbortError" }));
+  }, Math.max(0, budgetMs));
+  return { signal: combineSignals(parent, ac.signal), dispose: () => clearTimeout(timer) };
+}
+
+/** Fractions of the isolation tick spent listing / hydrating before scoring must start. */
+export const ISOLATION_BUDGET = { listTests: 0.25, hydrateSenders: 0.4, hydrateProviders: 0.55 } as const;

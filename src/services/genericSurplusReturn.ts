@@ -28,7 +28,10 @@ import {
 import {
   openTerlSubstituteEmails,
   surplusGenericReturns,
+  guardSurplusByOwnedFloor,
 } from "../lib/genericSurplusReturn.js";
+import { countOwnedClientPods, ownedPodMap } from "../lib/podOwnedInventory.js";
+import { genericSeatKey } from "../lib/genericPool.js";
 import { sleep } from "../lib/http.js";
 import { indexAccountsByCampaign } from "../lib/accountCampaignIndex.js";
 import { yieldEventLoop } from "../lib/stringifyYielding.js";
@@ -132,7 +135,7 @@ export async function returnSurplusGenerics(input: {
     powerGrydClientId: powerId,
     pocEngagementClientIds: pocIds,
   });
-  const picks = surplusGenericReturns({
+  const rawPicks = surplusGenericReturns({
     seats: synced.seats,
     namedStaffableByClientPod: synced.namedStaffableByClientPod,
     clientHasActiveCampaign: synced.clientHasActiveCampaign,
@@ -144,9 +147,39 @@ export async function returnSurplusGenerics(input: {
     skipEmails: skip,
     now,
   });
-  if (!picks.length) return result;
+  if (!rawPicks.length) return result;
 
   const accounts = input.inventory.accounts as SmartleadAccountWithCampaigns[];
+  // D298 — same per-POD owned count as min40-topup.
+  const owned = ownedPodMap(
+    await countOwnedClientPods({
+      accounts,
+      campaigns: input.inventory.campaigns as SmartleadCampaign[],
+      config: input.config as Parameters<typeof countOwnedClientPods>[0]["config"],
+      state: input.state,
+      clientIds: new Set(rawPicks.map((p) => p.clientId)),
+      now,
+    }),
+  );
+  const weightByEmail = new Map<string, number>();
+  for (const account of accounts) {
+    const email = accountEmail(account);
+    if (email) weightByEmail.set(genericSeatKey(email), mailboxStaffableWeight(account));
+  }
+  const guarded = guardSurplusByOwnedFloor({
+    picks: rawPicks,
+    ownedByClientPod: owned,
+    weightByEmail,
+    clientHasActiveCampaign: synced.clientHasActiveCampaign,
+    unguardedClientIds: [powerId],
+  });
+  for (const pick of guarded.held) {
+    console.log(
+      `[generic-surplus] held ${pick.email} client ${pick.clientId} POD-${pick.pod}: owned POD under floor (D298)`,
+    );
+  }
+  const picks = guarded.kept;
+  if (!picks.length) return result;
   const membersByCampaign = await indexAccountsByCampaign(accounts, {
     skipOverduePause: true,
   });

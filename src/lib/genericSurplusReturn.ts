@@ -183,3 +183,61 @@ export function returningWouldDropPodBelow40(
 ): boolean {
   return namedStaffable + assignedKept < GENERIC_POOL_POD_FLOOR;
 }
+
+/**
+ * D298 — keep generic-surplus on the same POD count as min40-topup.
+ * The surplus sync counted every tagged, warm named seat (linked or not)
+ * while min40 counts owned staffable seats. A POD min40 saw as short
+ * (e.g. 31.6/40) looked full to surplus, so the same day it returned the
+ * generics min40 had just assigned. Here a pick is kept only while the
+ * POD's owned count (per POD, never per campaign) stays at or above its
+ * floor after the return. Clients with no active campaign are not guarded.
+ */
+export function guardSurplusByOwnedFloor<
+  T extends { email: string; clientId: number; pod: string | null; via?: string },
+>(input: {
+  picks: readonly T[];
+  ownedByClientPod: ReadonlyMap<string, { owned: number; floor: number; generics?: number }>;
+  weightByEmail: ReadonlyMap<string, number>;
+  clientHasActiveCampaign?: ReadonlyMap<number, boolean>;
+  /** Clients whose returns keep their existing rule (PowerGRYD, D237). */
+  unguardedClientIds?: Iterable<number>;
+}): { kept: T[]; held: T[] } {
+  const unguarded = new Set(input.unguardedClientIds ?? []);
+  const remaining = new Map<string, { owned: number; generics: number }>();
+  const kept: T[] = [];
+  const held: T[] = [];
+  for (const pick of input.picks) {
+    if (!pick.pod || unguarded.has(pick.clientId) || input.clientHasActiveCampaign?.get(pick.clientId) === false) {
+      kept.push(pick);
+      continue;
+    }
+    const key = clientPodKey(pick.clientId, pick.pod as GenericAssignedPod);
+    const row = input.ownedByClientPod.get(key);
+    if (!row) {
+      kept.push(pick);
+      continue;
+    }
+    // Only generics min40 already counts can lower the owned total.
+    const state = remaining.get(key) ?? {
+      owned: row.owned,
+      generics: row.generics ?? row.owned,
+    };
+    const weight = input.weightByEmail.get(genericSeatKey(pick.email)) ?? 0;
+    const drop = Math.min(weight, Math.max(0, state.generics));
+    if (state.owned - drop < row.floor) {
+      held.push(pick);
+      continue;
+    }
+    remaining.set(key, {
+      owned: roundWeight(state.owned - drop),
+      generics: roundWeight(state.generics - drop),
+    });
+    kept.push(pick);
+  }
+  return { kept, held };
+}
+
+function roundWeight(n: number): number {
+  return Math.round(n * 100) / 100;
+}

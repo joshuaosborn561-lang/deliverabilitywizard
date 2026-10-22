@@ -650,7 +650,7 @@ describe("D139 — staffing never hands the gate its next pull", () => {
         {
           id: 11,
           from_email: "gabe@gosalesglider.info",
-          created_at: "2026-10-01T00:00:00Z",
+          created_at: new Date(Date.now() - 2 * 86400000).toISOString(),
           campaign_ids: [],
           client_id: 345263,
           tags: [],

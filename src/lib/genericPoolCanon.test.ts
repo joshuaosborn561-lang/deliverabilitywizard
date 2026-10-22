@@ -675,7 +675,7 @@ describe("D221 syncGenericSeatsFromInventory", () => {
           tags: [{ tag_name: "POD-A" }],
           is_smtp_success: true,
           is_imap_success: true,
-          created_at: "2026-10-01T00:00:00.000Z",
+          created_at: new Date(Date.now() - 2 * 86400000).toISOString(),
         },
         {
           id: 4,

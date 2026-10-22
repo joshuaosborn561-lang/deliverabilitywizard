@@ -10875,3 +10875,25 @@ the LOCKED text.
 `src/guards/lockedCanon.test.ts` LOCKED section unchanged.
 
 
+
+## D298 — Off-week POD sweep in client-rest
+
+**Why.** Client-rest only unlinked off-week seats that passed every
+candidate gate (rotation-pool generic, retired domain, attach block,
+HOLD-UNTIL, excluded-only membership, missing cohort, generic rest
+record). A POD-tagged seat that failed any gate was skipped silently and
+stayed linked. EMCOR: POD-A restaffed onto one campaign on 10/1 stayed
+there through POD-B's fortnight (75 senders on 10/21), plus 3 POD-A
+generics left behind by a swap.
+
+**Rule.** After the off-week loop, every seat whose POD tag is off-week
+comes off every ACTIVE, non-excluded campaign of its own client
+(mailbox `client_id`, else its single campaign client). Named seats and
+generics alike. PAUSED/STOPPED keep seats (D207). Other clients'
+campaigns, GABE-VM-RESERVED seats, dual-POD seats, and rotation-skipped
+clients are untouched. The per-campaign floor is exempt like the
+off-week loop (min-40 is per POD); the last-account guard holds. No
+attach, no campaign status change.
+
+**Guards.** `src/services/clientRestOffWeekSweep.test.ts`. No change to
+the LOCKED text.

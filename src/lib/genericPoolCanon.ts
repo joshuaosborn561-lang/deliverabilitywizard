@@ -1,4 +1,5 @@
 import { accountEmail, campaignIdsOf } from "../clients/smartlead.js";
+import { applyLedgerPins } from "./ledgerPins.js";
 import type { SmartleadAccountWithCampaigns } from "../clients/smartlead.js";
 import type { AppConfig } from "../config.js";
 import type { StateStore } from "../state/store.js";
@@ -749,6 +750,7 @@ export async function syncGenericSeatsFromInventory(
     for (const row of seat.coveringFor) covered.add(row.email);
   }
 
+  applyLedgerPins(nextSeats, warmingBranded);
   nextSeats.sort((a, b) => a.email.localeCompare(b.email));
   return {
     seats: nextSeats,

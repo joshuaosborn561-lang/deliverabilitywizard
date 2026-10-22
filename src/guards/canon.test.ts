@@ -18279,8 +18279,8 @@ describe("owner intent — D297 scan-backfill abort, tail order, 429 path", () =
     );
     assert.match(
       canon,
-      /Canon as of \*\*D297\*\*/,
-      stop("CANON is dated D297.", "CANON.md header is not D297."),
+      /Canon as of \*\*D(29[7-9]|3[0-9]{2})\*\*/,
+      stop("CANON is dated D297+.", "CANON.md header is before D297."),
     );
     assert.match(
       canon,
@@ -18308,3 +18308,34 @@ describe("owner intent — D297 scan-backfill abort, tail order, 429 path", () =
   });
 });
 
+describe("owner intent — D298 off-week POD sweep", () => {
+  it("D298: client-rest sweeps every off-week POD seat off its client's ACTIVE campaigns", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const rest = await readFile(
+      new URL("../services/clientRest.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      rest,
+      /D298[\s\S]{0,4000}offWeekSweepTargets\(/,
+      stop("client-rest runs the D298 off-week POD sweep.", "clientRest.ts lost the sweep."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D(29[8-9]|3[0-9]{2})\*\*/,
+      stop("CANON is dated D298+.", "CANON.md header is before D298."),
+    );
+    assert.match(canon, /D298/, stop("CANON names D298.", "CANON.md has no D298 clause."));
+    assert.match(
+      decisions,
+      /^\| D298 \|/m,
+      stop("The status index lists D298 (D127).", "DECISIONS.md status index has no D298 row."),
+    );
+  });
+});

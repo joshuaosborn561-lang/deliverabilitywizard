@@ -292,6 +292,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D294 | Live | Needs-you Approve tap: Slack ack within 3s even during heavy health (scans yield + pause while the tap is live); decide stamps approved on the lastOk sidecar before any buy and isolation-buy-resume finishes an approved retire/buy after a freeze-kill; every tap logs one line and the card updates with per-item results including buy failures; digest drops executed / denied / superseded (burned attach-block, sibling approved/executed Retire); Josh-only stays Josh-only; boot logs Slack Josh/Cayden ids and warns on overlap or a known swap. LOCKED section unchanged. |
 | D295 | Live | Old-wizard fix: Insight Josh matcher accepts `client_id` 582890 as an Insight-domain signal when from-name is Josh / Joshua Osborn (prod 2026-10-20: 14 false `insight_non_josh_sender` on Insight Tix #4173509 — seven Joshua seats on joshosales.info / josbornsales.info / joshuaosales.info). Do not widen the `/josh(ua)?osborn/` regex. Generics, other brands, and non-Josh names stay blocked. One finding per account. LOCKED section unchanged. |
 | D297 | Live | Old-wizard fix: health-pass scan-backfill honors the stage AbortSignal (and Smartlead fetches stop, no retry-as-timeout), runs after isolation-buy-resume, skips when less than ~20 minutes remain in the 45-minute health lock, and HTTP 429s log the Smartlead endpoint. LOCKED section unchanged. |
+| D298 | Live | Client-rest off-week POD sweep: every off-week POD seat (named + generics) comes off every ACTIVE, non-excluded campaign of its own client, even when a candidate gate skipped it. PAUSED/STOPPED keep seats; no attach; min-40 per POD. LOCKED section unchanged. |
 
 ---
 
@@ -10877,6 +10878,8 @@ the LOCKED text.
 
 
 ## D298 — Off-week POD sweep in client-rest
+
+**Date.** 2026-10-22 (Josh, via Deliverability).
 
 **Why.** Client-rest only unlinked off-week seats that passed every
 candidate gate (rotation-pool generic, retired domain, attach block,

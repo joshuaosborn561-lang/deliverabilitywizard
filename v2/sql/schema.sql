@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS inventory_meta (
   campaign_count INTEGER NOT NULL DEFAULT 0,
   account_count INTEGER NOT NULL DEFAULT 0
 );
+ALTER TABLE inventory_meta ADD COLUMN IF NOT EXISTS clients JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE TABLE IF NOT EXISTS findings (
   id BIGSERIAL PRIMARY KEY,
@@ -57,6 +58,14 @@ CREATE TABLE IF NOT EXISTS findings (
 );
 CREATE INDEX IF NOT EXISTS findings_kind_at ON findings (kind, at DESC);
 CREATE INDEX IF NOT EXISTS findings_campaign ON findings (campaign_id);
+-- D298: one-time cleanup of duplicate findings left by overlapping replaces.
+DELETE FROM findings WHERE id IN (
+  SELECT id FROM (
+    SELECT id, row_number() OVER (
+      PARTITION BY kind, campaign_id, account_id, email, detail ORDER BY id
+    ) AS rn FROM findings
+  ) t WHERE rn > 1
+);
 
 CREATE TABLE IF NOT EXISTS intended_actions (
   id BIGSERIAL PRIMARY KEY,

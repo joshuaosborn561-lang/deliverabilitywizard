@@ -1,6 +1,11 @@
 import { copyFile, mkdir, rename } from "node:fs/promises";
 import path from "node:path";
 import {
+  clearFreezeStrike as clearFreezeStrikeFile,
+  noteFreezeStrike as noteFreezeStrikeFile,
+  quarantinedStageNames,
+} from "../lib/freezeStrikes.js";
+import {
   parseFileOffThread,
   stringifyOffThreadToFile,
 } from "../lib/jsonOffThread.js";
@@ -1798,6 +1803,23 @@ export class StateStore {
       consecutiveFailures: 0,
       lastSkipReason: skipReason ?? null,
     };
+    // D299 — a finished stage is no longer the freeze leftover. Missing
+    // strike file is a no-op; a write error must not fail the stage.
+    try {
+      clearFreezeStrikeFile(this.filePath, name);
+    } catch (error) {
+      console.warn(`[state] freeze-strike clear failed for ${name}`, error);
+    }
+  }
+
+  /** D299 — sync strike before the freeze flush. See freezeStrikes.ts. */
+  noteFreezeStrike(stage: string, now = Date.now()): void {
+    noteFreezeStrikeFile(this.filePath, stage, now);
+  }
+
+  /** D299 — health-loop stages still inside their quarantine window. */
+  quarantinedHealthStages(now = Date.now()): Set<string> {
+    return new Set(quarantinedStageNames(this.filePath, now));
   }
 
   recordStageError(name: string, error: string): void {

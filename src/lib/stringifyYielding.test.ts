@@ -123,4 +123,54 @@ describe("stringifyYielding (D249)", () => {
       "createLoopYielder must let setInterval fire without a count-based yield",
     );
   });
+
+  it("D299: matches JSON.stringify for key order, holes, dates, and escapes", async () => {
+    const fat = { note: "q".repeat(5_000), n: 1 };
+    const at = new Date("2026-10-23T10:45:00.000Z");
+    const value = {
+      b: 1,
+      "10": 2,
+      a: 3,
+      "2": { z: true, skip: undefined, fn: () => 1 },
+      "1": fat,
+      when: at,
+      items: [1, undefined, , at, "ok"],
+      omit: { toJSON: () => undefined },
+      keep: { toJSON: () => ({ inner: "x" }) },
+      long: `${"a".repeat(8_191)}\uD83D\uDE00${"b".repeat(100)}\n"\\`,
+    };
+    const got = await stringifyYielding(value, { yieldEvery: 2, sliceMs: 4 });
+    assert.equal(got, JSON.stringify(value));
+  });
+
+  it("D299: a wide map and a long string yield before a multi-second gap", async () => {
+    const wide: Record<string, { email: string; n: number; pod: string }> = {};
+    for (let i = 0; i < 4_000; i += 1) {
+      wide[`user${i}@example.com`] = {
+        email: `user${i}@example.com`,
+        n: i,
+        pod: i % 2 === 0 ? "A" : "B",
+      };
+    }
+    wide.blob = {
+      email: "z".repeat(200_000),
+      n: -1,
+      pod: "A",
+    };
+    let last = Date.now();
+    let maxGap = 0;
+    const timer = setInterval(() => {
+      const now = Date.now();
+      maxGap = Math.max(maxGap, now - last);
+      last = now;
+    }, 10);
+    timer.unref?.();
+    const body = await stringifyYielding(wide, { yieldEvery: 8, sliceMs: 8 });
+    clearInterval(timer);
+    assert.equal(body, JSON.stringify(wide));
+    assert.ok(
+      maxGap < 1_000,
+      `stringify gap ${maxGap}ms must stay under the 1s watchdog log`,
+    );
+  });
 });

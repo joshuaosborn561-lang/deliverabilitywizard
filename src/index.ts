@@ -176,8 +176,9 @@ import {
 } from "./lib/monitorResume.js";
 import {
   HEALTH_CYCLE_MS,
-  firstInterruptedHealthStage,
+  HEALTH_LOOP_STAGES,
   healthNeedsResume,
+  planHealthResume,
   shouldRefreshInventory,
   shouldSkipHealthStage,
   type HealthLoopStage,
@@ -373,6 +374,8 @@ async function main(): Promise<void> {
   let reconcileInFlight: Promise<unknown> | null = null;
   let topUpInFlight: Promise<unknown> | null = null;
   let healthInFlight: Promise<unknown> | null = null;
+  /** D299 — set only for the health cycle. Manual `/run` does not quarantine. */
+  let healthCycleQuarantine: ReadonlySet<string> | null = null;
   let bounceAutostopInFlight: Promise<unknown> | null = null;
   let canonOpsInFlight: Promise<unknown> | null = null;
   const healthLock = new InFlightLock("health", HEALTH_LOCK_MAX_MS);
@@ -818,6 +821,12 @@ async function main(): Promise<void> {
   ): Promise<T | null> => {
     const startedAt = Date.now();
     const lastOk = state.listStageHealth()[name]?.lastOkAt ?? null;
+    if (healthCycleQuarantine?.has(name)) {
+      console.log(
+        `[watchdog] stage ${name} skipped — D299 quarantine after repeated freeze exits`,
+      );
+      return null;
+    }
     if (
       shouldSkipHealthStage(name, lastOk, {
         skipIfFreshMs: opts.skipIfFreshMs,
@@ -1000,12 +1009,22 @@ async function main(): Promise<void> {
       // than the newest non-inventory stamp), not "an early stage still
       // inside 15m". Inventory lastOk is a shared-book refresh, not the
       // sitting frontier (D215). Skip the prefix and continue. A
-      // monotonic board is a normal 15m tick.
-      const leftover = firstInterruptedHealthStage(state.listStageHealth());
-      const resume = healthNeedsResume(state.listStageHealth());
+      // monotonic board is a normal 15m tick. D299 — if that leftover
+      // is quarantined after repeated freeze exits, do not skip the
+      // prefix; skip the stage itself and run the rest.
+      const quarantined = state.quarantinedHealthStages();
+      healthCycleQuarantine = quarantined;
+      const stageHealth = state.listStageHealth();
+      const resume = healthNeedsResume(stageHealth);
+      const plan = planHealthResume(stageHealth, { quarantined });
+      const leftover = plan.leftover;
       const skipIfFreshMs = resume ? HEALTH_CYCLE_MS : undefined;
       const skipIfBeforeStage = leftover;
-      if (resume) {
+      if (plan.quarantinedLeftover) {
+        console.log(
+          `[health] D299 quarantine — leftover ${plan.naturalLeftover} is quarantined after repeated freeze exits; running the prefix and the tail, skipping that stage`,
+        );
+      } else if (resume) {
         console.log(
           `[health] D215 resume — leftover starts at ${leftover}; skipping the prefix (and anything still fresh in the 15m cycle)`,
         );
@@ -1287,6 +1306,7 @@ async function main(): Promise<void> {
       };
     }));
     healthInFlight = run.finally(() => {
+      healthCycleQuarantine = null;
       smartlead.setExclusiveHealth(false);
       if (releasePass(healthLock, token)) healthInFlight = null;
     });
@@ -3725,10 +3745,25 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     startFreezeWatchdog({
       getLocks: () => [healthLock, canonOpsLock, monitorLock],
       flush: () => state.saveHot(),
+      noteStrike: () => {
+        const stageName = healthLock.stage;
+        if (
+          stageName &&
+          (HEALTH_LOOP_STAGES as readonly string[]).includes(stageName)
+        ) {
+          state.noteFreezeStrike(stageName);
+        }
+      },
     });
     console.log(
       "[boot] D247/D257/D265/D271 freeze watchdog: event-loop delay >1s logged with stage/op/stack attribution; blocked >5m, repeated multi-second freezes, or a pass past 2× max sets exitCode=1, flushes lastOk sidecar, then process.exit(1) (Railway restartPolicyType ALWAYS). Thresholds are not widened.",
     );
+    const quarantinedAtBoot = [...state.quarantinedHealthStages()];
+    if (quarantinedAtBoot.length) {
+      console.warn(
+        `[boot] D299 quarantine — ${quarantinedAtBoot.join(", ")} skipped on health cycles until the window ends`,
+      );
+    }
     console.log(
       "[boot] D249 catch-up: weekday 6am–8pm CT Needs you / InboxKit / TERRL EOD once if today's stamp is missing (3m after listen, then each health tick)",
     );

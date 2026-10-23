@@ -650,7 +650,9 @@ describe("D139 — staffing never hands the gate its next pull", () => {
         {
           id: 11,
           from_email: "gabe@gosalesglider.info",
-          created_at: "2026-10-01T00:00:00Z",
+          // owesWarmup reads the wall clock, not service.run({ now }).
+          // A fixed 2026-10-01 stamp aged past 21 days on 2026-10-22.
+          created_at: new Date(Date.now() - 3 * 86_400_000).toISOString(),
           campaign_ids: [],
           client_id: 345263,
           tags: [],

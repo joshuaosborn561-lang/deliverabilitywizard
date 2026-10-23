@@ -163,6 +163,48 @@ describe("D265 freeze-watchdog exit is non-zero after flush", () => {
     assert.ok(logs.some((line) => /flush timed out/.test(line)));
   });
 
+  it("D299: notes the strike before flush, even when flush hangs", async () => {
+    const order: string[] = [];
+    await requestFreezeExit({
+      reason: "event loop delayed 3 times ≥3000ms within 120s",
+      noteStrike: () => {
+        order.push("strike");
+      },
+      setExitCode: () => {
+        order.push("exitCode");
+      },
+      flush: () => new Promise(() => undefined),
+      exit: () => {
+        order.push("exit");
+      },
+      log: () => undefined,
+      flushMs: 5,
+      wait: () => Promise.resolve(),
+      scheduleHardKill: () => () => undefined,
+    });
+    assert.deepEqual(order, ["strike", "exitCode", "exit"]);
+  });
+
+  it("still exits 1 when the strike note throws", async () => {
+    const exits: number[] = [];
+    const logs: string[] = [];
+    await requestFreezeExit({
+      reason: "repeated freezes",
+      noteStrike: () => {
+        throw new Error("disk full");
+      },
+      setExitCode: () => undefined,
+      flush: () => undefined,
+      exit: (code) => {
+        exits.push(code);
+      },
+      log: (msg) => logs.push(msg),
+      scheduleHardKill: () => () => undefined,
+    });
+    assert.deepEqual(exits, [1]);
+    assert.ok(logs.some((line) => /freeze-strike note failed \(disk full\)/.test(line)));
+  });
+
   it("still exits 1 when flush throws", async () => {
     const exits: number[] = [];
     const logs: string[] = [];

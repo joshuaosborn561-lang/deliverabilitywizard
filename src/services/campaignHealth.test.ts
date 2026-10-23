@@ -316,6 +316,15 @@ describe("CampaignHealthService", () => {
       hasRecentAlert: () => false,
       markAlert: () => undefined,
       listGenericBackfillApprovals: () => ({}),
+      listEndedPocClientIds: () => [],
+      listGenericSeats: () => [],
+      replaceGenericSeats: () => undefined,
+      getGenericSeat: () => undefined,
+      ensureGenericSeat: () => undefined,
+      assignGenericFromTable: () => undefined,
+      isMarkerClientId: () => false,
+      persistPoolPrune: async () => undefined,
+      removePoolMailbox: () => undefined,
     } as unknown as StateStore;
 
     const campaigns = Array.from({ length: 400 }, (_, i) => ({

@@ -17370,8 +17370,8 @@ describe("owner intent — D271 stall attribution and leftover hotspots", () => 
     );
     assert.match(
       seats,
-      /yieldEventLoop/,
-      stop("Account index yields (D271).", "accountCampaignIndex.ts lost yieldEventLoop."),
+      /yieldEventLoop|yieldToTimers/,
+      stop("Account index yields (D271/D300).", "accountCampaignIndex.ts lost its yield."),
     );
     assert.match(
       sl,

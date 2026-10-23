@@ -15,8 +15,11 @@ import {
   ON_WEEK_MIN_SENDERS,
   POD_ESP_MIX_MIN_FRACTION,
   POD_INVENTORY_MIN_SENDERS,
+  formatPodEspMixFinding,
   podEspMixHolds,
   podEspMixMinSeats,
+  podEspMixTarget,
+  podEspMixTolerance,
   podGenericTopUpCap,
   staffFloorForCampaign,
 } from "./clientStaffFloor.js";
@@ -545,5 +548,190 @@ describe("D203 named-client 40/POD inventory", () => {
     );
     assert.equal(podEspMixMinSeats(20), 7);
     assert.equal(podEspMixMinSeats(38.2), 13);
+  });
+
+  it("D301: Parlay 54% Microsoft sits within ±max(2, 10% of POD)", () => {
+    const share = 0.54;
+    assert.equal(podEspMixTarget(40, share), 22);
+    assert.equal(podEspMixTolerance(40), 4);
+    assert.equal(
+      podEspMixHolds({
+        outlook: 22,
+        gmail: 18,
+        clientHasBothEsps: true,
+        podSeats: 40,
+        microsoftShare: share,
+      }),
+      true,
+    );
+    assert.equal(
+      podEspMixHolds({
+        outlook: 18,
+        gmail: 22,
+        clientHasBothEsps: true,
+        podSeats: 40,
+        microsoftShare: share,
+      }),
+      true,
+    );
+    assert.equal(
+      podEspMixHolds({
+        outlook: 26,
+        gmail: 14,
+        clientHasBothEsps: true,
+        podSeats: 40,
+        microsoftShare: share,
+      }),
+      true,
+    );
+    assert.equal(
+      podEspMixHolds({
+        outlook: 14,
+        gmail: 26,
+        clientHasBothEsps: true,
+        podSeats: 40,
+        microsoftShare: share,
+      }),
+      false,
+      "old 1/3 floor (14 Microsoft) misses Parlay's 22±4 target",
+    );
+    assert.match(
+      formatPodEspMixFinding({
+        outlook: 14,
+        gmail: 26,
+        podSeats: 40,
+        microsoftShare: share,
+        clientLabel: "Parlay",
+      }),
+      /want 22±4 Microsoft on a 40-seat POD — Parlay InboxKit 54% Microsoft/,
+    );
+  });
+
+  it("D301: EMCOR ~60% Microsoft sits within ±max(2, 10% of POD)", () => {
+    const share = 0.6;
+    assert.equal(podEspMixTarget(40, share), 24);
+    assert.equal(
+      podEspMixHolds({
+        outlook: 24,
+        gmail: 16,
+        clientHasBothEsps: true,
+        podSeats: 40,
+        microsoftShare: share,
+      }),
+      true,
+    );
+    assert.equal(
+      podEspMixHolds({
+        outlook: 20,
+        gmail: 20,
+        clientHasBothEsps: true,
+        podSeats: 40,
+        microsoftShare: share,
+      }),
+      true,
+    );
+    assert.equal(
+      podEspMixHolds({
+        outlook: 28,
+        gmail: 12,
+        clientHasBothEsps: true,
+        podSeats: 40,
+        microsoftShare: share,
+      }),
+      true,
+    );
+    assert.equal(
+      podEspMixHolds({
+        outlook: 14,
+        gmail: 26,
+        clientHasBothEsps: true,
+        podSeats: 40,
+        microsoftShare: share,
+      }),
+      false,
+      "14 Microsoft misses EMCOR's 24±4 target",
+    );
+    assert.match(
+      formatPodEspMixFinding({
+        outlook: 14,
+        gmail: 26,
+        podSeats: 40,
+        microsoftShare: share,
+        clientLabel: "EMCOR",
+      }),
+      /want 24±4 Microsoft on a 40-seat POD — EMCOR InboxKit 60% Microsoft/,
+    );
+  });
+
+  it("D301: Peterson 35% Microsoft sits within ±max(2, 10% of POD)", () => {
+    const share = 0.35;
+    assert.equal(podEspMixTarget(40, share), 14);
+    assert.equal(
+      podEspMixHolds({
+        outlook: 14,
+        gmail: 26,
+        clientHasBothEsps: true,
+        podSeats: 40,
+        microsoftShare: share,
+      }),
+      true,
+    );
+    assert.equal(
+      podEspMixHolds({
+        outlook: 10,
+        gmail: 30,
+        clientHasBothEsps: true,
+        podSeats: 40,
+        microsoftShare: share,
+      }),
+      true,
+    );
+    assert.equal(
+      podEspMixHolds({
+        outlook: 18,
+        gmail: 22,
+        clientHasBothEsps: true,
+        podSeats: 40,
+        microsoftShare: share,
+      }),
+      true,
+    );
+    assert.equal(
+      podEspMixHolds({
+        outlook: 22,
+        gmail: 18,
+        clientHasBothEsps: true,
+        podSeats: 40,
+        microsoftShare: share,
+      }),
+      false,
+      "22 Microsoft misses Peterson's 14±4 target",
+    );
+    assert.match(
+      formatPodEspMixFinding({
+        outlook: 22,
+        gmail: 18,
+        podSeats: 40,
+        microsoftShare: share,
+        clientLabel: "Roofs Peterson",
+      }),
+      /want 14±4 Microsoft on a 40-seat POD — Roofs Peterson InboxKit 35% Microsoft/,
+    );
+  });
+
+  it("D301: missing InboxKit data falls back to the 1/3 floor", () => {
+    assert.equal(
+      podEspMixHolds({
+        outlook: 14,
+        gmail: 26,
+        clientHasBothEsps: true,
+        podSeats: 40,
+      }),
+      true,
+    );
+    assert.match(
+      formatPodEspMixFinding({ outlook: 10, gmail: 30, podSeats: 40 }),
+      /want ≥14 of each on a 40-seat POD/,
+    );
   });
 });

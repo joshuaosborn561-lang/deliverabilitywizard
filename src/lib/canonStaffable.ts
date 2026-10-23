@@ -218,9 +218,11 @@ export function formatCanonStaffFloorDetail(input: {
 }
 
 export function senderEspBucket(
-  account: Pick<SmartleadEmailAccount, "type">,
+  account: Pick<SmartleadEmailAccount, "type" | "smtp_host" | "tags"> & {
+    platform?: string | null;
+  },
 ): "outlook" | "gmail" | "other" {
-  const family = normalizeSenderEspFamily(account.type);
+  const family = normalizeSenderEspFamily(account);
   if (family === "microsoft") return "outlook";
   if (family === "google") return "gmail";
   return "other";

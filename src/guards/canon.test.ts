@@ -18504,8 +18504,8 @@ describe("owner intent — D300 walk objects and timer-yield persist/index", () 
 
     assert.match(
       canon,
-      /Canon as of \*\*D300\*\*/,
-      stop("CANON is dated D300.", "CANON.md header is not D300."),
+      /Canon as of \*\*D(300|30[1-9]|3[1-9][0-9])\*\*/,
+      stop("CANON is dated D300 or later.", "CANON.md header is before D300."),
     );
     assert.match(
       canon,
@@ -18621,6 +18621,129 @@ describe("owner intent — D300 walk objects and timer-yield persist/index", () 
       locked,
       /POD-40: every client POD A and POD B must each hold >=40 warm seats/,
       stop("LOCKED POD-40 sentence unchanged (D300).", "docs/LOCKED-CANON.md LOCKED sentence drifted."),
+    );
+  });
+});
+
+describe("owner intent — D301 POD ESP mix matches InboxKit client split", () => {
+  it("D301: InboxKit share ±max(2,10%); SMTP Gmail; 1/3 fallback; LOCKED unchanged", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const locked = await readFile(
+      new URL("../../docs/LOCKED-CANON.md", import.meta.url),
+      "utf8",
+    );
+    const floor = await readFile(
+      new URL("../lib/clientStaffFloor.ts", import.meta.url),
+      "utf8",
+    );
+    const esp = await readFile(new URL("../lib/esp.ts", import.meta.url), "utf8");
+    const split = await readFile(
+      new URL("../lib/inboxkitClientSplit.ts", import.meta.url),
+      "utf8",
+    );
+    const min40 = await readFile(
+      new URL("../services/min40TopUp.ts", import.meta.url),
+      "utf8",
+    );
+    const topUp = await readFile(
+      new URL("../services/campaignTopUp.ts", import.meta.url),
+      "utf8",
+    );
+    const check = await readFile(
+      new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D301\*\*/,
+      stop("CANON is dated D301.", "CANON.md header is not D301."),
+    );
+    assert.match(
+      canon,
+      /InboxKit reports the client's Google\/Microsoft split/,
+      stop("CANON names the InboxKit split (D301).", "CANON.md lost the InboxKit mix MUST."),
+    );
+    assert.match(
+      canon,
+      /smtp\.gmail\.com/,
+      stop("CANON classifies SMTP Gmail (D301).", "CANON.md lost smtp.gmail.com."),
+    );
+    assert.match(
+      decisions,
+      /## D301 — /,
+      stop("The ledger records D301.", "DECISIONS.md has no D301 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D301 \|/m,
+      stop("The status index lists D301 (D127).", "DECISIONS.md status index has no D301 row."),
+    );
+    assert.match(
+      split,
+      /Randy Haba/,
+      stop("Parlay maps Randy Haba → InboxKit (D301).", "inboxkitClientSplit.ts lost Randy Haba."),
+    );
+    assert.match(
+      split,
+      /Myles McIntosh/,
+      stop("EMCOR maps Myles McIntosh → InboxKit (D301).", "inboxkitClientSplit.ts lost Myles McIntosh."),
+    );
+    assert.match(
+      split,
+      /Kyle Peterson/,
+      stop("Peterson maps Kyle Peterson → InboxKit (D301).", "inboxkitClientSplit.ts lost Kyle Peterson."),
+    );
+    assert.match(
+      esp,
+      /smtp\.gmail\.com/,
+      stop("SMTP on smtp.gmail.com is Gmail (D301).", "esp.ts lost smtp.gmail.com."),
+    );
+    assert.match(
+      esp,
+      /type:google/,
+      stop("type:google is Gmail (D301).", "esp.ts lost the type:google tag."),
+    );
+    assert.match(
+      floor,
+      /microsoftShare/,
+      stop("Mix check accepts the InboxKit share (D301).", "clientStaffFloor.ts lost microsoftShare."),
+    );
+    assert.match(
+      floor,
+      /POD_ESP_MIX_MIN_FRACTION = 1 \/ 3/,
+      stop("1/3 remains the no-InboxKit fallback (D301).", "clientStaffFloor.ts lost the 1/3 floor."),
+    );
+    assert.match(
+      check,
+      /formatPodEspMixFinding/,
+      stop("Finding text shows the client's target (D301).", "campaignCheck.ts lost formatPodEspMixFinding."),
+    );
+    assert.match(
+      min40,
+      /microsoftShare/,
+      stop("min40 picks generics toward the split (D301).", "min40TopUp.ts lost microsoftShare."),
+    );
+    assert.match(
+      topUp,
+      /microsoftShare/,
+      stop("campaign top-up picks toward the split (D301).", "campaignTopUp.ts lost microsoftShare."),
+    );
+    assert.match(
+      locked,
+      /POD-40: every client POD A and POD B must each hold >=40 warm seats/,
+      stop("LOCKED POD-40 sentence unchanged (D301).", "docs/LOCKED-CANON.md LOCKED sentence drifted."),
+    );
+    assert.match(
+      canon,
+      /## LOCKED — Josh-only changes/,
+      stop("LOCKED heading stays (D301).", "CANON.md lost the LOCKED heading."),
     );
   });
 });

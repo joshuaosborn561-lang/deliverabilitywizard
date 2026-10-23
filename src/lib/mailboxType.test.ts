@@ -51,6 +51,25 @@ describe("classifyMailboxSendType (D219)", () => {
     );
   });
 
+  it("D301: SMTP on smtp.gmail.com is Google; type:m365 is Microsoft", () => {
+    assert.equal(
+      classifyMailboxSendType({
+        type: "SMTP",
+        smtp_host: "smtp.gmail.com",
+        from_email: "ada@pool.test",
+      }),
+      "google",
+    );
+    assert.equal(
+      classifyMailboxSendType({
+        type: "SMTP",
+        from_email: "ada@pool.test",
+        tags: [{ tag_name: TYPE_TAG.m365 }],
+      }),
+      "m365",
+    );
+  });
+
   it("type tag wins over domain/ESP", () => {
     assert.equal(
       classifyMailboxSendType({

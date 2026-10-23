@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D300** (2026-10-23). One page of current truth. When a new
+Canon as of **D301** (2026-10-23). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -450,13 +450,20 @@ Caps ramp manually (35 on Oct 12).
   structural rest, **40 per POD** via named + fleet-pool generics).
   Off-week POD's 40 stay assigned and rest ready. If bad senders are
   peeled, restore each ACTIVE campaign back to 40. Each POD
-  also keeps an **ESP mix floor** (D203/D233/D263):
-  when the client has both Outlook and Gmail, neither ESP may sit under ~1/3 of **that POD's real seat count** (**14 of a 40-seat POD**; a 20-seat POD owes 7). Do not pad the denominator with `max(n, 40)`.
+  also keeps an **ESP mix** (D203/D233/D263/D301):
+  when InboxKit reports the client's Google/Microsoft split, each
+  on-week POD's warm Microsoft count (generics included) must sit
+  within ±max(2, 10% of **that POD's real seat count**) of
+  round(POD size × the client's Microsoft share) — Parlay ~54%,
+  EMCOR ~60%, Peterson ~35%. Fall back to the D203 rule — when
+  the client has both Outlook and Gmail, neither ESP may sit under ~1/3 of **that POD's real seat count** (**14 of a 40-seat POD**; a 20-seat POD owes 7) — only when InboxKit has no data for that client. Do not pad the denominator with `max(n, 40)`.
+  SMTP on smtp.gmail.com and `type:google` count as Gmail;
+  `type:m365` / `type:azure` count as Microsoft.
   Azure counts as Microsoft for that mix at **0.1** (D232) and must never take a Google slot.
   A POD must not go monoculture. D192 ESP-balanced ~50/50
   across A/B *within* each ESP still stands — this is a per-POD
-  mix floor on top. An ACTIVE campaign whose on-week staffable
-  mix breaks that floor is an `esp_mix` Canon finding (D217).
+  mix on top. An ACTIVE campaign whose on-week staffable
+  mix breaks that target is an `esp_mix` Canon finding (D217).
   `/health` `canonFindings` counts **ACTIVE campaigns only**;
   campaign-check prunes STOPPED / COMPLETED / deleted leftover
   rows so they cannot keep flagging (D263).
@@ -553,9 +560,9 @@ Caps ramp manually (35 on Oct 12).
   D234 lock still allows that strip, and still allows a first POD
   tag on an untagged pool generic being assigned. Named seats stay
   immutable. Generics are not part of that named cut.
-  On top of the D192 cut, each POD keeps the D203 mix floor: when
-  both ESPs exist on the client, prefer neither Outlook nor Gmail
-  under ~1/3 of that POD's 40.
+  On top of the D192 cut, each POD keeps the D203/D301 mix: match
+  that client's InboxKit Microsoft share (±max(2, 10% of the POD));
+  fall back to ~1/3 only when InboxKit has no row.
   Off-week comes OFF **ACTIVE** client campaign memberships
   only — never left on at 0/day, and **never when an ACTIVE
   campaign would drop below 40 **staffable** (D197/D198/D199/D203/D207/D209;
@@ -662,7 +669,8 @@ Caps ramp manually (35 on Oct 12).
   Never add them when named seats already cover the POD.
   Never skip the off-week POD.
   Prefer named first; when topping a short campaign, prefer
-  the ESP that is under the ~1/3 mix floor. SalesGlider with ample salesglider*
+  the ESP that lands the POD on the client's InboxKit split
+  (D301; ~1/3 floor only when InboxKit has no row). SalesGlider with ample salesglider*
   named inventory (each POD already ≥40 named) must not carry pool generics. Do **not** rotate the same
   generic onto a **different** client's campaign. Leftover D134
   Slack / retire-tap approvals are a historical record, not attach permission.

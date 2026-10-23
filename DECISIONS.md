@@ -212,7 +212,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D198 | Superseded in part by D221 — keep dedicated pool generics even above 40 is retired (PowerGRYD 592842 remains the dedicated exception); exclusive + client-sig still identifies a current assignment (D199); same-client multi-link stays (D207/D209); D283 — pool `assignedClientId=592842` / `powergryd_dedicated` does not win over live Smartlead `client_id=null` | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
 | D199 | Live — same-client generic multi-link by D207/D209; 40/POD inventory by D203; live floor per ACTIVE campaign (D207); rest-record is not peel-exempt (D209) | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
 | D200 | Superseded by D207 — same-client generics may multi-link like named seats; exclusive-attach / exclusiveExtras peel is retired; cross-client peel stays | Exclusive-attach / no-multi-link applies to pool generics only; same-client named seats (techevolution* / TechEvo 521881) may sit on every campaign of that client; still peel pool multi-link, foreign-client tag, and rotating undedicated pool shares |
-| D203 | Live — live send floor is per ACTIVE campaign (D207); 40-A + 40-B inventory, static named split, ~1/3 ESP mix, never-retag stay | Named-client POD A/B is a static even split of named senders only; each POD owes 40 staffable seats at client inventory (40-A + 40-B) and a ~1/3 Outlook/Gmail mix floor when both ESPs exist; exclusive client-signed generics are thin per-POD top-up when named half is short; do not retag named seats or over-disperse the free pool |
+| D203 | Live — live send floor is per ACTIVE campaign (D207); 40-A + 40-B inventory, static named split, never-retag stay; ~1/3 ESP mix is the InboxKit-miss fallback (D301) | Named-client POD A/B is a static even split of named senders only; each POD owes 40 staffable seats at client inventory (40-A + 40-B); exclusive client-signed generics are thin per-POD top-up when named half is short; do not retag named seats or over-disperse the free pool. ESP mix follows the client's InboxKit split (D301); ~1/3 is fallback only. |
 | D205 | Live — Insight SEG removed from hold defaults by D246; min40 shares same-client generics (D207); PowerGRYD restaff-as-special-case retired by D237; watch still never START/PAUSE; auto-allow / Allow-generics Slack retired by D268 | Wizard-owned canon-ops stages (hold-enforcement / min40-topup / powergryd-watch / generic-cleanup) on a weekday Chicago 30-minute cron; the only live-campaign PAUSED write besides shells |
 | D207 | Live — named min-40 *fill/page* superseded by D285; peel-below-40 on ACTIVE stays | MIN 40 peel floor is per ACTIVE campaign; same-client generics may multi-link; no PAUSED/STOPPED detach (D169 retired); detachWouldBreakStaffableFloor on every ACTIVE remove except disconnected / cross-client / HOLD-RETIRE / under-warmed. Named fill and ops_alert are per POD owned inventory (D285) |
 | D209 | Live | Same-client multi-link is never a peel reason; a rest record on a still-attached seat does not shrink the 40 floor or exempt the peel; client-rest only marks resting after a successful detach; CultureFits / Vasco GENERIC seats that already staff a named client are normal pool seats, not dirt |
@@ -268,7 +268,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D260 | Live | Generic-family / GENERIC-tagged sending domains stay generic even when assigned to a client; domain-lifecycle continues past a per-domain retire/cover refusal |
 | D261 | Live — prune persist / hole keep amended by D262 / D267 | A watchdog stage that starts must stamp ok or a real error; isolation-branch honors abort, saves once per run, and prunes deleted/finished campaigns off the hole list |
 | D262 | Live — prune persist / caps / lastOk amended by D267 | isolation-branch persists gone-campaign prune immediately, skips fresh scores, caps provider-split / evaluate work, and stringifies state with a yielding walk (never worker structuredClone); /health holes use the accepted inventory book |
-| D263 | Live | ESP-mix /health counts ACTIVE only; campaign-check prunes STOPPED/COMPLETED/deleted leftover findings; mix floor uses the real weighted POD size; Azure counts 0.1 |
+| D263 | Live — mix target amended by D301; ACTIVE-only / real POD size / Azure 0.1 stay | ESP-mix /health counts ACTIVE only; campaign-check prunes STOPPED/COMPLETED/deleted leftover findings; mix uses the real weighted POD size; Azure counts 0.1 |
 | D264 | Live | CALLER FOLLOW-UP (Gabe Calls) is fully exempt from typical sender top-up; sibling share / client-rest restore cannot land non-class seats; campaign-check peels strays (one Slack receipt) |
 | D265 | Live | Freeze watchdog must exit non-zero after flushing lastOk sidecar (never drain to 0); Railway restartPolicyType ALWAYS |
 | D266 | Live | One-tap spend/retire cards update in place to Done by the tapper; pendingSpend is pruned; actions are idempotent; transient errors retry then stay pending; client cover buys use the client InboxKit workspace; retired seats are scheduled for cancellation |
@@ -294,6 +294,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D297 | Live | Old-wizard fix: health-pass scan-backfill honors the stage AbortSignal (and Smartlead fetches stop, no retry-as-timeout), runs after isolation-buy-resume, skips when less than ~20 minutes remain in the 45-minute health lock, and HTTP 429s log the Smartlead endpoint. LOCKED section unchanged. |
 | D299 | Live — stringify batching amended by D300; 60-minute freeze quarantine stays | Freeze/restart loop 2026-10-23: state/hot stringify batches compact values so one JSON.stringify cannot pin the loop for seconds; a health-loop stage that freeze-exits 3 times is quarantined for 60 minutes so leftover resume does not restart there forever. Thresholds are not widened. LOCKED section unchanged. |
 | D300 | Live | Freeze/restart loop after D299 (2026-10-23): objects/arrays are never native-stringified; persist and indexAccountsByCampaign yield to timers; campaign-health snapshots use a campaign Map and yield. lastOk stamps unchanged. Thresholds not widened. LOCKED section unchanged. |
+| D301 | Live | POD ESP mix matches each client's InboxKit Google/Microsoft split (±max(2, 10% of the POD) of round(POD × Microsoft share)); 1/3 floor is fallback only when InboxKit has no row. SMTP smtp.gmail.com and type:google are Gmail; type:m365 / type:azure are Microsoft. min-40 / campaign top-up pick generics toward that split. Finding text shows the client's target. Parlay ~54%, EMCOR ~60%, Peterson ~35%. LOCKED section unchanged. |
 
 ---
 
@@ -11001,6 +11002,61 @@ or the LOCKED text.
 gap + objects are not compact. `src/lib/accountCampaignIndex.test.ts`
 production-size gap. `src/services/campaignHealth.test.ts`
 production-size full pass. `src/guards/canon.test.ts` D300.
+`src/guards/lockedCanon.test.ts` LOCKED section unchanged.
+
+## D301 — POD ESP mix matches the client's InboxKit split
+
+**Date.** 2026-10-23 (Josh).
+
+**Decision.** The per-POD ESP mix is that client's live
+InboxKit Google/Microsoft split, not a fixed 1/3 floor.
+
+1. Load each client's **active** InboxKit mailbox count by
+   platform (Google vs Microsoft) and cache it. Map Smartlead
+   clients to InboxKit workspaces: Corey Tapper = TechEvolution,
+   Kyle Peterson = Roofs Peterson, Mike Trpkosh =
+   BolderCyberPartners, Myles McIntosh = EMCOR, Randy Haba =
+   Parlay. Use the existing InboxKit client.
+2. Each on-week POD's warm Microsoft count, generics included,
+   must sit within ±max(2, 10% of that POD) of
+   round(POD size × the client's Microsoft share). Fall back
+   to the D203 ~1/3 floor only when InboxKit has no row.
+3. Classify SMTP accounts on smtp.gmail.com, plus the
+   `type:google` tag, as Gmail. Classify `type:m365` and
+   `type:azure` as Microsoft. The 517 SMTP accounts on
+   smtp.gmail.com must not count as `other` and drop out.
+4. min-40 and campaign top-up pick generics by ESP so each
+   POD lands on the client's split. min-40, 21-day warmup,
+   Insight no-generics, and CornerStone rules stay.
+5. The `esp_mix` finding text shows the client's target
+   (Parlay ~54% Microsoft, EMCOR ~60%, Peterson ~35%).
+
+Do not edit the LOCKED section. Never START / pause / touch
+STOPPED. Never buy.
+
+**Why.** A fixed 1/3 floor was wrong for clients whose
+InboxKit fleet is not 50/50. Parlay is ~54% Microsoft;
+EMCOR ~60%; Peterson ~35%. SMTP-on-Gmail seats were
+invisible to the mix because Smartlead `type` is `SMTP`.
+
+**Rejected.** Changing the LOCKED POD-40 / Generics Ledger
+text. Loosening warmup. Giving Insight generics. Staffing
+CornerStone. Keeping the 1/3 floor as the live target when
+InboxKit data exists.
+
+**Supersedes / amends.** Amends D203 / D263 mix-floor
+arithmetic (1/3 becomes the no-InboxKit fallback). Amends
+sender ESP classification so SMTP + smtp.gmail.com and the
+type:* tags are visible. Does not reverse D1, D40, D50,
+D232 Azure 0.1, D233 same-ESP replace, D263 ACTIVE-only /
+real POD size, D285 POD-40, or the LOCKED text.
+
+**Guards.** `src/lib/clientStaffFloor.test.ts` Parlay 54% /
+EMCOR 60% / Peterson 35%. `src/lib/esp.test.ts` SMTP Gmail
+and type tags. `src/lib/inboxkitClientSplit.test.ts` workspace
+map + cache. `src/services/campaignTopUp.test.ts` fill order.
+`src/services/campaignCheck.test.ts` finding text.
+`src/guards/canon.test.ts` D301.
 `src/guards/lockedCanon.test.ts` LOCKED section unchanged.
 
 

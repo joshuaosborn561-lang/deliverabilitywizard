@@ -10,10 +10,10 @@ import {
 } from "./healthCpuPause.js";
 import {
   createTimeSlicer,
-  yieldEventLoop,
+  yieldToTimers,
 } from "./stringifyYielding.js";
 
-export const INDEX_ACCOUNTS_YIELD_EVERY = 32;
+export const INDEX_ACCOUNTS_YIELD_EVERY = 16;
 export const INDEX_IDS_YIELD_EVERY = 32;
 export const INDEX_SLICE_MS = 8;
 
@@ -73,14 +73,14 @@ export async function indexAccountsByCampaign(
   opts: IndexAccountsOpts = {},
 ): Promise<Map<number, SmartleadAccountWithCampaigns[]>> {
   return runWithStallScopeAsync("scan:indexAccountsByCampaign", async () => {
-    await yieldEventLoop();
-    const slice = createTimeSlicer(INDEX_SLICE_MS);
+    await yieldToTimers();
+    const slice = createTimeSlicer(INDEX_SLICE_MS, yieldToTimers);
     const byCampaign = new Map<number, SmartleadAccountWithCampaigns[]>();
     const seenByCampaign = new Map<number, Set<string>>();
     let accountsN = 0;
     let idsN = 0;
     const yieldCpu = async (): Promise<void> => {
-      await yieldEventLoop();
+      await yieldToTimers();
       await pauseWhileHealthLive(opts.pauseWhile, {
         label: "scan:indexAccountsByCampaign",
       });
@@ -120,8 +120,8 @@ export async function indexAccountsByEmail(
   opts: IndexAccountsOpts = {},
 ): Promise<Map<string, SmartleadAccountWithCampaigns>> {
   return runWithStallScopeAsync("scan:indexAccountsByEmail", async () => {
-    await yieldEventLoop();
-    const slice = createTimeSlicer(INDEX_SLICE_MS);
+    await yieldToTimers();
+    const slice = createTimeSlicer(INDEX_SLICE_MS, yieldToTimers);
     const byEmail = new Map<string, SmartleadAccountWithCampaigns>();
     let n = 0;
     for (const account of accounts) {
@@ -129,7 +129,7 @@ export async function indexAccountsByEmail(
       if (email) byEmail.set(email, account);
       n += 1;
       if (n % INDEX_ACCOUNTS_YIELD_EVERY === 0) {
-        await yieldEventLoop();
+        await yieldToTimers();
         await pauseWhileHealthLive(opts.pauseWhile, {
           label: "scan:indexAccountsByEmail",
         });

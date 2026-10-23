@@ -42,6 +42,7 @@ import {
   hasHoldOrRetireTag,
 } from "../lib/clientStaffFloor.js";
 import { minFloorForClient } from "../lib/minFloorByClient.js";
+import type { InboxkitClientSplitCache } from "../lib/inboxkitClientSplit.js";
 import { chicagoWallClock, isCanonOpsBusinessHours } from "../lib/canonOpsHours.js";
 import {
   isRealNamedClientId,
@@ -212,6 +213,7 @@ export class Min40TopUpService {
     private readonly smartlead: SmartleadClient,
     private readonly slack: SlackClient,
     private readonly state: StateStore,
+    private readonly clientSplits?: InboxkitClientSplitCache,
   ) {}
 
   private powerGrydBrand = "PowerGRYD";
@@ -241,6 +243,7 @@ export class Min40TopUpService {
 
     const { campaigns, accounts, clients } =
       opts.inventory ?? (await fetchInventory(this.smartlead));
+    await this.clientSplits?.ensureLoaded();
     const now = opts.now ?? new Date();
     console.log(
       `[min40-topup] start campaigns=${campaigns.length} accounts=${accounts.length}`,
@@ -1117,6 +1120,9 @@ export class Min40TopUpService {
     const rejectedAny = new Set<string>();
 
     const skipPoolGenerics = this.neverGenericClient(input.clientId);
+    const microsoftShare =
+      this.clientSplits?.shareForClient(input.clientName) ??
+      this.clientSplits?.shareForClient(brand);
     const existing: IndexedSeat[] = [];
     let scanned = 0;
     for (const seat of input.seats) {
@@ -1167,6 +1173,8 @@ export class Min40TopUpService {
         espCounts,
         input.target ?? minFloorForClient(input.clientId, this.config.minFloorByClient),
         Math.round(POD_ESP_MIX_MIN_FRACTION * 100),
+        undefined,
+        microsoftShare,
       );
       const slot = mailboxEspSlot(account);
       if (needed.length === 1 && slot && slot !== needed[0]) continue;
@@ -1193,6 +1201,8 @@ export class Min40TopUpService {
         espCounts,
         input.target ?? ON_WEEK_MIN_SENDERS,
         Math.round(POD_ESP_MIX_MIN_FRACTION * 100),
+        undefined,
+        microsoftShare,
       );
       const canTake = (email: string, preferNonAzure: boolean): boolean => {
         const key = email.toLowerCase();
@@ -1435,6 +1445,7 @@ export class Min40TopUpService {
       const brand = input.brandByClientId.get(clientId) || String(clientId);
       const selected = new Set<string>();
       const skipGenerics = this.neverGenericClient(clientId);
+      const microsoftShare = this.clientSplits?.shareForClient(brand);
       // D285 — both PODs. Never skip the off-week POD. On-week first
       // so a scarce generic links. D268's off-week skip is retired.
       const pods: Array<"A" | "B"> = onWeek === "B" ? ["B", "A"] : ["A", "B"];
@@ -1483,11 +1494,16 @@ export class Min40TopUpService {
           if (!isFreeWarmLedgerSeat(row, input.now)) return false;
           return row.provider === "MICROSOFT";
         });
+        const bothEsps =
+          (microsoftShare != null && microsoftShare > 0 && microsoftShare < 1) ||
+          poolHasBothEsps ||
+          (espCounts.GOOGLE > 0 && espCounts.MICROSOFT > 0);
         const neededEsp = espFillOrder(
           espCounts,
           floor,
           Math.round(POD_ESP_MIX_MIN_FRACTION * 100),
-          poolHasBothEsps || (espCounts.GOOGLE > 0 && espCounts.MICROSOFT > 0),
+          bothEsps,
+          microsoftShare,
         );
         const ledgerPicks = pickFreeWarmGenericsForPod({
           seats: this.state.listGenericSeats(),
@@ -1533,7 +1549,8 @@ export class Min40TopUpService {
             espCounts,
             floor,
             Math.round(POD_ESP_MIX_MIN_FRACTION * 100),
-            poolHasBothEsps || (espCounts.GOOGLE > 0 && espCounts.MICROSOFT > 0),
+            bothEsps,
+            microsoftShare,
           );
           const slot =
             mailboxEspSlot(original) ??

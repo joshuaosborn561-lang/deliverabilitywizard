@@ -1,4 +1,4 @@
-import { normalizeSenderEspFamily } from "./esp.js";
+import { normalizeSenderEspFamily, type SenderEspInput } from "./esp.js";
 import { ON_WEEK_MIN_SENDERS, POD_INVENTORY_MIN_SENDERS } from "./clientStaffFloor.js";
 import { roundStaffableWeight } from "./mailboxType.js";
 
@@ -117,9 +117,9 @@ export function genericPoolNeedForPod(namedStaffableInPod: number): number {
 }
 
 export function genericProviderFromAccountType(
-  type: string | null | undefined,
+  typeOrAccount: SenderEspInput,
 ): GenericPoolProvider {
-  const family = normalizeSenderEspFamily(type);
+  const family = normalizeSenderEspFamily(typeOrAccount);
   if (family === "google") return "GOOGLE";
   if (family === "microsoft") return "MICROSOFT";
   return "OTHER";

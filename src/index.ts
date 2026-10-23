@@ -14,6 +14,7 @@ import {
   testIdOf,
 } from "./clients/smartdelivery.js";
 import { InboxKitClient } from "./clients/inboxkit.js";
+import { InboxkitClientSplitCache } from "./lib/inboxkitClientSplit.js";
 import { PorkbunClient } from "./clients/porkbun.js";
 import { SlackClient } from "./clients/slack.js";
 import { slackRoleOf } from "./lib/isolationActors.js";
@@ -288,6 +289,7 @@ async function main(): Promise<void> {
         config.genericPoolWorkspaceId || undefined,
       )
     : null;
+  const inboxkitClientSplits = new InboxkitClientSplitCache(inboxkit);
   const slack = new SlackClient({
     webhookUrl: config.slackWebhookUrl,
     botToken: config.slackBotToken,
@@ -528,6 +530,7 @@ async function main(): Promise<void> {
     smartlead,
     slack,
     state,
+    inboxkitClientSplits,
   );
   const clientFanOut = new ClientFanOutService(
     config,
@@ -692,6 +695,7 @@ async function main(): Promise<void> {
     state,
     inventoryBook,
     slack,
+    inboxkitClientSplits,
   );
   const holdEnforcement = new HoldEnforcementService(
     config,
@@ -699,7 +703,13 @@ async function main(): Promise<void> {
     slack,
     state,
   );
-  const min40TopUp = new Min40TopUpService(config, smartlead, slack, state);
+  const min40TopUp = new Min40TopUpService(
+    config,
+    smartlead,
+    slack,
+    state,
+    inboxkitClientSplits,
+  );
   const powerGrydWatch = new PowerGrydWatchService(
     config,
     slack,

@@ -20,8 +20,10 @@ export interface SmartleadEmailAccount {
   signature?: string;
   username?: string;
   email?: string;
-  /** Smartlead mailbox ESP type, e.g. GMAIL / OUTLOOK */
+  /** Smartlead mailbox ESP type, e.g. GMAIL / OUTLOOK / SMTP */
   type?: string;
+  /** Custom-SMTP host. smtp.gmail.com is Gmail (D301). */
+  smtp_host?: string;
   client_id?: number | null;
   created_at?: string;
   updated_at?: string;

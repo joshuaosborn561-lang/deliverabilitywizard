@@ -37,6 +37,31 @@ describe("espFillOrder", () => {
       "GOOGLE",
     ]);
   });
+
+  it("D301: picks Microsoft toward Parlay's 54% split", () => {
+    assert.deepEqual(
+      espFillOrder({ GOOGLE: 26, MICROSOFT: 10 }, 40, 33, true, 0.54),
+      ["MICROSOFT"],
+    );
+    assert.deepEqual(
+      espFillOrder({ GOOGLE: 8, MICROSOFT: 22 }, 40, 33, true, 0.54),
+      ["GOOGLE"],
+    );
+  });
+
+  it("D301: picks Microsoft toward EMCOR's 60% split", () => {
+    assert.deepEqual(
+      espFillOrder({ GOOGLE: 26, MICROSOFT: 10 }, 40, 33, true, 0.6),
+      ["MICROSOFT"],
+    );
+  });
+
+  it("D301: picks Google toward Peterson's 35% Microsoft split", () => {
+    assert.deepEqual(
+      espFillOrder({ GOOGLE: 10, MICROSOFT: 22 }, 40, 33, true, 0.35),
+      ["GOOGLE"],
+    );
+  });
 });
 
 describe("isExcluded", () => {

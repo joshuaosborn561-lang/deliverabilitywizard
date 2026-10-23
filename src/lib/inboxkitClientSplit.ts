@@ -9,7 +9,6 @@ import {
   inboxkitStatusOf,
   isLapsedInboxkitStatus,
   isScheduledCancelStatus,
-  type InboxkitLicenseMailbox,
 } from "./inboxkitLicense.js";
 import { workspaceMatchesClientName } from "./inboxkitWorkspace.js";
 
@@ -96,9 +95,15 @@ export function inboxkitWorkspaceForClient(
 }
 
 export function inboxkitMailboxCountsTowardEspMix(
-  mailbox: Pick<InboxkitLicenseMailbox, "status" | "license_status">,
+  mailbox: {
+    status?: string | null;
+    license_status?: string | null;
+  },
 ): boolean {
-  const status = inboxkitStatusOf(mailbox);
+  const status = inboxkitStatusOf({
+    status: mailbox.status ?? undefined,
+    license_status: mailbox.license_status ?? undefined,
+  });
   if (isLapsedInboxkitStatus(status)) return false;
   if (isScheduledCancelStatus(status)) return false;
   return true;

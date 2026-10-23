@@ -550,36 +550,54 @@ describe("CampaignCheckService", () => {
   it("D301: Parlay finding text shows the 54% Microsoft target", async () => {
     const state = new StateStore(stateFile());
     await state.load();
+    state.upsertCampaignCheck({
+      campaignId: 4049065,
+      name: "Parlay living",
+      firstSeenAt: "2026-01-01T00:00:00.000Z",
+      firstCheckAt: "2026-01-01T00:00:00.000Z",
+      firstPassedAt: "2026-01-01T00:05:00.000Z",
+      lastSweepAt: "2026-01-01T01:00:00.000Z",
+      lastKind: "hourly",
+      findings: [],
+      status: "ACTIVE",
+    });
+    const warmup = {
+      status: "ACTIVE",
+      created_at: "2026-01-01T00:00:00.000Z",
+      warmup_created_at: "2026-01-01T00:00:00.000Z",
+    };
     const outlook = Array.from({ length: 14 }, (_, i) => ({
       id: 100 + i,
       from_email: `o${i}@parlay.test`,
       from_name: `O ${i}`,
-      signature: "O\nParlay",
+      signature: `O ${i}\nParlay`,
       type: "OUTLOOK",
       client_id: 418274,
       campaign_ids: [4049065],
       is_smtp_success: true,
       is_imap_success: true,
       message_per_day: 15,
+      warmup_details: warmup,
     }));
     const gmail = Array.from({ length: 26 }, (_, i) => ({
       id: 200 + i,
       from_email: `g${i}@parlay.test`,
       from_name: `G ${i}`,
-      signature: "G\nParlay",
+      signature: `G ${i}\nParlay`,
       type: "GMAIL",
       client_id: 418274,
       campaign_ids: [4049065],
       is_smtp_success: true,
       is_imap_success: true,
       message_per_day: 30,
+      warmup_details: warmup,
     }));
     const sl = {
       listCampaigns: async () => [
         { id: 4049065, name: "Parlay living", status: "ACTIVE", client_id: 418274 },
       ],
       listAllEmailAccounts: async () => [...outlook, ...gmail],
-      listClients: async () => [{ id: 418274, name: "Randy Haba", logo: "Parlay Tech" }],
+      listClients: async () => [{ id: 418274, name: "Randy Haba", logo: "Parlay" }],
       getCampaignSequences: async () => [
         { seq_number: 1, email_body: "<div>Hi</div><div>%signature%</div>" },
       ],
@@ -595,7 +613,6 @@ describe("CampaignCheckService", () => {
       undefined,
       splits,
     );
-    await service.run({ mode: "first" });
     const hourly = await service.run({ mode: "hourly" });
     const row = hourly.findings.find((item) => item.campaignId === 4049065);
     const mix = (row?.findings ?? []).find((finding) => finding.kind === "esp_mix");

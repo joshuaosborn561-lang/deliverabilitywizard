@@ -455,9 +455,8 @@ Caps ramp manually (35 on Oct 12).
   on-week POD's warm Microsoft count (generics included) must sit
   within ±max(2, 10% of **that POD's real seat count**) of
   round(POD size × the client's Microsoft share) — Parlay ~54%,
-  EMCOR ~60%, Peterson ~35%. Fall back to the ~1/3 floor
-  (**14 of a 40-seat POD**; a 20-seat POD owes 7) only when
-  InboxKit has no data for that client. Do not pad the denominator with `max(n, 40)`.
+  EMCOR ~60%, Peterson ~35%. Fall back to the D203 rule — when
+  the client has both Outlook and Gmail, neither ESP may sit under ~1/3 of **that POD's real seat count** (**14 of a 40-seat POD**; a 20-seat POD owes 7) — only when InboxKit has no data for that client. Do not pad the denominator with `max(n, 40)`.
   SMTP on smtp.gmail.com and `type:google` count as Gmail;
   `type:m365` / `type:azure` count as Microsoft.
   Azure counts as Microsoft for that mix at **0.1** (D232) and must never take a Google slot.

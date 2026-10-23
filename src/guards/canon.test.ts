@@ -18279,8 +18279,8 @@ describe("owner intent — D297 scan-backfill abort, tail order, 429 path", () =
     );
     assert.match(
       canon,
-      /Canon as of \*\*D297\*\*/,
-      stop("CANON is dated D297.", "CANON.md header is not D297."),
+      /Canon as of \*\*D(297|29[8-9]|[3-9]\d{2})\*\*/,
+      stop("CANON is dated D297 or later.", "CANON.md header is before D297."),
     );
     assert.match(
       canon,
@@ -18304,6 +18304,166 @@ describe("owner intent — D297 scan-backfill abort, tail order, 429 path", () =
       locked,
       /POD-40: every client POD A and POD B must each hold >=40 warm seats/,
       stop("LOCKED POD-40 sentence unchanged (D297).", "docs/LOCKED-CANON.md LOCKED sentence drifted."),
+    );
+  });
+});
+
+describe("owner intent — D299 batch stringify and freeze quarantine", () => {
+  it("D299: batch compact JSON; quarantine a stage after 3 freeze exits; do not widen thresholds", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const locked = await readFile(
+      new URL("../../docs/LOCKED-CANON.md", import.meta.url),
+      "utf8",
+    );
+    const walk = await readFile(
+      new URL("../lib/stringifyYielding.ts", import.meta.url),
+      "utf8",
+    );
+    const freeze = await readFile(
+      new URL("../lib/freezeWatchdog.ts", import.meta.url),
+      "utf8",
+    );
+    const strikes = await readFile(
+      new URL("../lib/freezeStrikes.ts", import.meta.url),
+      "utf8",
+    );
+    const resume = await readFile(
+      new URL("../lib/healthResume.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const store = await readFile(
+      new URL("../state/store.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D299\*\*/,
+      stop("CANON is dated D299.", "CANON.md header is not D299."),
+    );
+    assert.match(
+      canon,
+      /quarantined for 60 minutes/,
+      stop(
+        "CANON names the freeze quarantine (D299).",
+        "CANON.md lost the 60-minute quarantine.",
+      ),
+    );
+    assert.match(
+      canon,
+      /native-stringified in small batches/,
+      stop(
+        "CANON names batched stringify (D299).",
+        "CANON.md lost batched stringify.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D299 — /,
+      stop("The ledger records D299.", "DECISIONS.md has no D299 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D299 \|/m,
+      stop("The status index lists D299 (D127).", "DECISIONS.md status index has no D299 row."),
+    );
+    assert.match(
+      walk,
+      /STRINGIFY_BATCH_ITEMS/,
+      stop("Stringify batches compact values (D299).", "stringifyYielding.ts lost STRINGIFY_BATCH_ITEMS."),
+    );
+    assert.match(
+      walk,
+      /STRINGIFY_SLICE_MS/,
+      stop("Stringify still time-slices (D272/D299).", "stringifyYielding.ts lost STRINGIFY_SLICE_MS."),
+    );
+    assert.match(
+      strikes,
+      /FREEZE_STRIKE_LIMIT = 3/,
+      stop("Three freeze exits quarantine a stage (D299).", "freezeStrikes.ts lost the limit of 3."),
+    );
+    assert.match(
+      strikes,
+      /FREEZE_QUARANTINE_MS = 60 \* 60 \* 1000/,
+      stop("Quarantine is 60 minutes (D299).", "freezeStrikes.ts lost the 60-minute window."),
+    );
+    assert.match(
+      freeze,
+      /deps\.noteStrike\(\)/,
+      stop(
+        "The strike is noted before the flush (D299).",
+        "freezeWatchdog.ts lost noteStrike.",
+      ),
+    );
+    assert.match(
+      index,
+      /flush:\s*\(\)\s*=>\s*state\.saveHot\(\)/,
+      stop("Boot still flushes the lastOk sidecar (D265).", "index.ts lost flush: state.saveHot()."),
+    );
+    assert.match(
+      index,
+      /state\.noteFreezeStrike\(stageName\)/,
+      stop(
+        "A health-loop freeze notes a strike (D299).",
+        "index.ts lost noteFreezeStrike.",
+      ),
+    );
+    assert.match(
+      index,
+      /D299 quarantine/,
+      stop(
+        "A quarantined leftover does not resume there (D299).",
+        "index.ts lost the D299 quarantine log.",
+      ),
+    );
+    assert.match(
+      resume,
+      /leftover: quarantinedLeftover \? null : naturalLeftover/,
+      stop(
+        "A quarantined leftover does not skip the prefix (D299).",
+        "healthResume.ts still skips the prefix for a quarantined leftover.",
+      ),
+    );
+    assert.match(
+      store,
+      /clearFreezeStrikeFile\(this\.filePath, name\)/,
+      stop(
+        "A successful stage clears its strikes (D299).",
+        "store.ts recordStageOk no longer clears freeze strikes.",
+      ),
+    );
+    assert.match(
+      store,
+      /stringifyOffThreadToFile\(this\.hotStamps\(\)/,
+      stop("saveHot still writes flushed slices (D272).", "store.ts saveHot shape drifted."),
+    );
+    assert.doesNotMatch(
+      freeze,
+      /EVENT_LOOP_REPEAT_MS = 5_000/,
+      stop(
+        "Do not hide stalls by widening the repeat threshold (D299).",
+        "freezeWatchdog.ts loosened EVENT_LOOP_REPEAT_MS.",
+      ),
+    );
+    assert.doesNotMatch(
+      freeze,
+      /EVENT_LOOP_EXIT_MS = 10/,
+      stop(
+        "Do not hide stalls by widening the 5m exit (D299).",
+        "freezeWatchdog.ts loosened EVENT_LOOP_EXIT_MS.",
+      ),
+    );
+    assert.match(
+      locked,
+      /POD-40: every client POD A and POD B must each hold >=40 warm seats/,
+      stop("LOCKED POD-40 sentence unchanged (D299).", "docs/LOCKED-CANON.md LOCKED sentence drifted."),
     );
   });
 });

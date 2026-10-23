@@ -15,6 +15,13 @@
  * that walk was not actually yielding. D272 yields on a time budget via
  * `setTimeout(0)`, emits flushed slices, and never concatenates the blob
  * with `+=` across the graph.
+ *
+ * D299 — a time slice still ran `JSON.stringify` / `Object.keys` on one
+ * whole value. Production 2026-10-23 pinned the loop for 5–51s inside
+ * campaign-health (`json.stringify:hot` / `json.stringify:state`) and the
+ * freeze watchdog exited. Compact subtrees are native-stringified in
+ * small batches; a long string is escaped in slices. Output stays
+ * byte-identical to `JSON.stringify`.
  */
 
 import { createWriteStream } from "node:fs";
@@ -27,6 +34,13 @@ export const STRINGIFY_JOIN_CHUNK = 32;
 export const STRINGIFY_FLUSH_BYTES = 64_000;
 /** D272 — yield before a slice can trip the 1s watchdog log / 3s repeat. */
 export const STRINGIFY_SLICE_MS = 8;
+/** D299 — native-stringify this many compact values, then yield. */
+export const STRINGIFY_BATCH_ITEMS = 24;
+/** D299 — a longer string is escaped in slices instead of one JSON.stringify. */
+export const STRINGIFY_COMPACT_STRING_CHARS = 4_096;
+const STRINGIFY_STRING_SLICE_CHARS = 8_192;
+const COMPACT_FANOUT = 24;
+const COMPACT_DEPTH = 4;
 
 let lastTimerYieldAt = 0;
 
@@ -115,46 +129,175 @@ function makeTick(opts: JsonWalkOpts): () => Promise<void> {
   };
 }
 
+function omittedJsonValue(value: unknown): boolean {
+  return (
+    value === undefined ||
+    typeof value === "function" ||
+    typeof value === "symbol"
+  );
+}
+
+/**
+ * D299 — true when `JSON.stringify(value)` is a small native call.
+ * Stops after a handful of keys so a map of hundreds of thousands of
+ * mailboxes is not `Object.keys`'d just to discover it is fat.
+ */
+export function isCompactJsonValue(value: unknown, depth = 0): boolean {
+  if (value === null) return true;
+  if (typeof value === "string") return value.length <= STRINGIFY_COMPACT_STRING_CHARS;
+  if (typeof value === "number" || typeof value === "boolean") return true;
+  if (typeof value !== "object") return false;
+  if (depth >= COMPACT_DEPTH) return false;
+  const withToJson = value as { toJSON?: () => unknown };
+  if (!Array.isArray(value) && typeof withToJson.toJSON === "function") {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    if (value.length > COMPACT_FANOUT) return false;
+    for (let i = 0; i < value.length; i += 1) {
+      const item = Object.hasOwn(value, i) ? value[i] : null;
+      if (!isCompactJsonValue(omittedJsonValue(item) ? null : item, depth + 1)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  const record = value as Record<string, unknown>;
+  let seen = 0;
+  for (const key in record) {
+    if (!Object.hasOwn(record, key)) continue;
+    seen += 1;
+    if (seen > COMPACT_FANOUT) return false;
+    const child = record[key];
+    if (omittedJsonValue(child)) continue;
+    if (!isCompactJsonValue(child, depth + 1)) return false;
+  }
+  return true;
+}
+
+async function emitJsonString(
+  value: string,
+  emit: (chunk: string) => Promise<void>,
+  tick: () => Promise<void>,
+): Promise<void> {
+  await emit('"');
+  for (let i = 0; i < value.length; ) {
+    let end = Math.min(value.length, i + STRINGIFY_STRING_SLICE_CHARS);
+    // Keep a surrogate pair in one slice so the encoding matches
+    // JSON.stringify of the whole string.
+    if (end < value.length && value.charCodeAt(end - 1) >= 0xd800 && value.charCodeAt(end - 1) <= 0xdbff) {
+      end += 1;
+    }
+    const encoded = JSON.stringify(value.slice(i, end));
+    await emit(encoded.slice(1, -1));
+    await tick();
+    i = end;
+  }
+  await emit('"');
+}
+
 async function walkJson(
   node: unknown,
   emit: (chunk: string) => Promise<void>,
   tick: () => Promise<void>,
 ): Promise<void> {
   if (node === null || typeof node !== "object") {
-    await emit(JSON.stringify(node));
+    if (typeof node === "string" && node.length > STRINGIFY_COMPACT_STRING_CHARS) {
+      await emitJsonString(node, emit, tick);
+      return;
+    }
+    const encoded = JSON.stringify(node);
+    await emit(encoded === undefined ? "null" : encoded);
     return;
   }
   const withToJson = node as { toJSON?: () => unknown };
-  if (typeof withToJson.toJSON === "function") {
-    await walkJson(withToJson.toJSON(), emit, tick);
+  if (!Array.isArray(node) && typeof withToJson.toJSON === "function") {
+    const rendered = withToJson.toJSON();
+    if (rendered === undefined) {
+      await emit("null");
+      return;
+    }
+    await walkJson(rendered, emit, tick);
     return;
   }
   if (Array.isArray(node)) {
     await emit("[");
+    let first = true;
+    let batch: unknown[] = [];
+    const flush = async (): Promise<void> => {
+      if (!batch.length) return;
+      const inner = JSON.stringify(batch).slice(1, -1);
+      if (!first) await emit(",");
+      first = false;
+      if (inner) await emit(inner);
+      batch = [];
+      await tick();
+    };
     for (let i = 0; i < node.length; i += 1) {
-      if (i > 0) await emit(",");
-      const item = node[i];
-      if (item === undefined) await emit("null");
-      else await walkJson(item, emit, tick);
+      const raw = Object.hasOwn(node, i) ? node[i] : null;
+      const item = omittedJsonValue(raw) ? null : raw;
+      if (isCompactJsonValue(item)) {
+        batch.push(item);
+        if (batch.length >= STRINGIFY_BATCH_ITEMS) await flush();
+        continue;
+      }
+      await flush();
+      if (!first) await emit(",");
+      first = false;
+      await walkJson(item, emit, tick);
       await tick();
     }
+    await flush();
     await emit("]");
     return;
   }
   const record = node as Record<string, unknown>;
-  const keys = Object.keys(record);
-  await tick();
   await emit("{");
   let first = true;
-  for (const key of keys) {
+  let batch: Record<string, unknown> = Object.create(null);
+  let batchCount = 0;
+  const flush = async (): Promise<void> => {
+    if (!batchCount) return;
+    const inner = JSON.stringify(batch).slice(1, -1);
+    if (inner) {
+      if (!first) await emit(",");
+      first = false;
+      await emit(inner);
+    }
+    batch = Object.create(null);
+    batchCount = 0;
+    await tick();
+  };
+  for (const key in record) {
+    if (!Object.hasOwn(record, key)) continue;
     const child = record[key];
-    if (child === undefined) continue;
+    if (omittedJsonValue(child)) continue;
+    // JSON.stringify omits an object key whose toJSON() returns undefined.
+    // Call it once here so the key is dropped instead of encoded as null.
+    let payload: unknown = child;
+    if (
+      child !== null &&
+      typeof child === "object" &&
+      !Array.isArray(child) &&
+      typeof (child as { toJSON?: unknown }).toJSON === "function"
+    ) {
+      payload = (child as { toJSON: () => unknown }).toJSON();
+      if (payload === undefined) continue;
+    }
+    if (isCompactJsonValue(payload)) {
+      batch[key] = payload;
+      batchCount += 1;
+      if (batchCount >= STRINGIFY_BATCH_ITEMS) await flush();
+      continue;
+    }
+    await flush();
     if (!first) await emit(",");
     first = false;
     await emit(`${JSON.stringify(key)}:`);
-    await walkJson(child, emit, tick);
+    await walkJson(payload, emit, tick);
     await tick();
   }
+  await flush();
   await emit("}");
 }
 

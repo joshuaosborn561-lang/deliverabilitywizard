@@ -6,6 +6,7 @@ import {
   HEALTH_TAIL_STAGES,
   firstInterruptedHealthStage,
   healthNeedsResume,
+  planHealthResume,
   shouldRefreshInventory,
   shouldSkipHealthStage,
   staleHealthStages,
@@ -293,5 +294,63 @@ describe("D211 health resume", () => {
         `${name} tail stage must stay on HEALTH_LOOP_STAGES`,
       );
     }
+  });
+});
+
+describe("D299 quarantine does not pin the leftover", () => {
+  // 9:30am CT. warmup-gate stamped 9:03am CT, still inside the 45-minute
+  // sitting, so D215's leftover is campaign-health (prod 2026-10-23).
+  const now = Date.parse("2026-10-23T14:30:00.000Z");
+  const stageHealth = {
+    inventory: { lastOkAt: "2026-10-23T14:03:10.000Z" },
+    "warmup-gate": { lastOkAt: "2026-10-23T14:03:00.000Z" },
+    "campaign-health": { lastOkAt: "2026-10-23T08:14:00.000Z" },
+    "pod-cover": { lastOkAt: "2026-10-23T10:00:00.000Z" },
+    reconnect: { lastOkAt: "2026-10-23T10:00:00.000Z" },
+    "mailbox-gap": { lastOkAt: "2026-10-23T10:00:00.000Z" },
+  };
+
+  it("still names campaign-health when it is the natural leftover", () => {
+    const plan = planHealthResume(stageHealth, { now });
+    assert.equal(plan.naturalLeftover, "campaign-health");
+    assert.equal(plan.leftover, "campaign-health");
+    assert.equal(plan.resume, true);
+    assert.equal(plan.quarantinedLeftover, false);
+    assert.equal(
+      shouldSkipHealthStage("warmup-gate", stageHealth["warmup-gate"].lastOkAt, {
+        skipIfBeforeStage: plan.leftover,
+        now,
+      }),
+      true,
+    );
+  });
+
+  it("does not skip the prefix when that leftover is quarantined", () => {
+    const plan = planHealthResume(stageHealth, {
+      now,
+      quarantined: new Set(["campaign-health"]),
+    });
+    assert.equal(plan.naturalLeftover, "campaign-health");
+    assert.equal(plan.leftover, null);
+    assert.equal(plan.resume, true);
+    assert.equal(plan.quarantinedLeftover, true);
+    assert.equal(
+      shouldSkipHealthStage("warmup-gate", stageHealth["warmup-gate"].lastOkAt, {
+        skipIfFreshMs: HEALTH_CYCLE_MS,
+        skipIfBeforeStage: plan.leftover,
+        now,
+      }),
+      false,
+      "stale warmup-gate must run; quarantine is not a prefix skip",
+    );
+    assert.equal(
+      shouldSkipHealthStage("inventory", "2026-10-23T14:20:00.000Z", {
+        skipIfFreshMs: HEALTH_CYCLE_MS,
+        skipIfBeforeStage: plan.leftover,
+        now,
+      }),
+      true,
+      "a stage that finished inside this cycle still skip-if-fresh",
+    );
   });
 });

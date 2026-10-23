@@ -10,6 +10,7 @@ import {
   stringifyOffThreadToFile,
 } from "../lib/jsonOffThread.js";
 import { runWithStallScopeAsync } from "../lib/eventLoopAttribution.js";
+import { copyIterableYielding } from "../lib/stringifyYielding.js";
 import { pruneStateLedgers } from "../lib/stateRetention.js";
 import { sleep } from "../lib/http.js";
 import { realignStalePoolAssignment } from "../lib/genericPoolRealign.js";
@@ -2932,7 +2933,11 @@ export class StateStore {
   /** D257 — last full-dump stringify wall time (worker, after prune). */
   lastSaveMs = 0;
 
-  private hotStamps(): Record<string, unknown> {
+  private async hotStamps(): Promise<Record<string, unknown>> {
+    // D300 — spreading a large gone-id / gone-email set was one
+    // synchronous allocation before json.stringify:hot. Copy in slices.
+    const goneIds = await copyIterableYielding(this.isolationGoneIds);
+    const goneEmails = await copyIterableYielding(this.poolGoneEmails);
     return {
       version: 1,
       savedAt: new Date().toISOString(),
@@ -2957,13 +2962,13 @@ export class StateStore {
       // (prod 2026-10-19 after D287) and tripped the freeze watchdog.
       isolationPrune: {
         at: new Date().toISOString(),
-        goneIds: [...this.isolationGoneIds],
+        goneIds,
       },
       // D269 — ghost pool emails must survive a freeze-kill that
       // only flushes the sidecar (never the full dump).
       poolPrune: {
         at: new Date().toISOString(),
-        goneEmails: [...this.poolGoneEmails],
+        goneEmails,
       },
       // D294 — compact decide receipts only. Never the isolation.actions map
       // (D288: embedding living isolation maps made json.stringify:hot stall).
@@ -3134,7 +3139,7 @@ export class StateStore {
         const tmp = `${target}.${process.pid}.${++this.saveSeq}.tmp`;
         // D272 — production tagged `json.stringify:yielding` 10–18s on this
         // path. Write flushed slices; never join the sidecar into one string.
-        await stringifyOffThreadToFile(this.hotStamps(), tmp, {
+        await stringifyOffThreadToFile(await this.hotStamps(), tmp, {
           op: "json.stringify:hot",
         });
         await rename(tmp, target);

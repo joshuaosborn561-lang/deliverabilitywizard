@@ -19,9 +19,16 @@
  * D299 — a time slice still ran `JSON.stringify` / `Object.keys` on one
  * whole value. Production 2026-10-23 pinned the loop for 5–51s inside
  * campaign-health (`json.stringify:hot` / `json.stringify:state`) and the
- * freeze watchdog exited. Compact subtrees are native-stringified in
+ * freeze watchdog exited. Compact primitives are native-stringified in
  * small batches; a long string is escaped in slices. Output stays
  * byte-identical to `JSON.stringify`.
+ *
+ * D300 — D299 still treated objects/arrays with ≤24 keys as compact and
+ * `JSON.stringify`'d them in batches of 24. After the 10:46am CT deploy
+ * the freeze watchdog exited 7 more times: `json.stringify:state` walls
+ * 15–20s, `json.stringify:hot` delay 48.9s. Objects and arrays are
+ * never a native stringify. Persist yields to the timer phase
+ * (`setTimeout(0)`) so the watchdog can tick.
  */
 
 import { createWriteStream } from "node:fs";
@@ -39,8 +46,6 @@ export const STRINGIFY_BATCH_ITEMS = 24;
 /** D299 — a longer string is escaped in slices instead of one JSON.stringify. */
 export const STRINGIFY_COMPACT_STRING_CHARS = 4_096;
 const STRINGIFY_STRING_SLICE_CHARS = 8_192;
-const COMPACT_FANOUT = 24;
-const COMPACT_DEPTH = 4;
 
 let lastTimerYieldAt = 0;
 
@@ -61,13 +66,27 @@ export function yieldEventLoop(): Promise<void> {
   });
 }
 
+/**
+ * D300 — persist / campaign-health index always return to the timer
+ * phase. Shared `yieldEventLoop` still uses `setImmediate` between
+ * slices for min40; that is the wrong tool when the walk itself is
+ * the freeze.
+ */
+export function yieldToTimers(): Promise<void> {
+  lastTimerYieldAt = Date.now();
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}
+
 export function createTimeSlicer(
   sliceMs = STRINGIFY_SLICE_MS,
+  yieldFn: () => Promise<void> = yieldEventLoop,
 ): () => Promise<void> {
   let mark = Date.now();
   return async () => {
     if (Date.now() - mark >= sliceMs) {
-      await yieldEventLoop();
+      await yieldFn();
       mark = Date.now();
     }
   };
@@ -81,15 +100,34 @@ export function createTimeSlicer(
 export function createLoopYielder(
   every = STRINGIFY_YIELD_EVERY,
   sliceMs = STRINGIFY_SLICE_MS,
+  yieldFn: () => Promise<void> = yieldEventLoop,
 ): () => Promise<void> {
-  const slice = createTimeSlicer(sliceMs);
+  const slice = createTimeSlicer(sliceMs, yieldFn);
   const cadence = Math.max(1, every);
   let n = 0;
   return async () => {
     n += 1;
-    if (n % cadence === 0) await yieldEventLoop();
+    if (n % cadence === 0) await yieldFn();
     else await slice();
   };
+}
+
+/** D300 — copy a large Set/iterable without one synchronous spread. */
+export async function copyIterableYielding<T>(
+  items: Iterable<T>,
+  opts: { every?: number; sliceMs?: number } = {},
+): Promise<T[]> {
+  const out: T[] = [];
+  const yieldItem = createLoopYielder(
+    opts.every ?? 256,
+    opts.sliceMs ?? STRINGIFY_SLICE_MS,
+    yieldToTimers,
+  );
+  for (const item of items) {
+    out.push(item);
+    await yieldItem();
+  }
+  return out;
 }
 
 /**
@@ -120,13 +158,11 @@ type JsonWalkOpts = {
 };
 
 function makeTick(opts: JsonWalkOpts): () => Promise<void> {
-  const slice = createTimeSlicer(opts.sliceMs);
-  let ops = 0;
-  return async () => {
-    ops += 1;
-    if (ops % opts.yieldEvery === 0) await yieldEventLoop();
-    else await slice();
-  };
+  // D300 — time-slice only. A count-based setTimeout every 8 keys
+  // made a 100k-key dump tens of thousands of timer hops. Each
+  // slice returns to the timer phase so the watchdog can tick.
+  void opts.yieldEvery;
+  return createTimeSlicer(opts.sliceMs, yieldToTimers);
 }
 
 function omittedJsonValue(value: unknown): boolean {
@@ -138,41 +174,16 @@ function omittedJsonValue(value: unknown): boolean {
 }
 
 /**
- * D299 — true when `JSON.stringify(value)` is a small native call.
- * Stops after a handful of keys so a map of hundreds of thousands of
- * mailboxes is not `Object.keys`'d just to discover it is fat.
+ * D299 / D300 — true when `JSON.stringify(value)` is a small native
+ * call. D300: objects and arrays are never compact. A "small" mailbox
+ * or isolation row still pinned the loop for 15–50s after D299 because
+ * 24 of those rows were one `JSON.stringify`.
  */
-export function isCompactJsonValue(value: unknown, depth = 0): boolean {
+export function isCompactJsonValue(value: unknown, _depth = 0): boolean {
   if (value === null) return true;
   if (typeof value === "string") return value.length <= STRINGIFY_COMPACT_STRING_CHARS;
   if (typeof value === "number" || typeof value === "boolean") return true;
-  if (typeof value !== "object") return false;
-  if (depth >= COMPACT_DEPTH) return false;
-  const withToJson = value as { toJSON?: () => unknown };
-  if (!Array.isArray(value) && typeof withToJson.toJSON === "function") {
-    return false;
-  }
-  if (Array.isArray(value)) {
-    if (value.length > COMPACT_FANOUT) return false;
-    for (let i = 0; i < value.length; i += 1) {
-      const item = Object.hasOwn(value, i) ? value[i] : null;
-      if (!isCompactJsonValue(omittedJsonValue(item) ? null : item, depth + 1)) {
-        return false;
-      }
-    }
-    return true;
-  }
-  const record = value as Record<string, unknown>;
-  let seen = 0;
-  for (const key in record) {
-    if (!Object.hasOwn(record, key)) continue;
-    seen += 1;
-    if (seen > COMPACT_FANOUT) return false;
-    const child = record[key];
-    if (omittedJsonValue(child)) continue;
-    if (!isCompactJsonValue(child, depth + 1)) return false;
-  }
-  return true;
+  return false;
 }
 
 async function emitJsonString(
@@ -313,7 +324,7 @@ export async function stringifyYielding(
   });
   const chunks: string[] = [];
   let pending = "";
-  await yieldEventLoop();
+  await yieldToTimers();
 
   const emit = async (chunk: string): Promise<void> => {
     pending += chunk;
@@ -348,7 +359,7 @@ export async function stringifyYieldingToFile(
   const file = createWriteStream(filePath);
   let written = 0;
   let pending = "";
-  await yieldEventLoop();
+  await yieldToTimers();
 
   const flush = async (force = false): Promise<void> => {
     while (pending.length >= flushBytes || (force && pending.length > 0)) {

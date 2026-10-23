@@ -292,7 +292,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D294 | Live | Needs-you Approve tap: Slack ack within 3s even during heavy health (scans yield + pause while the tap is live); decide stamps approved on the lastOk sidecar before any buy and isolation-buy-resume finishes an approved retire/buy after a freeze-kill; every tap logs one line and the card updates with per-item results including buy failures; digest drops executed / denied / superseded (burned attach-block, sibling approved/executed Retire); Josh-only stays Josh-only; boot logs Slack Josh/Cayden ids and warns on overlap or a known swap. LOCKED section unchanged. |
 | D295 | Live | Old-wizard fix: Insight Josh matcher accepts `client_id` 582890 as an Insight-domain signal when from-name is Josh / Joshua Osborn (prod 2026-10-20: 14 false `insight_non_josh_sender` on Insight Tix #4173509 — seven Joshua seats on joshosales.info / josbornsales.info / joshuaosales.info). Do not widen the `/josh(ua)?osborn/` regex. Generics, other brands, and non-Josh names stay blocked. One finding per account. LOCKED section unchanged. |
 | D297 | Live | Old-wizard fix: health-pass scan-backfill honors the stage AbortSignal (and Smartlead fetches stop, no retry-as-timeout), runs after isolation-buy-resume, skips when less than ~20 minutes remain in the 45-minute health lock, and HTTP 429s log the Smartlead endpoint. LOCKED section unchanged. |
-| D299 | Live | Freeze/restart loop 2026-10-23: state/hot stringify batches compact values so one JSON.stringify cannot pin the loop for seconds; a health-loop stage that freeze-exits 3 times is quarantined for 60 minutes so leftover resume does not restart there forever. Thresholds are not widened. LOCKED section unchanged. |
+| D299 | Live — stringify batching amended by D300; 60-minute freeze quarantine stays | Freeze/restart loop 2026-10-23: state/hot stringify batches compact values so one JSON.stringify cannot pin the loop for seconds; a health-loop stage that freeze-exits 3 times is quarantined for 60 minutes so leftover resume does not restart there forever. Thresholds are not widened. LOCKED section unchanged. |
+| D300 | Live | Freeze/restart loop after D299 (2026-10-23): objects/arrays are never native-stringified; persist and indexAccountsByCampaign yield to timers; campaign-health snapshots use a campaign Map and yield. lastOk stamps unchanged. Thresholds not widened. LOCKED section unchanged. |
 
 ---
 
@@ -10939,6 +10940,67 @@ event-loop gap. `src/lib/freezeStrikes.test.ts`.
 `src/lib/freezeWatchdog.test.ts` strike-before-flush.
 `src/lib/healthResume.test.ts` quarantined leftover does not
 skip the prefix. `src/guards/canon.test.ts` D299.
+`src/guards/lockedCanon.test.ts` LOCKED section unchanged.
+
+## D300 — Walk objects; timer-yield persist and campaign-health index
+
+**Date.** 2026-10-23 (Josh).
+
+**Decision.** D299 (main `180dbff`, Railway deploy ~10:46am CT)
+did not stop the freeze/restart loop. In the next ~75 minutes
+the freeze watchdog fired `process.exit(1)` seven times.
+`json.stringify:state` walls were 15–20s (client-rest,
+campaign-health, and stage=none). `json.stringify:hot`
+event-loop delays reached 48.9s inside campaign-health and
+16.7s inside warmup-gate. `scan:indexAccountsByCampaign`
+blocked ~28s (elu 0.99) inside campaign-health. D215 leftover
+resume restarted at campaign-health every boot, so
+campaign-health had no successful pass since 08:14Z and
+reconnect / pod-cover / mailbox-gap last succeeded ~10:05Z.
+Other stages (warmup-gate, health-pass, hold-enforcement)
+still advanced. Do not widen the freeze thresholds. Do not
+change LOCKED canon. Never START, pause, or touch STOPPED.
+Never buy. lastOk sidecar stamps stay the same.
+
+1. **Never native-stringify a composite.** Compact is
+   primitives only (null / bool / number / short string).
+   Objects and arrays are always walked. Long strings stay
+   sliced. Output stays byte-identical to `JSON.stringify`.
+   The file path still flushes slices and never joins the
+   blob. Persist yields to the timer phase (`setTimeout(0)`),
+   not a `setImmediate` chain.
+2. **Copy gone sets in slices.** `saveHot` does not spread
+   `isolationGoneIds` / `poolGoneEmails` in one allocation.
+3. **Index and snapshot yield to timers.**
+   `indexAccountsByCampaign` uses `setTimeout(0)` on its
+   time slice. campaign-health snapshots look up campaigns
+   by id (same staffing math as `campaigns.find`) and yield
+   so the O(accounts × ids × campaigns) walk cannot pin the
+   loop before top-up indexes.
+
+**Why.** Quarantining campaign-health (D299) does not help
+when stringify during the prefix (client-rest) or a
+synchronous index/snapshot inside the stage is the freeze.
+Chat history is not durable; the walk and the timer yields
+are.
+
+**Rejected.** Widening `EVENT_LOOP_REPEAT_MS` /
+`EVENT_LOOP_EXIT_MS` or the 3-in-120s rule. Skipping
+campaign-health forever. Capping gone-campaign ids or ghost
+pool emails (D269/D288). Changing min-40, the 21-day warmup
+gate, generics rules, or Topup. A bot setting a campaign
+ACTIVE. Editing the LOCKED section.
+
+**Supersedes / amends.** Amends D299 stringify batching and
+D272 persist yields. Does not reverse D1, D40, D50, D122,
+D211/D214/D249 sitting math, D247/D257/D265/D271 thresholds,
+D269 ghost persistence, D288 sidecar shape, D299 quarantine,
+or the LOCKED text.
+
+**Guards.** `src/lib/stringifyYielding.test.ts` production-size
+gap + objects are not compact. `src/lib/accountCampaignIndex.test.ts`
+production-size gap. `src/services/campaignHealth.test.ts`
+production-size full pass. `src/guards/canon.test.ts` D300.
 `src/guards/lockedCanon.test.ts` LOCKED section unchanged.
 
 

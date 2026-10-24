@@ -18316,10 +18316,6 @@ describe("owner intent — D298 off-week POD sweep", () => {
       new URL("../services/clientRest.ts", import.meta.url),
       "utf8",
     );
-describe("owner intent — D299 batch stringify and freeze quarantine", () => {
-  it("D299: batch compact JSON; quarantine a stage after 3 freeze exits; do not widen thresholds", async () => {
-    const { readFile } = await import("node:fs/promises");
-    const stop = (want: string, got: string) => `${want} ${got}`;
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
     const decisions = await readFile(
       new URL("../../DECISIONS.md", import.meta.url),
@@ -18343,6 +18339,16 @@ describe("owner intent — D299 batch stringify and freeze quarantine", () => {
     );
   });
 });
+
+describe("owner intent — D299 batch stringify and freeze quarantine", () => {
+  it("D299: batch compact JSON; quarantine a stage after 3 freeze exits; do not widen thresholds", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
     const locked = await readFile(
       new URL("../../docs/LOCKED-CANON.md", import.meta.url),
       "utf8",

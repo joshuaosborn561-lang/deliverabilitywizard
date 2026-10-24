@@ -292,6 +292,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D294 | Live | Needs-you Approve tap: Slack ack within 3s even during heavy health (scans yield + pause while the tap is live); decide stamps approved on the lastOk sidecar before any buy and isolation-buy-resume finishes an approved retire/buy after a freeze-kill; every tap logs one line and the card updates with per-item results including buy failures; digest drops executed / denied / superseded (burned attach-block, sibling approved/executed Retire); Josh-only stays Josh-only; boot logs Slack Josh/Cayden ids and warns on overlap or a known swap. LOCKED section unchanged. |
 | D295 | Live | Old-wizard fix: Insight Josh matcher accepts `client_id` 582890 as an Insight-domain signal when from-name is Josh / Joshua Osborn (prod 2026-10-20: 14 false `insight_non_josh_sender` on Insight Tix #4173509 — seven Joshua seats on joshosales.info / josbornsales.info / joshuaosales.info). Do not widen the `/josh(ua)?osborn/` regex. Generics, other brands, and non-Josh names stay blocked. One finding per account. LOCKED section unchanged. |
 | D297 | Live | Old-wizard fix: health-pass scan-backfill honors the stage AbortSignal (and Smartlead fetches stop, no retry-as-timeout), runs after isolation-buy-resume, skips when less than ~20 minutes remain in the 45-minute health lock, and HTTP 429s log the Smartlead endpoint. LOCKED section unchanged. |
+| D298 | Live | Client-rest off-week POD sweep: every off-week POD seat (named + generics) comes off every ACTIVE, non-excluded campaign of its own client, even when a candidate gate skipped it. PAUSED/STOPPED keep seats; no attach; min-40 per POD. Guard: the sweep holds while the client's on-week POD has fewer than 40 linked seats (30 for TechEvo); Insight 582890 is never swept. LOCKED section unchanged. |
 | D299 | Live — stringify batching amended by D300; 60-minute freeze quarantine stays | Freeze/restart loop 2026-10-23: state/hot stringify batches compact values so one JSON.stringify cannot pin the loop for seconds; a health-loop stage that freeze-exits 3 times is quarantined for 60 minutes so leftover resume does not restart there forever. Thresholds are not widened. LOCKED section unchanged. |
 | D300 | Live | Freeze/restart loop after D299 (2026-10-23): objects/arrays are never native-stringified; persist and indexAccountsByCampaign yield to timers; campaign-health snapshots use a campaign Map and yield. lastOk stamps unchanged. Thresholds not widened. LOCKED section unchanged. |
 | D301 | Live | POD ESP mix matches each client's InboxKit Google/Microsoft split (±max(2, 10% of the POD) of round(POD × Microsoft share)); 1/3 floor is fallback only when InboxKit has no row. SMTP smtp.gmail.com and type:google are Gmail; type:m365 / type:azure are Microsoft. min-40 / campaign top-up pick generics toward that split. Finding text shows the client's target. Parlay ~54%, EMCOR ~60%, Peterson ~35%. LOCKED section unchanged. |
@@ -11060,3 +11061,27 @@ map + cache. `src/services/campaignTopUp.test.ts` fill order.
 `src/guards/lockedCanon.test.ts` LOCKED section unchanged.
 
 
+
+## D298 — Off-week POD sweep in client-rest
+
+**Date.** 2026-10-22 (Josh, via Deliverability).
+
+**Why.** Client-rest only unlinked off-week seats that passed every
+candidate gate (rotation-pool generic, retired domain, attach block,
+HOLD-UNTIL, excluded-only membership, missing cohort, generic rest
+record). A POD-tagged seat that failed any gate was skipped silently and
+stayed linked. EMCOR: POD-A restaffed onto one campaign on 10/1 stayed
+there through POD-B's fortnight (75 senders on 10/21), plus 3 POD-A
+generics left behind by a swap.
+
+**Rule.** After the off-week loop, every seat whose POD tag is off-week
+comes off every ACTIVE, non-excluded campaign of its own client
+(mailbox `client_id`, else its single campaign client). Named seats and
+generics alike. PAUSED/STOPPED keep seats (D207). Other clients'
+campaigns, GABE-VM-RESERVED seats, dual-POD seats, and rotation-skipped
+clients are untouched. The per-campaign floor is exempt like the
+off-week loop (min-40 is per POD); the last-account guard holds. No
+attach, no campaign status change.
+
+**Guards.** `src/services/clientRestOffWeekSweep.test.ts`. No change to
+the LOCKED text.

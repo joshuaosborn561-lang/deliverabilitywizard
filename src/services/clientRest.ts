@@ -13,6 +13,8 @@ import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { mailboxPodOf } from "../lib/podInventory.js";
+import { INSIGHT_CLIENT_ID } from "../lib/insightCampaigns.js";
+import { TECHEVO_CLIENT_ID } from "../lib/namedClientIds.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { isGabeVmReserved } from "../lib/canaryLock.js";
 import {
@@ -50,6 +52,7 @@ import {
 import { activeHoldUntilDate, owesWarmup, tagNames } from "./warmupGate.js";
 import {
   clientIdFromRestGroupKey,
+  hasDualPodTags,
   isPodRotationSkippedClient,
 } from "../lib/podRotation.js";
 
@@ -169,6 +172,76 @@ export function clientRestGroupKey(
   const domain = email.split("@")[1] ?? "";
   if (isBcpOwnedDomain(domain)) return "bcp";
   return null;
+}
+
+/**
+ * D298 — client that owns an off-week POD seat: the mailbox
+ * `client_id`, else the single named client across its campaigns.
+ */
+export function offWeekSweepOwnerId(
+  account: SmartleadAccountWithCampaigns,
+  campaignClientById: Map<number, number | null | undefined>,
+): number | null {
+  if (typeof account.client_id === "number" && Number.isFinite(account.client_id)) {
+    return account.client_id;
+  }
+  const ids = new Set<number>();
+  for (const id of campaignIdsOf(account)) {
+    const clientId = campaignClientById.get(id);
+    if (typeof clientId === "number" && Number.isFinite(clientId)) ids.add(clientId);
+  }
+  return ids.size === 1 ? [...ids][0]! : null;
+}
+
+/**
+ * D298 — ACTIVE, non-excluded campaigns of the seat's own client the
+ * off-week seat is still linked to. PAUSED/STOPPED keep seats (D207).
+ */
+export function offWeekSweepTargets(
+  account: SmartleadAccountWithCampaigns,
+  ownerId: number,
+  campaignById: Map<number, SmartleadCampaign>,
+  excluded: string[],
+): number[] {
+  return campaignIdsOf(account).filter((id) => {
+    const campaign = campaignById.get(id);
+    if (!campaign || campaign.client_id !== ownerId) return false;
+    return isRestDetachableCampaign(campaign, excluded);
+  });
+}
+
+/** D298 guard — on-week POD floor per client (TechEvo runs 30). */
+export function offWeekSweepFloor(ownerId: number): number {
+  return ownerId === TECHEVO_CLIENT_ID ? 30 : 40;
+}
+
+/**
+ * D298 guard — the sweep may unlink an off-week seat only when the
+ * client's on-week POD still holds its floor on ACTIVE client campaigns.
+ * Insight (582890) is never swept.
+ */
+export function offWeekSweepAllowed(ownerId: number, onWeekLinked: number): boolean {
+  if (ownerId === INSIGHT_CLIENT_ID) return false;
+  return onWeekLinked >= offWeekSweepFloor(ownerId);
+}
+
+/** D298 guard — on-week POD seats linked to an ACTIVE, non-excluded campaign of the client. */
+export function countOnWeekLinked(
+  accounts: SmartleadAccountWithCampaigns[],
+  ownerId: number,
+  isOnWeekPod: (pod: Parameters<typeof isOffWeek>[0]) => boolean,
+  campaignClientById: Map<number, number | null | undefined>,
+  campaignById: Map<number, SmartleadCampaign>,
+  excluded: string[],
+): number {
+  let n = 0;
+  for (const account of accounts) {
+    const pod = mailboxPodOf(account);
+    if (!pod || !isOnWeekPod(pod)) continue;
+    if (offWeekSweepOwnerId(account, campaignClientById) !== ownerId) continue;
+    if (offWeekSweepTargets(account, ownerId, campaignById, excluded).length) n++;
+  }
+  return n;
 }
 
 export class ClientRestService {
@@ -504,6 +577,88 @@ export class ClientRestService {
         };
         if (!dryRun) this.state.markRestingInbox(record);
       }
+    }
+
+    // D298 — off-week POD sweep. The main loop above only reaches seats
+    // that pass every candidate gate (rotation-pool generic, retired
+    // domain, attach block, hold, excluded-only membership, missing
+    // cohort, generic rest record). A POD-tagged seat that fails any
+    // gate was silently left linked, so an off-week POD restaffed onto
+    // one campaign (EMCOR, 10/1) stayed there through the next POD's
+    // fortnight, named seats and generics alike. The POD tag is the
+    // truth: every off-week POD seat comes off every ACTIVE campaign of
+    // its own client. Floor exemption matches the off-week loop (min-40
+    // is per POD, not per campaign); the last-account guard still holds.
+    const handled = new Set(offWeek.map((row) => row.email));
+    const onWeekLinkedByClient = new Map<number, number>();
+    for (const account of accounts as SmartleadAccountWithCampaigns[]) {
+      const email = accountEmail(account);
+      if (!email || !account.id || handled.has(email)) continue;
+      const pod = mailboxPodOf(account);
+      if (!pod || !isOffWeek(pod, now)) continue;
+      if (hasDualPodTags(account.tags)) continue;
+      if (isGabeVmReserved(account)) continue;
+      const ownerId = offWeekSweepOwnerId(account, campaignClientById);
+      if (ownerId == null) continue;
+      if (isPodRotationSkippedClient(ownerId, pocSkipIds)) continue;
+      if (ownerId === INSIGHT_CLIENT_ID) continue;
+      if (!onWeekLinkedByClient.has(ownerId)) {
+        onWeekLinkedByClient.set(
+          ownerId,
+          countOnWeekLinked(
+            accounts as SmartleadAccountWithCampaigns[],
+            ownerId,
+            (p) => !isOffWeek(p, now),
+            campaignClientById,
+            campaignById,
+            this.config.topUpExcludeCampaigns,
+          ),
+        );
+      }
+      const onWeekLinked = onWeekLinkedByClient.get(ownerId)!;
+      if (!offWeekSweepAllowed(ownerId, onWeekLinked)) {
+        result.skipped.push(
+          `${email}: off-week POD-${pod} sweep held — client ${ownerId} on-week POD has ${onWeekLinked} < ${offWeekSweepFloor(ownerId)} (D298 guard)`,
+        );
+        continue;
+      }
+      const targets = offWeekSweepTargets(
+        account,
+        ownerId,
+        campaignById,
+        this.config.topUpExcludeCampaigns,
+      );
+      if (!targets.length) continue;
+      const removed = await this.detachFromCampaigns(
+        account,
+        email,
+        targets,
+        membership,
+        dryRun,
+        result,
+        campaignById,
+        true,
+      );
+      if (!removed.length) continue;
+      const existing = this.state.getRestingInbox(email);
+      if (!dryRun) {
+        this.state.markRestingInbox({
+          accountId: account.id,
+          email,
+          clientId: `id:${ownerId}`,
+          cohort: pod,
+          kind: "client",
+          restingSince: existing?.restingSince ?? now.toISOString(),
+          removedFromCampaigns: [
+            ...new Set([...(existing?.removedFromCampaigns ?? []), ...removed]),
+          ],
+          lastSameEspInbox: existing?.lastSameEspInbox ?? null,
+        });
+      }
+      result.benched.push({ email, campaignIds: removed });
+      result.skipped.push(
+        `${email}: off-week POD-${pod} sweep unlinked #${removed.join(", #")} (D298)`,
+      );
     }
 
     for (const row of onWeek) {

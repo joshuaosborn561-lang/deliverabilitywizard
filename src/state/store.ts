@@ -2611,6 +2611,7 @@ export class StateStore {
 
   dropCopyCanary(campaignId: number): void {
     delete this.state.isolation.copyCanaries[String(campaignId)];
+    this.bumpCanaryIndex();
   }
 
   /**
@@ -2681,6 +2682,7 @@ export class StateStore {
       testId: testId ?? existing?.testId,
       updatedAt: new Date().toISOString(),
     };
+    this.bumpCanaryIndex();
   }
 
   getCopyCanaries(campaignId: number): string[] {
@@ -2708,19 +2710,90 @@ export class StateStore {
     return undefined;
   }
 
-  listCopyCanaryEmails(): Set<string> {
-    const out = new Set<string>();
-    for (const row of Object.values(this.state.isolation.copyCanaries)) {
+  /**
+   * D302 — canary lookups were O(copy-canary emails × released fleet) per
+   * call: every email re-merged the released fleet. isCopyCanary runs per
+   * mailbox in warmup-gate, campaign-health, pod counts and min40, so a
+   * single sync loop over the book pinned the event loop for 10–30s and
+   * the freeze watchdog killed the health pass. Build the sets once and
+   * reuse them until the canary maps change.
+   */
+  private canaryIndexVersion = 0;
+  private canaryIndex: {
+    key: unknown[];
+    releasedEmails: Set<string>;
+    releasedDomains: Set<string>;
+    canaryEmails: Set<string>;
+    fleetEmails: Set<string>;
+    fleetDomains: Set<string>;
+    hasFleet: boolean;
+  } | null = null;
+
+  private bumpCanaryIndex(): void {
+    this.canaryIndexVersion += 1;
+    this.canaryIndex = null;
+  }
+
+  private getCanaryIndex() {
+    const iso = this.state.isolation;
+    const key = [
+      this.canaryIndexVersion,
+      iso,
+      iso.copyCanaries,
+      iso.releasedCanaryFleet,
+      iso.copyCanaryFleet,
+    ];
+    const cached = this.canaryIndex;
+    if (cached && cached.key.every((part, i) => part === key[i])) return cached;
+    const released = this.getReleasedCanaryFleet();
+    const releasedEmails = new Set(released.emails.map((e) => e.toLowerCase()));
+    const releasedDomains = new Set(released.domains.map((d) => d.toLowerCase()));
+    const isReleased = (email: string): boolean => {
+      const k = email.trim().toLowerCase();
+      if (!k.includes("@")) return false;
+      const domain = k.split("@")[1] ?? "";
+      if (domain && releasedDomains.has(domain)) return true;
+      return releasedEmails.has(k);
+    };
+    const canaryEmails = new Set<string>();
+    for (const row of Object.values(iso.copyCanaries)) {
       for (const email of row.emails) {
-        const key = email.toLowerCase();
-        if (!this.isReleasedCanary(key)) out.add(key);
+        const k = email.toLowerCase();
+        if (!isReleased(k)) canaryEmails.add(k);
       }
     }
-    return out;
+    const fleet = this.getCopyCanaryFleet();
+    const fleetEmails = new Set((fleet?.emails ?? []).map((e) => e.toLowerCase()));
+    const fleetDomains = new Set(
+      (fleet?.domains ?? [])
+        .map((d) => d.toLowerCase())
+        .filter((d) => !releasedDomains.has(d.trim())),
+    );
+    // getCopyCanaryFleet may replace the fleet with its sanitized copy.
+    key[4] = iso.copyCanaryFleet;
+    this.canaryIndex = {
+      key,
+      releasedEmails,
+      releasedDomains,
+      canaryEmails,
+      fleetEmails,
+      fleetDomains,
+      hasFleet: Boolean(fleet),
+    };
+    return this.canaryIndex;
+  }
+
+  listCopyCanaryEmails(): Set<string> {
+    return new Set(this.getCanaryIndex().canaryEmails);
   }
 
   isReleasedCanary(email: string): boolean {
-    return isReleasedCanaryEmail(email, this.getReleasedCanaryFleet());
+    const idx = this.getCanaryIndex();
+    const k = email.trim().toLowerCase();
+    if (!k.includes("@")) return false;
+    const domain = k.split("@")[1] ?? "";
+    if (domain && idx.releasedDomains.has(domain)) return true;
+    return idx.releasedEmails.has(k);
   }
 
   getReleasedCanaryFleet(): ReleasedCanaryFleetRecord {
@@ -2745,12 +2818,12 @@ export class StateStore {
   isCopyCanary(email: string): boolean {
     const lower = email.toLowerCase();
     if (this.isReleasedCanary(lower)) return false;
-    if (this.listCopyCanaryEmails().has(lower)) return true;
-    return isCopyCanaryFleetEmail(
-      lower,
-      this.getCopyCanaryFleet(),
-      this.getReleasedCanaryFleet(),
-    );
+    const idx = this.getCanaryIndex();
+    if (idx.canaryEmails.has(lower)) return true;
+    if (!idx.hasFleet) return false;
+    if (idx.fleetEmails.has(lower)) return true;
+    const domain = lower.split("@")[1] ?? "";
+    return Boolean(domain) && idx.fleetDomains.has(domain);
   }
 
   setCopyCanaryFleet(record: CopyCanaryFleetRecord): void {

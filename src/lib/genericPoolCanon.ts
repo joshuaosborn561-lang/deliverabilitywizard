@@ -518,7 +518,7 @@ export async function syncGenericSeatsFromInventory(
               typeof account.id === "number"
                 ? account.id
                 : existingExcluded?.slAccountId ?? null,
-            provider: genericProviderFromAccountType(account.type),
+            provider: genericProviderFromAccountType(account),
             excluded: true,
             warmupEnabled: mailboxWarmupIsOn(account),
             reason: existingExcluded?.reason ?? "cornerstone_never_generic",
@@ -663,7 +663,7 @@ export async function syncGenericSeatsFromInventory(
     const insightBlocked = isInsightClientId(assignedClientId);
     const seat = emptyGenericSeat(email, {
       slAccountId: typeof account.id === "number" ? account.id : existing?.slAccountId ?? null,
-      provider: genericProviderFromAccountType(account.type),
+      provider: genericProviderFromAccountType(account),
       warmReadyAt,
       assignedClientId: insightBlocked ? null : assignedClientId,
       assignedCampaignIds: insightBlocked ? [] : assignedCampaignIds,

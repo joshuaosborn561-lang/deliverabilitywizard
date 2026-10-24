@@ -41,10 +41,12 @@ import {
   countClientInboxFloors,
   detachWouldBreakStaffableFloor,
   ON_WEEK_MIN_SENDERS,
+  formatPodEspMixFinding,
   podEspMixHolds,
-  podEspMixMinSeats,
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
+import type { InboxkitClientSplitCache } from "../lib/inboxkitClientSplit.js";
+import { inboxkitWorkspaceForClient } from "../lib/inboxkitClientSplit.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import {
   INSIGHT_MAILBOX_SIGNATURE_BLANK,
@@ -204,6 +206,7 @@ export class CampaignCheckService {
     private readonly state: StateStore,
     private readonly book: InventoryBook,
     private readonly slack?: SlackClient,
+    private readonly clientSplits?: InboxkitClientSplitCache,
   ) {}
 
   async run(
@@ -236,6 +239,7 @@ export class CampaignCheckService {
     throwIfAborted(opts.signal);
     const { campaigns, accounts, clients } =
       opts.inventory ?? (await this.book.get());
+    await this.clientSplits?.ensureLoaded();
     const accountsByCampaign = await indexAccountsByCampaign(
       accounts as SmartleadAccountWithCampaigns[],
     );
@@ -1561,6 +1565,7 @@ export class CampaignCheckService {
               row.client_id === campaign.client_id &&
               senderEspBucket(row) === "gmail",
           );
+        const microsoftShare = this.clientSplits?.shareForClient(taggedClient);
         if (
           clientHasBothEsps &&
           !podEspMixHolds({
@@ -1568,12 +1573,19 @@ export class CampaignCheckService {
             gmail,
             clientHasBothEsps: true,
             podSeats,
+            microsoftShare,
           })
         ) {
-          const floor = podEspMixMinSeats(podSeats);
           findings.push({
             kind: "esp_mix",
-            detail: `on-week staffable Outlook ${outlook} / Gmail ${gmail} (want ≥${floor} of each on a ${podSeats}-seat POD)`,
+            detail: formatPodEspMixFinding({
+              outlook,
+              gmail,
+              podSeats,
+              microsoftShare,
+              clientLabel:
+                inboxkitWorkspaceForClient(taggedClient) ?? clientName,
+            }),
           });
         }
       }

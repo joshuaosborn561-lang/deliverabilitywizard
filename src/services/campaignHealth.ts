@@ -36,6 +36,8 @@ import {
 import type { ClientFanOutService } from "./clientFanOut.js";
 import type { CopyCanaryAttachResult, CopyCanaryService } from "./copyCanary.js";
 import { fetchInventory, type InventorySnapshot } from "./inventory.js";
+import { runWithStallScopeAsync } from "../lib/eventLoopAttribution.js";
+import { createLoopYielder, yieldToTimers } from "../lib/stringifyYielding.js";
 
 /**
  * Sole mutator brain for campaign staffing (D25).
@@ -131,7 +133,7 @@ export class CampaignHealthService {
       return result;
     }
 
-    result.snapshots = this.buildSnapshots(campaigns, accounts, clients);
+    result.snapshots = await this.buildSnapshots(campaigns, accounts, clients);
 
     try {
       result.topUp = await this.topUp.run({
@@ -178,7 +180,7 @@ export class CampaignHealthService {
     // (recordMembership), so resume decisions below reuse it instead of
     // re-fetching the whole account book a second time per pass.
 
-    result.snapshots = this.buildSnapshots(campaigns, accounts, clients);
+    result.snapshots = await this.buildSnapshots(campaigns, accounts, clients);
     await this.resumeStaffed(result, campaigns, dryRun);
 
     const shortAfter = result.snapshots.filter(
@@ -229,11 +231,11 @@ export class CampaignHealthService {
     return result;
   }
 
-  private buildSnapshots(
+  private async buildSnapshots(
     campaigns: SmartleadCampaign[],
     accounts: SmartleadAccountWithCampaigns[],
     clients: SmartleadClientRecord[],
-  ): CampaignHealthSnapshot[] {
+  ): Promise<CampaignHealthSnapshot[]> {
     const membership = new Map<number, number>();
     const staffable = new Map<number, number>();
     const clientInboxFloors = countClientInboxFloors(
@@ -243,40 +245,51 @@ export class CampaignHealthService {
       this.config,
       this.state,
     );
+    // D300 — campaigns.find per membership was O(accounts × ids ×
+    // campaigns) and ran synchronously before top-up indexed. Same
+    // staffing math; Map lookup + timer yields.
+    const campaignById = new Map(campaigns.map((row) => [row.id, row]));
+    const yieldItem = createLoopYielder(8, 8, yieldToTimers);
 
-    for (const account of accounts) {
-      const email = accountEmail(account);
-      if (!email) continue;
-      const ids = campaignIdsOf(account);
-      for (const id of ids) {
-        membership.set(id, (membership.get(id) ?? 0) + 1);
-      }
-      const copyCanary = this.state.isCopyCanary(email);
-      const lapsed =
-        typeof (this.state as unknown as { isInboxKitLapsed?: (value: string) => boolean })
-          .isInboxKitLapsed === "function"
-          ? (
-              this.state as unknown as {
-                isInboxKitLapsed: (value: string) => boolean;
-              }
-            ).isInboxKitLapsed(email)
-          : false;
-      for (const id of ids) {
-        const campaign = campaigns.find((row) => row.id === id);
-        if (
-          !isCanonStaffable({
-            account,
-            email,
-            campaignClientId: campaign?.client_id,
-            copyCanary,
-            inboxKitLapsed: lapsed,
-          })
-        ) {
+    await runWithStallScopeAsync("scan:campaignHealthSnapshots", async () => {
+      for (const account of accounts) {
+        const email = accountEmail(account);
+        if (!email) {
+          await yieldItem();
           continue;
         }
-        staffable.set(id, (staffable.get(id) ?? 0) + 1);
+        const ids = campaignIdsOf(account);
+        for (const id of ids) {
+          membership.set(id, (membership.get(id) ?? 0) + 1);
+        }
+        const copyCanary = this.state.isCopyCanary(email);
+        const lapsed =
+          typeof (this.state as unknown as { isInboxKitLapsed?: (value: string) => boolean })
+            .isInboxKitLapsed === "function"
+            ? (
+                this.state as unknown as {
+                  isInboxKitLapsed: (value: string) => boolean;
+                }
+              ).isInboxKitLapsed(email)
+            : false;
+        for (const id of ids) {
+          const campaign = campaignById.get(id);
+          if (
+            !isCanonStaffable({
+              account,
+              email,
+              campaignClientId: campaign?.client_id,
+              copyCanary,
+              inboxKitLapsed: lapsed,
+            })
+          ) {
+            continue;
+          }
+          staffable.set(id, (staffable.get(id) ?? 0) + 1);
+        }
+        await yieldItem();
       }
-    }
+    });
 
     return campaigns
       .filter((c) => {

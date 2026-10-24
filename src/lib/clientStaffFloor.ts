@@ -69,10 +69,12 @@ export function namedClientPodInventoryFloor(namedStaffableInPod: number): numbe
 }
 
 /**
- * D203 — per-POD ESP mix floor on top of D192. When the client has
- * both Outlook and Gmail, neither ESP may sit under ~1/3 of that
- * POD's seats (14 of a 40-seat POD). A one-ESP client is not
- * required to invent the other.
+ * D203 / D301 — per-POD ESP mix. When InboxKit reports the client's
+ * Google/Microsoft split, the on-week POD's warm Microsoft count
+ * (generics included) must sit within ±max(2, 10% of that POD) of
+ * round(POD size × Microsoft share). The ~1/3 floor (14 of a 40-seat
+ * POD) is the fallback only when InboxKit has no row. A one-ESP
+ * client is not required to invent the other.
  */
 export const POD_ESP_MIX_MIN_FRACTION = 1 / 3;
 
@@ -83,19 +85,78 @@ export function podEspMixMinSeats(
   return Math.ceil(podSeats * POD_ESP_MIX_MIN_FRACTION);
 }
 
+/** Target Microsoft seats = round(POD size × InboxKit Microsoft share). */
+export function podEspMixTarget(
+  podSeats: number,
+  microsoftShare: number,
+): number {
+  if (!Number.isFinite(podSeats) || podSeats <= 0) return 0;
+  if (!Number.isFinite(microsoftShare)) return 0;
+  return Math.round(podSeats * Math.min(1, Math.max(0, microsoftShare)));
+}
+
+/** ±max(2, 10% of the real POD size). */
+export function podEspMixTolerance(podSeats: number): number {
+  if (!Number.isFinite(podSeats) || podSeats <= 0) return 2;
+  return Math.max(2, podSeats * 0.1);
+}
+
 export function podEspMixHolds(input: {
   outlook: number;
   gmail: number;
   clientHasBothEsps: boolean;
   podSeats?: number;
+  microsoftShare?: number;
 }): boolean {
   if (!input.clientHasBothEsps) return true;
   const outlook = Number.isFinite(input.outlook) ? Math.max(0, input.outlook) : 0;
   const gmail = Number.isFinite(input.gmail) ? Math.max(0, input.gmail) : 0;
-  // D263 — mix floor is ~1/3 of the real POD size, not max(n, 40).
+  // D263 — mix uses the real POD size, not max(n, 40).
   const podSeats = input.podSeats ?? outlook + gmail;
+  if (
+    input.microsoftShare != null &&
+    Number.isFinite(input.microsoftShare) &&
+    input.microsoftShare >= 0
+  ) {
+    const target = podEspMixTarget(podSeats, input.microsoftShare);
+    const tolerance = podEspMixTolerance(podSeats);
+    return Math.abs(outlook - target) <= tolerance + 1e-9;
+  }
   const floor = podEspMixMinSeats(podSeats);
   return outlook >= floor && gmail >= floor;
+}
+
+export function formatPodEspMixFinding(input: {
+  outlook: number;
+  gmail: number;
+  podSeats: number;
+  clientLabel?: string;
+  microsoftShare?: number;
+}): string {
+  const outlook = Number.isFinite(input.outlook) ? input.outlook : 0;
+  const gmail = Number.isFinite(input.gmail) ? input.gmail : 0;
+  const podSeats = Number.isFinite(input.podSeats) ? input.podSeats : outlook + gmail;
+  if (
+    input.microsoftShare != null &&
+    Number.isFinite(input.microsoftShare) &&
+    input.microsoftShare >= 0
+  ) {
+    const target = podEspMixTarget(podSeats, input.microsoftShare);
+    const tolerance = podEspMixTolerance(podSeats);
+    const pct = Math.round(input.microsoftShare * 100);
+    const label = String(input.clientLabel ?? "client").trim() || "client";
+    const band = Number.isInteger(tolerance) ? String(tolerance) : tolerance.toFixed(1);
+    return (
+      `on-week staffable Outlook ${outlook} / Gmail ${gmail} ` +
+      `(want ${target}±${band} Microsoft on a ${podSeats}-seat POD — ` +
+      `${label} InboxKit ${pct}% Microsoft)`
+    );
+  }
+  const floor = podEspMixMinSeats(podSeats);
+  return (
+    `on-week staffable Outlook ${outlook} / Gmail ${gmail} ` +
+    `(want ≥${floor} of each on a ${podSeats}-seat POD)`
+  );
 }
 
 export type PeelStaffableState = {

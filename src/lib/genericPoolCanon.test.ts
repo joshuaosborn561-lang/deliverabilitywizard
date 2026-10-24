@@ -675,7 +675,9 @@ describe("D221 syncGenericSeatsFromInventory", () => {
           tags: [{ tag_name: "POD-A" }],
           is_smtp_success: true,
           is_imap_success: true,
-          created_at: new Date(Date.now() - 2 * 86400000).toISOString(),
+          // owesWarmup reads the wall clock, not the injected `now`.
+          // A fixed 2026-10-01 stamp aged past 21 days on 2026-10-22.
+          created_at: new Date(Date.now() - 3 * 86_400_000).toISOString(),
         },
         {
           id: 4,

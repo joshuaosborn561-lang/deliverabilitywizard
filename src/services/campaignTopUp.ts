@@ -38,10 +38,9 @@ import { dropGhostPoolSeats } from "../lib/poolInventoryReconcile.js";
 import { indexAccountsByCampaign } from "../lib/accountCampaignIndex.js";
 import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import { findReassignablePoolMailboxYielding } from "../lib/poolPick.js";
-import {
-  buildPoolSignature,
-  poolEspFromSmartleadType,
-} from "../lib/poolSignature.js";
+import { buildPoolSignature } from "../lib/poolSignature.js";
+import { mailboxEspSlot } from "../lib/mailboxType.js";
+import type { InboxkitClientSplitCache } from "../lib/inboxkitClientSplit.js";
 import {
   canAttachMailboxToCampaign,
   INSIGHT_MAILBOX_SIGNATURE_BLANK,
@@ -128,7 +127,9 @@ export function isExcluded(
 }
 
 /**
- * Prefer the ESP that is short of the mix floor (D43: ~30% each).
+ * Prefer the ESP that is short of the mix target.
+ * D301 — when InboxKit reports a Microsoft share, pick toward
+ * round(floor × share). Else D43/D203 ~1/3 floor via minPercent.
  * D233 — when one family is short, do not fall through to the other.
  * Azure is MICROSOFT; a GOOGLE→MICROSOFT fallback would put Azure
  * on a Google hole.
@@ -138,12 +139,36 @@ export function espFillOrder(
   floor: number,
   minPercent: number,
   clientHasBothEsps?: boolean,
+  microsoftShare?: number,
 ): Array<"GOOGLE" | "MICROSOFT"> {
+  const both =
+    clientHasBothEsps ?? (counts.GOOGLE > 0 && counts.MICROSOFT > 0);
+  if (
+    microsoftShare != null &&
+    Number.isFinite(microsoftShare) &&
+    microsoftShare >= 0 &&
+    microsoftShare <= 1
+  ) {
+    const targetMs = Math.round(floor * microsoftShare);
+    const targetG = Math.max(0, Math.round(floor - targetMs));
+    const needMicrosoft = Math.max(0, targetMs - counts.MICROSOFT);
+    const needGoogle = Math.max(0, targetG - counts.GOOGLE);
+    const dual = both || (microsoftShare > 0 && microsoftShare < 1);
+    if (!dual) {
+      return microsoftShare >= 0.5 ? ["MICROSOFT"] : ["GOOGLE"];
+    }
+    if (needGoogle > needMicrosoft) return ["GOOGLE"];
+    if (needMicrosoft > needGoogle) return ["MICROSOFT"];
+    if (needGoogle > 0) {
+      return counts.MICROSOFT > counts.GOOGLE ? ["MICROSOFT"] : ["GOOGLE"];
+    }
+    return counts.MICROSOFT > counts.GOOGLE
+      ? ["MICROSOFT", "GOOGLE"]
+      : ["GOOGLE", "MICROSOFT"];
+  }
   const minEsp = Math.ceil((floor * minPercent) / 100);
   const needGoogle = Math.max(0, minEsp - counts.GOOGLE);
   const needMicrosoft = Math.max(0, minEsp - counts.MICROSOFT);
-  const both =
-    clientHasBothEsps ?? (counts.GOOGLE > 0 && counts.MICROSOFT > 0);
   // One-ESP clients are not required to invent the other family (D203).
   if (!both) {
     if (counts.GOOGLE > 0 && counts.MICROSOFT === 0) return ["GOOGLE"];
@@ -174,6 +199,7 @@ export class CampaignTopUpService {
     private readonly smartlead: SmartleadClient,
     private readonly slack: SlackClient,
     private readonly state: StateStore,
+    private readonly clientSplits?: InboxkitClientSplitCache,
   ) {}
 
   async run(
@@ -196,6 +222,7 @@ export class CampaignTopUpService {
 
     const { campaigns, accounts, clients } =
       opts.inventory ?? (await fetchInventory(this.smartlead));
+    await this.clientSplits?.ensureLoaded();
     const now = new Date();
     const powerGrydEmptyByDesign = isPowerGrydEmptyByDesign({
       accounts: accounts as SmartleadAccountWithCampaigns[],
@@ -576,9 +603,12 @@ export class CampaignTopUpService {
         clientName.replace(/\s*\(.*?\)\s*$/, "").trim() || clientName;
       const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
       for (const account of accountsByCampaign.get(campaign.id) ?? []) {
-        const platform = poolEspFromSmartleadType(account.type);
+        const platform = mailboxEspSlot(account);
         if (platform) espCounts[platform] += 1;
       }
+      const microsoftShare = this.clientSplits?.shareForClient(
+        clientsById.get(clientId ?? -1) ?? clientName,
+      );
 
       let placed = 0;
       let consecutiveFailures = 0;
@@ -596,6 +626,8 @@ export class CampaignTopUpService {
           espCounts,
           floor,
           this.config.campaignEspMixMinPercent,
+          undefined,
+          microsoftShare,
         );
         const pool = await findReassignablePoolMailboxYielding(
           poolMailboxes,

@@ -56,3 +56,26 @@ describe("D271 event-loop stall attribution", () => {
     assert.match(text, /stage=none/);
   });
 });
+
+describe("D302 longest-callback attribution", () => {
+  it("names an unscoped blocking callback even after a named op ran", async () => {
+    const attr = startEventLoopAttribution();
+    try {
+      formatStallAttribution([]);
+      await runWithStallScopeAsync("json.stringify:hot", async () => undefined);
+      await new Promise<void>((resolve) =>
+        setTimeout(() => {
+          const until = performance.now() + 60;
+          while (performance.now() < until) {
+            // simulate a sync stall outside any named op
+          }
+          resolve();
+        }, 0),
+      );
+      const line = formatStallAttribution([]);
+      assert.match(line, /longest=unscoped:\d+ms/);
+    } finally {
+      attr.stop();
+    }
+  });
+});

@@ -37,6 +37,11 @@ let hook: ReturnType<typeof createHook> | null = null;
 let histogram: ReturnType<typeof monitorEventLoopDelay> | null = null;
 let lastElu = performance.eventLoopUtilization();
 const watchdogAsyncIds = new Set<number>();
+let cbOp: string | null = null;
+let cbStartedAt: number | null = null;
+let worstCbMs = 0;
+let worstCbOp: string | null = null;
+let worstCbType: string | null = null;
 const asyncTypes = new Map<number, string>();
 
 function captureStack(): string {
@@ -86,11 +91,27 @@ export function startEventLoopAttribution(): { stop: () => void } {
       lastAsyncType = asyncTypes.get(asyncId) ?? null;
       const op = als.getStore()?.op;
       if (op) lastOp = op;
+      cbOp = op ?? null;
+      cbStartedAt = performance.now();
       const now = Date.now();
       if (now - lastStackAt >= STALL_STACK_SAMPLE_MS) {
         lastStack = captureStack();
         lastStackAt = now;
       }
+    },
+    after(asyncId) {
+      if (watchdogAsyncIds.has(asyncId) || cbStartedAt == null) return;
+      // D302 — name the callback that actually held the loop. Sticky
+      // lastOp alone blamed unscoped sync stalls on the last named op
+      // (json.stringify:hot / scan:campaignHealthSnapshots), so D299/D300
+      // tuned the wrong code while per-mailbox canary lookups pinned it.
+      const ms = performance.now() - cbStartedAt;
+      if (ms > worstCbMs) {
+        worstCbMs = ms;
+        worstCbOp = cbOp ?? "unscoped";
+        worstCbType = lastAsyncType;
+      }
+      cbStartedAt = null;
     },
     destroy(asyncId) {
       asyncTypes.delete(asyncId);
@@ -166,7 +187,14 @@ export function formatStallAttribution(locks: StallLockStage[]): string {
     ? elu.utilization.toFixed(2)
     : "n/a";
   const delayBit = delayMaxMs == null ? "n/a" : String(delayMaxMs);
-  return `stage=${formatLockStages(locks)} op=${op} async=${lastAsyncType ?? "none"} elu=${eluBit} delay.max=${delayBit}ms stack=${stack}`;
+  const worst =
+    worstCbOp != null
+      ? ` longest=${worstCbOp}:${Math.round(worstCbMs)}ms(${worstCbType ?? "none"})`
+      : "";
+  worstCbMs = 0;
+  worstCbOp = null;
+  worstCbType = null;
+  return `stage=${formatLockStages(locks)} op=${op} async=${lastAsyncType ?? "none"} elu=${eluBit} delay.max=${delayBit}ms${worst} stack=${stack}`;
 }
 
 export function freezeDelayLogLine(

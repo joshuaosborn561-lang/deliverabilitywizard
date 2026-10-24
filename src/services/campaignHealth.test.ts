@@ -295,4 +295,102 @@ describe("CampaignHealthService", () => {
     assert.equal(result.resumed.length, 0);
     assert.equal(pending.size, 1, "hold does not clear the protective-resume stamp");
   });
+
+  it("D300: production-size inventory completes a pass without a 1s event-loop gap", async () => {
+    const state = {
+      listPoolMailboxes: () => [],
+      findReassignablePoolMailbox: () => undefined,
+      getRestingInbox: () => undefined,
+      getPoolMailbox: () => undefined,
+      getDomainHistory: () => undefined,
+      clearGenericSendStartedAt: () => undefined,
+      isCopyCanary: () => false,
+      hasPendingResume: () => false,
+      listPendingResumes: () => [],
+      clearPendingResume: () => undefined,
+      markPendingResume: () => undefined,
+      setLastHealthAt: () => undefined,
+      setLastStaffingShort: () => undefined,
+      save: async () => undefined,
+      upsertPoolMailbox: () => undefined,
+      hasRecentAlert: () => false,
+      markAlert: () => undefined,
+      listGenericBackfillApprovals: () => ({}),
+      listEndedPocClientIds: () => [],
+      listGenericSeats: () => [],
+      replaceGenericSeats: () => undefined,
+      getGenericSeat: () => undefined,
+      ensureGenericSeat: () => undefined,
+      assignGenericFromTable: () => undefined,
+      isMarkerClientId: () => false,
+      persistPoolPrune: async () => undefined,
+      removePoolMailbox: () => undefined,
+    } as unknown as StateStore;
+
+    const campaigns = Array.from({ length: 400 }, (_, i) => ({
+      id: 20_000 + i,
+      name: `Live ${i}`,
+      status: i % 17 === 0 ? "PAUSED" : "ACTIVE",
+      client_id: 1 + (i % 8),
+    }));
+    const accounts = Array.from({ length: 800 }, (_, i) => ({
+      id: 30_000 + i,
+      from_email: `seat${i}@pool.info`,
+      type: i % 2 === 0 ? "GMAIL" : "OUTLOOK",
+      is_smtp_success: true,
+      is_imap_success: true,
+      client_id: 1 + (i % 8),
+      campaign_ids: Array.from({ length: 40 }, (_, j) => 20_000 + ((i + j) % 400)),
+    }));
+    const clients = Array.from({ length: 8 }, (_, i) => ({
+      id: i + 1,
+      name: `Client ${i + 1}`,
+    }));
+
+    const smartlead = {
+      listCampaigns: async () => campaigns,
+      listAllEmailAccounts: async () => accounts,
+      listClients: async () => clients,
+      updateCampaignStatus: async () => undefined,
+      addEmailAccountsToCampaign: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const config = loadConfig({
+      MIN_CAMPAIGN_SENDERS: "40",
+      ENABLE_CAMPAIGN_TOP_UP: "true",
+    });
+    const topUp = new CampaignTopUpService(config, smartlead, fakeSlack(), state);
+    const health = new CampaignHealthService(
+      config,
+      smartlead,
+      fakeSlack(),
+      state,
+      topUp,
+    );
+
+    let last = Date.now();
+    let maxGap = 0;
+    const timer = setInterval(() => {
+      const now = Date.now();
+      maxGap = Math.max(maxGap, now - last);
+      last = now;
+    }, 10);
+    timer.unref?.();
+    const result = await health.run({
+      dryRun: true,
+      inventory: { campaigns, accounts, clients, fetchedAt: Date.now() } as never,
+    });
+    clearInterval(timer);
+
+    assert.equal(result.errors.length, 0, result.errors.join("; "));
+    assert.equal(result.snapshots.length, 400);
+    assert.ok(
+      result.snapshots.every((row) => Number.isFinite(row.staffable)),
+      "staffing math still produces a staffable count",
+    );
+    assert.ok(
+      maxGap < 1_000,
+      `campaign-health gap ${maxGap}ms must stay under 1s`,
+    );
+  });
 });

@@ -25,6 +25,11 @@
  * as the frontier resumes at client-rest and re-runs the Smartlead
  * prefix (prod 2026-09-30 15:45Z). Newest is taken from the rest of
  * the loop; leftover is the first subsequent older stage.
+ *
+ * D299 — a stage that freeze-exits 3 times is quarantined for an hour.
+ * If that stage is the natural leftover, do not skip the prefix: the
+ * 15-minute freshness gate still applies, the quarantined stage is
+ * skipped without a lastOk, and the rest of the chain runs.
  */
 
 import { isMonitorStageFresh } from "./monitorResume.js";
@@ -191,6 +196,43 @@ export function shouldRefreshInventory(opts: {
     opts.now ?? Date.now(),
     opts.freshMs ?? HEALTH_CYCLE_MS,
   );
+}
+
+/**
+ * D299 — resume plan for one health cycle.
+ *
+ * `naturalLeftover` is the D215 frontier. When that stage is in
+ * `quarantined`, `leftover` is null so the prefix is not skipped, and
+ * `resume` stays true so skip-if-fresh still applies to stages that
+ * finished inside the current 15-minute cycle. The caller skips every
+ * name in `quarantined` without stamping lastOk.
+ */
+export function planHealthResume(
+  stageHealth: Record<string, { lastOkAt: string | null } | undefined>,
+  opts: {
+    now?: number;
+    sittingMaxMs?: number;
+    quarantined?: ReadonlySet<string>;
+  } = {},
+): {
+  naturalLeftover: HealthLoopStage | null;
+  leftover: HealthLoopStage | null;
+  resume: boolean;
+  quarantinedLeftover: boolean;
+} {
+  const naturalLeftover = firstInterruptedHealthStage(
+    stageHealth,
+    opts.now ?? Date.now(),
+    opts.sittingMaxMs ?? HEALTH_SITTING_MAX_MS,
+  );
+  const quarantinedLeftover =
+    naturalLeftover != null && (opts.quarantined?.has(naturalLeftover) ?? false);
+  return {
+    naturalLeftover,
+    leftover: quarantinedLeftover ? null : naturalLeftover,
+    resume: naturalLeftover != null,
+    quarantinedLeftover,
+  };
 }
 
 export function healthNeedsResume(

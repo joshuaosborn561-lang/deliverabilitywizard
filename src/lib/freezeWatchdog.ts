@@ -110,6 +110,12 @@ export function freezeWatchdogTick(input: FreezeTickInput): FreezeTickResult {
 
 export interface FreezeExitDeps {
   reason: string;
+  /**
+   * D299 — persist the in-flight stage's freeze strike before the sidecar
+   * flush. The flush is the part that timed out in production, so the
+   * strike has to land first or the next boot still resumes there.
+   */
+  noteStrike?: () => void;
   flush?: () => Promise<void> | void;
   exit?: (code: number) => void;
   log?: (msg: string) => void;
@@ -149,6 +155,15 @@ export async function requestFreezeExit(deps: FreezeExitDeps): Promise<void> {
       const timer = setTimeout(fn, ms);
       return () => clearTimeout(timer);
     });
+
+  if (deps.noteStrike) {
+    try {
+      deps.noteStrike();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      log(`[watchdog] freeze-strike note failed (${detail})`);
+    }
+  }
 
   setExitCode(FREEZE_EXIT_CODE);
   log(
@@ -193,6 +208,7 @@ export interface FreezeWatchdogDeps {
   exit?: (code: number) => void;
   log?: (msg: string) => void;
   intervalMs?: number;
+  noteStrike?: () => void;
   flush?: () => Promise<void> | void;
   flushMs?: number;
   setExitCode?: (code: number) => void;
@@ -234,6 +250,7 @@ export function startFreezeWatchdog(deps: FreezeWatchdogDeps): { stop: () => voi
       clearInterval(interval);
       void requestFreezeExit({
         reason: tick.exitReason,
+        noteStrike: deps.noteStrike,
         flush: deps.flush,
         exit,
         log,

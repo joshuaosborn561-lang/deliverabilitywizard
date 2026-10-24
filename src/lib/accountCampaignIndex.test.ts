@@ -54,4 +54,31 @@ describe("D271 account campaign index yields", () => {
     ]);
     assert.equal(byCampaign.get(4173509)?.length, 1);
   });
+
+  it("D300: a production-size index stays under the 1s watchdog log", async () => {
+    const accounts = Array.from({ length: 1_600 }, (_, i) => ({
+      id: i + 1,
+      from_email: `seat${i}@crosslaunchco.com`,
+      campaign_ids: [
+        10_000,
+        ...Array.from({ length: 47 }, (_, j) => 10_100 + ((i + j) % 399)),
+      ],
+    }));
+    let last = Date.now();
+    let maxGap = 0;
+    const timer = setInterval(() => {
+      const now = Date.now();
+      maxGap = Math.max(maxGap, now - last);
+      last = now;
+    }, 10);
+    timer.unref?.();
+    const byCampaign = await indexAccountsByCampaign(accounts);
+    clearInterval(timer);
+    assert.ok(byCampaign.size > 0);
+    assert.equal(byCampaign.get(10_000)?.length, 1_600);
+    assert.ok(
+      maxGap < 1_000,
+      `indexAccountsByCampaign gap ${maxGap}ms must stay under 1s`,
+    );
+  });
 });

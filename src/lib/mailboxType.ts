@@ -47,6 +47,7 @@ export function roundStaffableWeight(value: number): number {
 export function mailboxStaffableWeight(account: {
   type?: string | null;
   platform?: string | null;
+  smtp_host?: string | null;
   from_email?: string | null;
   email?: string | null;
   tags?: Array<{ tag_name?: string; name?: string }>;
@@ -69,6 +70,7 @@ export type EspSlotFamily = "GOOGLE" | "MICROSOFT";
 export function mailboxEspSlot(account: {
   type?: string | null;
   platform?: string | null;
+  smtp_host?: string | null;
   from_email?: string | null;
   email?: string | null;
   tags?: Array<{ tag_name?: string; name?: string }>;
@@ -155,6 +157,7 @@ export function isAzureEntraDomain(domain: string | null | undefined): boolean {
 export function classifyMailboxSendType(account: {
   type?: string | null;
   platform?: string | null;
+  smtp_host?: string | null;
   from_email?: string | null;
   email?: string | null;
   tags?: Array<{ tag_name?: string; name?: string }>;
@@ -164,7 +167,7 @@ export function classifyMailboxSendType(account: {
   if (tagged) return tagged;
   const host = senderHostOf(account.from_email ?? account.email);
   if (isAzureEntraDomain(host)) return "azure";
-  const family = normalizeSenderEspFamily(account.type ?? account.platform);
+  const family = normalizeSenderEspFamily(account);
   if (family === "microsoft") return "m365";
   if (family === "google") return "google";
   return null;

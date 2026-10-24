@@ -13,6 +13,8 @@ import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { mailboxPodOf } from "../lib/podInventory.js";
+import { INSIGHT_CLIENT_ID } from "../lib/insightCampaigns.js";
+import { TECHEVO_CLIENT_ID } from "../lib/namedClientIds.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { isGabeVmReserved } from "../lib/canaryLock.js";
 import {
@@ -206,6 +208,40 @@ export function offWeekSweepTargets(
     if (!campaign || campaign.client_id !== ownerId) return false;
     return isRestDetachableCampaign(campaign, excluded);
   });
+}
+
+/** D298 guard — on-week POD floor per client (TechEvo runs 30). */
+export function offWeekSweepFloor(ownerId: number): number {
+  return ownerId === TECHEVO_CLIENT_ID ? 30 : 40;
+}
+
+/**
+ * D298 guard — the sweep may unlink an off-week seat only when the
+ * client's on-week POD still holds its floor on ACTIVE client campaigns.
+ * Insight (582890) is never swept.
+ */
+export function offWeekSweepAllowed(ownerId: number, onWeekLinked: number): boolean {
+  if (ownerId === INSIGHT_CLIENT_ID) return false;
+  return onWeekLinked >= offWeekSweepFloor(ownerId);
+}
+
+/** D298 guard — on-week POD seats linked to an ACTIVE, non-excluded campaign of the client. */
+export function countOnWeekLinked(
+  accounts: SmartleadAccountWithCampaigns[],
+  ownerId: number,
+  isOnWeekPod: (pod: Parameters<typeof isOffWeek>[0]) => boolean,
+  campaignClientById: Map<number, number | null | undefined>,
+  campaignById: Map<number, SmartleadCampaign>,
+  excluded: string[],
+): number {
+  let n = 0;
+  for (const account of accounts) {
+    const pod = mailboxPodOf(account);
+    if (!pod || !isOnWeekPod(pod)) continue;
+    if (offWeekSweepOwnerId(account, campaignClientById) !== ownerId) continue;
+    if (offWeekSweepTargets(account, ownerId, campaignById, excluded).length) n++;
+  }
+  return n;
 }
 
 export class ClientRestService {
@@ -554,6 +590,7 @@ export class ClientRestService {
     // its own client. Floor exemption matches the off-week loop (min-40
     // is per POD, not per campaign); the last-account guard still holds.
     const handled = new Set(offWeek.map((row) => row.email));
+    const onWeekLinkedByClient = new Map<number, number>();
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       const email = accountEmail(account);
       if (!email || !account.id || handled.has(email)) continue;
@@ -564,6 +601,27 @@ export class ClientRestService {
       const ownerId = offWeekSweepOwnerId(account, campaignClientById);
       if (ownerId == null) continue;
       if (isPodRotationSkippedClient(ownerId, pocSkipIds)) continue;
+      if (ownerId === INSIGHT_CLIENT_ID) continue;
+      if (!onWeekLinkedByClient.has(ownerId)) {
+        onWeekLinkedByClient.set(
+          ownerId,
+          countOnWeekLinked(
+            accounts as SmartleadAccountWithCampaigns[],
+            ownerId,
+            (p) => !isOffWeek(p, now),
+            campaignClientById,
+            campaignById,
+            this.config.topUpExcludeCampaigns,
+          ),
+        );
+      }
+      const onWeekLinked = onWeekLinkedByClient.get(ownerId)!;
+      if (!offWeekSweepAllowed(ownerId, onWeekLinked)) {
+        result.skipped.push(
+          `${email}: off-week POD-${pod} sweep held — client ${ownerId} on-week POD has ${onWeekLinked} < ${offWeekSweepFloor(ownerId)} (D298 guard)`,
+        );
+        continue;
+      }
       const targets = offWeekSweepTargets(
         account,
         ownerId,

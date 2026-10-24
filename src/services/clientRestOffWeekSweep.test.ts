@@ -8,7 +8,11 @@ import {
   ClientRestService,
   offWeekSweepOwnerId,
   offWeekSweepTargets,
+  offWeekSweepAllowed,
+  offWeekSweepFloor,
 } from "./clientRest.js";
+import { INSIGHT_CLIENT_ID } from "../lib/insightCampaigns.js";
+import { TECHEVO_CLIENT_ID } from "../lib/namedClientIds.js";
 
 const WARMED = "2025-01-01T00:00:00.000Z";
 // ISO week 43 (NY) → block 1 → POD-B on, POD-A off.
@@ -164,5 +168,41 @@ describe("D298 off-week POD sweep", () => {
       ),
       [1],
     );
+  });
+
+  async function sweepHeld(clientId: number, onWeek: number): Promise<boolean> {
+    const campaigns = [{ id: 1, name: "C1", status: "ACTIVE", client_id: clientId }];
+    const podB = Array.from({ length: onWeek }, (_, i) =>
+      seat(1000 + i, `b${i}@clientmail.info`, "POD-B", [1], [], clientId),
+    );
+    const stray = seat(4002, "s@outreachdeskbox.com", "POD-A", [1], [
+      "GENERIC",
+      "HOLD-UNTIL-2099-01-01",
+    ], clientId);
+    const { service, removed } = await harness([...podB, stray], campaigns);
+    await service.run({ dryRun: false, now: NOW });
+    return !removed.some(([c, id]) => c === 1 && id === 4002);
+  }
+
+  it("guard: holds the sweep when the on-week POD is under 40", async () => {
+    assert.equal(await sweepHeld(CLIENT, 39), true);
+    assert.equal(await sweepHeld(CLIENT, 40), false);
+  });
+
+  it("guard: TechEvo floor is 30", async () => {
+    assert.equal(await sweepHeld(TECHEVO_CLIENT_ID, 29), true);
+    assert.equal(await sweepHeld(TECHEVO_CLIENT_ID, 30), false);
+  });
+
+  it("guard: Insight is never swept", async () => {
+    assert.equal(await sweepHeld(INSIGHT_CLIENT_ID, 60), true);
+  });
+
+  it("guard helpers", () => {
+    assert.equal(offWeekSweepFloor(CLIENT), 40);
+    assert.equal(offWeekSweepFloor(TECHEVO_CLIENT_ID), 30);
+    assert.equal(offWeekSweepAllowed(INSIGHT_CLIENT_ID, 999), false);
+    assert.equal(offWeekSweepAllowed(CLIENT, 39), false);
+    assert.equal(offWeekSweepAllowed(CLIENT, 40), true);
   });
 });

@@ -123,6 +123,20 @@ export function classifyFailure(
     };
   }
 
+  // Clock skew / latency left schedule_start_time in SmartDelivery's past.
+  // Scan retries with a larger pad; leftover hits must not relaunch as
+  // api-validation:validation (production fingerprint for campaign 3748375).
+  if (/schedule start time must be greater/i.test(lower)) {
+    return {
+      class: "noise",
+      fingerprint: fingerprintOf("noise", "schedule-start-past"),
+      autoRemediate: false,
+      summary:
+        "SmartDelivery rejected schedule_start_time as past (clock skew; next scan retries)",
+      raw: text,
+    };
+  }
+
   if (
     /is required|must be of type|must be greater than|invalid parameters|validation/i.test(
       lower,

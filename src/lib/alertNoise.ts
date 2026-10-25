@@ -87,6 +87,14 @@ export function isSenderNotInCampaignNoise(message: string): boolean {
 }
 
 /**
+ * SmartDelivery rejected schedule_start_time as already past (clock skew /
+ * latency). Scan retries with a larger pad; do not page Slack.
+ */
+export function isScheduleStartPastNoise(message: string): boolean {
+  return /schedule start time must be greater/i.test(message);
+}
+
+/**
  * D175 — InboxKit refuses a second ESP on a domain that already has
  * Google or Microsoft mailboxes. Isolation-buy skips; do not page.
  */
@@ -105,7 +113,8 @@ export function isBenignOpsNoise(message: string): boolean {
     isRetryRemovalNoise(message) ||
     isBurnChecklistNoise(message) ||
     isSenderNotInCampaignNoise(message) ||
-    isInboxkitOneEspNoise(message)
+    isInboxkitOneEspNoise(message) ||
+    isScheduleStartPastNoise(message)
   );
 }
 
@@ -159,6 +168,10 @@ export function humanizeAlertError(message: string): string {
 
   if (isInboxkitOneEspNoise(raw)) {
     return "InboxKit allows only one email platform per domain — that domain is already locked to Google or Microsoft. Isolation-buy skips the other ESP.";
+  }
+
+  if (isScheduleStartPastNoise(raw)) {
+    return "SmartDelivery said the placement schedule start was already in the past (clock skew). We'll retry with a later start.";
   }
 
   if (bounceStats && /\b404\b/i.test(raw)) {

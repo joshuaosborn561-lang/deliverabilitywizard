@@ -137,6 +137,19 @@ describe("classifyFailure", () => {
     assert.match(c.summary, /sequence credits exhausted/i);
   });
 
+  it("treats schedule_start_time-in-the-past as non-remediable noise", () => {
+    // Production fingerprint was api-validation:validation because
+    // "must be greater than" matched the generic validation rule.
+    const c = classifyFailure(
+      "scan",
+      "Failed creating tests for campaign 3748375: Schedule start time must be greater than or equal to the current date and time.",
+    );
+    assert.equal(c.class, "noise");
+    assert.equal(c.autoRemediate, false);
+    assert.equal(c.fingerprint, "noise:schedule-start-past");
+    assert.match(c.summary, /clock skew/i);
+  });
+
   it("does not auto-remediate missing SmartDelivery seed accounts", () => {
     const c = classifyFailure(
       "scan",

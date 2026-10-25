@@ -132,15 +132,32 @@ export function addDaysIso(base: Date, days: number): string {
  * at validation time. A timestamp equal to the moment this process generates
  * it is already in the past by the time the request reaches their server, so
  * every recurring test creation was rejected with "Schedule start time must
- * be greater than or equal to the current date and time." Padding a few
- * minutes forward absorbs network latency and clock skew between hosts.
+ * be greater than or equal to the current date and time."
+ *
+ * Default pad is 10 minutes (was 2): Railway ↔ SmartDelivery clock skew plus
+ * request latency has rejected 2-minute pads in production (campaign 3748375).
+ * A later start is fine — recurring tests bill from the first run after start.
  */
-export function paddedScheduleDate(bufferMinutes = 2, now = new Date()): Date {
+export const DEFAULT_SCHEDULE_BUFFER_MINUTES = 10;
+export const RETRY_SCHEDULE_BUFFER_MINUTES = 20;
+
+export function paddedScheduleDate(
+  bufferMinutes = DEFAULT_SCHEDULE_BUFFER_MINUTES,
+  now = new Date(),
+): Date {
   return new Date(now.getTime() + bufferMinutes * 60_000);
 }
 
-export function scheduleStartTime(bufferMinutes = 2, now = new Date()): string {
+export function scheduleStartTime(
+  bufferMinutes = DEFAULT_SCHEDULE_BUFFER_MINUTES,
+  now = new Date(),
+): string {
   return paddedScheduleDate(bufferMinutes, now).toISOString();
+}
+
+/** SmartDelivery rejected schedule_start_time as already in the past. */
+export function isScheduleStartInPastError(message: string): boolean {
+  return /schedule start time must be greater/i.test(message);
 }
 
 /**
@@ -454,6 +471,7 @@ export class CampaignScanner {
           }
 
           let created: { id?: string | number } | undefined;
+          let scheduleBufferMinutes = DEFAULT_SCHEDULE_BUFFER_MINUTES;
           for (let attempt = 0; attempt < 2; attempt += 1) {
             const payload = {
               test_name: `Auto: ${plan.campaign.name || plan.campaign.id}${batchLabel}`.slice(
@@ -483,7 +501,9 @@ export class CampaignScanner {
             };
 
             try {
-              const scheduledAt = paddedScheduleDate();
+              // Fresh pad on every attempt — never reuse a timestamp that
+              // SmartDelivery already rejected as past.
+              const scheduledAt = paddedScheduleDate(scheduleBufferMinutes);
               created = recurring
                 ? await this.smartDelivery.createAutomatedPlacement({
                     ...payload,
@@ -516,6 +536,13 @@ export class CampaignScanner {
                   batch = next;
                   continue;
                 }
+              }
+              if (isScheduleStartInPastError(message) && attempt === 0) {
+                scheduleBufferMinutes = RETRY_SCHEDULE_BUFFER_MINUTES;
+                console.log(
+                  `[scan] Campaign ${plan.campaign.id}: schedule_start_time rejected as past; retrying with ${scheduleBufferMinutes}m pad`,
+                );
+                continue;
               }
               throw error;
             }

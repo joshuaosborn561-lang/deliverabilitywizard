@@ -9,6 +9,7 @@ import {
   isMissingSpamTestNoise,
   isRateLimitNoise,
   isRetryRemovalNoise,
+  isScheduleStartPastNoise,
   isSenderNotInCampaignNoise,
   reconnectFailureCategory,
 } from "./alertNoise.js";
@@ -95,6 +96,15 @@ describe("alert noise", () => {
     assert.equal(isBenignOpsNoise(message), true);
     assert.equal(isRateLimitNoise(message), false);
     assert.match(humanizeAlertError(message), /one email platform per domain/i);
+  });
+
+  it("treats schedule_start_time-in-the-past as benign ops noise", () => {
+    const message =
+      "Failed creating tests for campaign 3748375: Schedule start time must be greater than or equal to the current date and time.";
+    assert.equal(isScheduleStartPastNoise(message), true);
+    assert.equal(isBenignOpsNoise(message), true);
+    assert.equal(isRateLimitNoise(message), false);
+    assert.match(humanizeAlertError(message), /already in the past/i);
   });
 
   it("explains missing SmartDelivery seed accounts in plain English", () => {

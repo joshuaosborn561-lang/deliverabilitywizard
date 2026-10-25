@@ -9,10 +9,13 @@ import type { SmartleadCampaign } from "../types/index.js";
 import {
   addDaysIso,
   CampaignScanner,
+  DEFAULT_SCHEDULE_BUFFER_MINUTES,
   dropSendersFromBatches,
   interleaveSendersByEsp,
+  isScheduleStartInPastError,
   OPEN_ENDED_TEST_DAYS,
   parseSendersNotUsedInCampaign,
+  RETRY_SCHEDULE_BUFFER_MINUTES,
   schedulerCronValue,
   scheduleStartTime,
 } from "./campaignScanner.js";
@@ -60,23 +63,43 @@ describe("scheduleStartTime", () => {
     assert.equal(result, "2026-08-03T09:02:00.000Z");
   });
 
-  it("defaults to a 2-minute buffer", () => {
+  it("defaults to a 10-minute buffer (absorbs Railway↔SmartDelivery skew)", () => {
+    assert.equal(DEFAULT_SCHEDULE_BUFFER_MINUTES, 10);
+    assert.equal(RETRY_SCHEDULE_BUFFER_MINUTES, 20);
     const now = new Date("2026-08-03T09:00:00.000Z");
     const result = scheduleStartTime(undefined, now);
-    assert.equal(result, "2026-08-03T09:02:00.000Z");
+    assert.equal(result, "2026-08-03T09:10:00.000Z");
   });
 
   it("is always strictly after the moment it was generated, even accounting for request latency", () => {
     const before = Date.now();
     const result = Date.parse(scheduleStartTime());
-    // Simulate a slow request: SmartDelivery validates against its own clock
-    // some time after we generated the timestamp. A few seconds of latency
-    // must not be enough to put our timestamp in the past.
-    const serverNowAfterLatency = before + 5_000;
+    // Simulate a slow request / multi-minute clock skew: SmartDelivery
+    // validates against its own clock some time after we generated the
+    // timestamp. A few minutes of skew must not put our pad in the past.
+    const serverNowAfterSkew = before + 5 * 60_000;
     assert.ok(
-      result >= serverNowAfterLatency,
-      `expected ${result} to be >= ${serverNowAfterLatency} (now + 5s latency)`,
+      result >= serverNowAfterSkew,
+      `expected ${result} to be >= ${serverNowAfterSkew} (now + 5m skew)`,
     );
+  });
+});
+
+describe("isScheduleStartInPastError", () => {
+  it("matches the SmartDelivery clock-skew refusal", () => {
+    assert.equal(
+      isScheduleStartInPastError(
+        "Schedule start time must be greater than or equal to the current date and time.",
+      ),
+      true,
+    );
+    assert.equal(
+      isScheduleStartInPastError(
+        "Failed creating tests for campaign 3748375: Schedule start time must be greater than or equal to the current date and time.",
+      ),
+      true,
+    );
+    assert.equal(isScheduleStartInPastError("No seed accounts found"), false);
   });
 });
 
@@ -623,6 +646,66 @@ describe("CampaignScanner — status re-check before creation", () => {
     assert.equal(result.quotaBlocked, true);
     assert.equal(created.length, 0);
     assert.equal(quotaNotices, 1);
+  });
+
+  it("retries once with a larger pad when schedule_start_time is rejected as past", async () => {
+    const config = loadConfig({});
+    const starts: string[] = [];
+    let createCalls = 0;
+
+    const smartlead = {
+      listCampaigns: async () => [campaign(3748375, "ACTIVE")],
+      getCampaignEmailAccounts: async () => [
+        { id: 10, from_email: "sender@example.com" },
+      ],
+      getCampaignSequences: async () => [
+        { id: 500, seq_number: 1, subject: "Hi" },
+      ],
+    } as unknown as SmartleadClient;
+
+    const smartDelivery = {
+      assertAccessActive: async () => "ok",
+      listTests: async () => [],
+      enrichCampaignIds: async <T,>(tests: T[]) => tests,
+      resolveProviderIds: async () => [],
+      createAutomatedPlacement: async (input: {
+        schedule_start_time?: string;
+      }) => {
+        createCalls += 1;
+        starts.push(String(input.schedule_start_time ?? ""));
+        if (createCalls === 1) {
+          throw new Error(
+            "Schedule start time must be greater than or equal to the current date and time.",
+          );
+        }
+        return { id: "ok-after-repad" };
+      },
+      createManualPlacement: async () => ({ id: "manual-id" }),
+    } as unknown as SmartDeliveryClient;
+
+    const before = Date.now();
+    const result = await new CampaignScanner(
+      config,
+      smartlead,
+      smartDelivery,
+      fakeSlack(),
+      fakeState(),
+    ).run({ trigger: "manual" });
+
+    assert.equal(createCalls, 2);
+    assert.equal(result.created, 1);
+    assert.equal(result.errors.length, 0);
+    const first = Date.parse(starts[0]!);
+    const second = Date.parse(starts[1]!);
+    assert.ok(
+      first >= before + (DEFAULT_SCHEDULE_BUFFER_MINUTES - 1) * 60_000,
+      `first pad ~${DEFAULT_SCHEDULE_BUFFER_MINUTES}m`,
+    );
+    assert.ok(
+      second >= before + (RETRY_SCHEDULE_BUFFER_MINUTES - 1) * 60_000,
+      `retry pad ~${RETRY_SCHEDULE_BUFFER_MINUTES}m`,
+    );
+    assert.ok(second > first, "retry must use a later schedule_start_time");
   });
 });
 

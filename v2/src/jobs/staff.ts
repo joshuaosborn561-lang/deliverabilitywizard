@@ -78,12 +78,15 @@ export async function runStaffTick(opts: {
   sequences?: SequenceSample[];
   leads?: LeadSample[];
   runQa?: boolean;
+  /** D303 — clientId → InboxKit Microsoft share (data-driven). */
+  inboxkitShares?: Map<number, number>;
 }): Promise<StaffTickResult> {
   const now = opts.now ?? new Date();
   const findings: Finding[] = [];
   const intended: IntendedAction[] = [];
   const week = onWeekPod(now);
   const clients = clientsOf(opts.book);
+  const rebalancedClients = new Set<number>();
   const holds = await opts.store.listHolds();
   const heldIds = new Set(
     holds.filter((h) => writersMustSkipHold(h, now.getTime())).map((h) => h.accountId),
@@ -142,49 +145,13 @@ export async function runStaffTick(opts: {
           campaignId: campaign.id,
           detail: `${campaign.name} on-week ESP mix under 1/3 of real POD size`,
         });
-        // D303 — auto-rebalance (intended): 1-for-1, warm, same client,
-        // ledger generics only. POD size never drops.
-        const generics = await opts.store.listGenerics();
-        const pod = opts.book.accounts.filter(
-          (a) =>
-            a.campaignIds.includes(campaign.id) &&
-            isStaffableSender(a, { fleetEmails: opts.fleetEmails, now: now.getTime(), requireOnWeekPod: true, onWeek: week }),
-        );
-        const swaps = planEspFloorSwaps({
-          clientId: campaign.clientId,
-          pod,
-          spares: opts.book.accounts.filter((a) => !heldIds.has(a.id)),
-          generics,
-          warm: (a) => !owesWarmup(a, opts.fleetEmails, now.getTime()),
-        });
-        for (const swap of swaps) {
-          intended.push(
-            (
-              await opts.gate.intend({
-                kind: "attach",
-                campaignId: campaign.id,
-                accountId: swap.in.id,
-                email: swap.in.email,
-                payload: {
-                  reason: "d303_esp_rebalance",
-                  replaces: swap.out.email,
-                  ...(swap.inIsGeneric ? { ledger: { clientId: campaign.clientId, pod: week } } : {}),
-                },
-                run: async () => undefined,
-              })
-            ).action,
-            (
-              await opts.gate.intend({
-                kind: "detach",
-                campaignId: campaign.id,
-                accountId: swap.out.id,
-                email: swap.out.email,
-                payload: { reason: "d303_esp_rebalance", replacedBy: swap.in.email },
-                run: async () => undefined,
-              })
-            ).action,
-          );
-        }
+      }
+      // D303 — rebalance the whole on-week POD (every campaign of this
+      // client) toward its InboxKit share, once per tick per client. Runs
+      // whether or not the 1/3-floor esp_mix finding fired.
+      if (!poc && campaign.clientId != null && !rebalancedClients.has(campaign.clientId)) {
+        rebalancedClients.add(campaign.clientId);
+        intended.push(...(await rebalanceClientPodIntents({ campaign, opts, now, week, heldIds })));
       }
       if (!poc && !insightExemptFromSenderTopUp(campaign)) {
         findings.push(
@@ -591,3 +558,80 @@ async function fillFloor(opts: {
 
 export const STEP2_DAYS = STEP2_DELAY_DAYS;
 export const CALLER_GAP = CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS;
+
+/**
+ * D303 — whole on-week POD of one client: every staffable on-week seat on
+ * any of the client's ACTIVE campaigns (caller follow-up / POC excluded).
+ * Each swap attaches the incoming seat to, and detaches the outgoing seat
+ * from, every campaign the outgoing seat is on.
+ */
+async function rebalanceClientPodIntents(input: {
+  campaign: SlimCampaign;
+  opts: Parameters<typeof runStaffTick>[0];
+  now: Date;
+  week: "A" | "B";
+  heldIds: Set<number>;
+}): Promise<IntendedAction[]> {
+  const { opts, now, week } = input;
+  const clientId = input.campaign.clientId;
+  const podCampaignIds = new Set(
+    opts.book.campaigns
+      .filter(
+        (c) =>
+          c.clientId === clientId &&
+          isActiveStatus(c.status) &&
+          !isCallerFollowUpCampaign(c) &&
+          !isGabeFollowUpCampaign(c) &&
+          !isPocEngagementClient({ clientId: c.clientId, name: c.name }),
+      )
+      .map((c) => c.id),
+  );
+  const pod = opts.book.accounts.filter(
+    (a) =>
+      a.campaignIds.some((id) => podCampaignIds.has(id)) &&
+      isStaffableSender(a, { fleetEmails: opts.fleetEmails, now: now.getTime(), requireOnWeekPod: true, onWeek: week }),
+  );
+  const generics = await opts.store.listGenerics();
+  const swaps = planEspFloorSwaps({
+    clientId,
+    pod,
+    spares: opts.book.accounts.filter((a) => !input.heldIds.has(a.id)),
+    generics,
+    warm: (a) => !owesWarmup(a, opts.fleetEmails, now.getTime()),
+    microsoftShare: clientId != null ? opts.inboxkitShares?.get(clientId) : undefined,
+  });
+  const out: IntendedAction[] = [];
+  for (const swap of swaps) {
+    const campaigns = swap.out.campaignIds.filter((id) => podCampaignIds.has(id));
+    for (const cid of campaigns) {
+      out.push(
+        (
+          await opts.gate.intend({
+            kind: "attach",
+            campaignId: cid,
+            accountId: swap.in.id,
+            email: swap.in.email,
+            payload: {
+              reason: "d303_esp_rebalance",
+              replaces: swap.out.email,
+              target: opts.inboxkitShares?.has(clientId ?? -1) ? "inboxkit_share" : "one_third_floor",
+              ...(swap.inIsGeneric ? { ledger: { clientId, pod: week } } : {}),
+            },
+            run: async () => undefined,
+          })
+        ).action,
+        (
+          await opts.gate.intend({
+            kind: "detach",
+            campaignId: cid,
+            accountId: swap.out.id,
+            email: swap.out.email,
+            payload: { reason: "d303_esp_rebalance", replacedBy: swap.in.email },
+            run: async () => undefined,
+          })
+        ).action,
+      );
+    }
+  }
+  return out;
+}

@@ -78,9 +78,11 @@ export function missingVariantTests(opts: {
 /* ---------- 3. ESP rebalance (v2 1/3 floor) ---------- */
 
 /**
- * 1-for-1 swaps that lift the minority ESP to the 1/3 floor. Warm only,
- * same client branded first, then free ledger generics (never Insight,
- * never another client's). POD size never drops.
+ * 1-for-1 swaps toward the client's InboxKit Microsoft share (same target
+ * as the old wizard: round(POD × share) ± max(2, 10% of the POD)). With no
+ * InboxKit data, fall back to lifting the minority ESP to the 1/3 floor.
+ * Warm only, same-client branded first, then free ledger generics (never
+ * Insight, never another client's). POD size never drops.
  */
 export function planEspFloorSwaps(opts: {
   clientId: number | null;
@@ -88,6 +90,8 @@ export function planEspFloorSwaps(opts: {
   spares: SlimAccount[];
   generics: GenericSeat[];
   warm: (a: SlimAccount) => boolean;
+  /** D303 — client's InboxKit Microsoft share; undefined = 1/3 floor fallback. */
+  microsoftShare?: number;
 }): Array<{ out: SlimAccount; in: SlimAccount; inIsGeneric: boolean }> {
   let g = 0;
   let m = 0;
@@ -96,13 +100,26 @@ export function planEspFloorSwaps(opts: {
     else m += mailboxWeight(a);
   }
   const total = g + m;
-  if (!total || g === 0 || m === 0) return [];
-  const floor = total * ESP_MIX_FLOOR_RATIO;
-  const lowGoogle = g + 1e-6 < floor;
-  const lowMs = m + 1e-6 < floor;
-  if (!lowGoogle && !lowMs) return [];
-  const need = Math.ceil(floor - (lowGoogle ? g : m));
-  const wantGoogle = lowGoogle;
+  if (!total) return [];
+  let need: number;
+  let wantGoogle: boolean;
+  if (typeof opts.microsoftShare === "number" && Number.isFinite(opts.microsoftShare)) {
+    const size = opts.pod.length;
+    const target = Math.round(size * opts.microsoftShare);
+    const tol = Math.max(2, Math.floor(size * 0.1));
+    const diff = m - target;
+    if (Math.abs(diff) <= tol) return [];
+    need = Math.ceil(Math.abs(diff));
+    wantGoogle = diff > 0;
+  } else {
+    if (g === 0 || m === 0) return [];
+    const floor = total * ESP_MIX_FLOOR_RATIO;
+    const lowGoogle = g + 1e-6 < floor;
+    const lowMs = m + 1e-6 < floor;
+    if (!lowGoogle && !lowMs) return [];
+    need = Math.ceil(floor - (lowGoogle ? g : m));
+    wantGoogle = lowGoogle;
+  }
   const freeGeneric = new Set(
     opts.generics.filter((s) => s.assignedClientId == null).map((s) => s.accountId),
   );

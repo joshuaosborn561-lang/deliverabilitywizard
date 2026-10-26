@@ -1,3 +1,5 @@
+import { clientMicrosoftShares } from "./lib/inboxkitShare.js";
+import type { SlimAccount as SlimAccountForShare } from "./types.js";
 import cron from "node-cron";
 import { createApi, createHealthApp } from "./api.js";
 import { loadConfig, writesAllowed } from "./config.js";
@@ -156,6 +158,21 @@ async function fetchBook(tick: TickHandle) {
   };
 }
 
+/** D303 — InboxKit seats cached 1h in-process; shares computed per tick. */
+let inboxkitSeatCache: { at: number; seats: Awaited<ReturnType<InboxkitReader["listMailboxes"]>> } | null = null;
+async function loadInboxkitShares(accounts: SlimAccountForShare[]): Promise<Map<number, number> | undefined> {
+  if (!inboxkit) return undefined;
+  try {
+    if (!inboxkitSeatCache || Date.now() - inboxkitSeatCache.at > 60 * 60 * 1000) {
+      inboxkitSeatCache = { at: Date.now(), seats: await inboxkit.listMailboxes() };
+    }
+    return clientMicrosoftShares(inboxkitSeatCache.seats, accounts);
+  } catch (error) {
+    console.error("[v2] inboxkit shares failed (1/3 floor fallback)", safeErrorText(error));
+    return undefined;
+  }
+}
+
 async function loadSequences(
   campaigns: { id: number; status: string }[],
   tick: TickHandle,
@@ -248,6 +265,7 @@ async function staffPass(): Promise<void> {
       }
       const sequences = await loadSequences(book.campaigns, tick);
       progress("staff", tick, "staff_tick", { sequences: sequences.length });
+      const inboxkitShares = await loadInboxkitShares(book.accounts);
       const result = await runStaffTick({
         book,
         fleetEmails: fleetFromBook(book.accounts),
@@ -255,6 +273,7 @@ async function staffPass(): Promise<void> {
         store,
         config,
         sequences,
+        inboxkitShares,
       });
       const keep = (await store.listFindings()).filter((f) => ISOLATION_FINDING_KINDS.has(f.kind));
       await store.replaceFindings([...keep, ...result.findings]);

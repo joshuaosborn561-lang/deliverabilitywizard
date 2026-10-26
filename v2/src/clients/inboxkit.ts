@@ -6,6 +6,8 @@ export interface InboxkitMailbox {
   scheduledForCancellation?: boolean;
   cancelDate?: string | null;
   renewalDate?: string | null;
+  /** D303 — InboxKit platform (GOOGLE / MICROSOFT …) for the ESP-mix share. */
+  platform?: string | null;
 }
 
 export class InboxkitReader {
@@ -36,6 +38,7 @@ export class InboxkitReader {
         scheduledForCancellation: Boolean(o.scheduled_for_cancellation),
         cancelDate: o.cancel_date ? String(o.cancel_date) : o.cancellation_date ? String(o.cancellation_date) : null,
         renewalDate: o.renewal_date ? String(o.renewal_date) : null,
+        platform: o.platform != null ? String(o.platform) : o.provider != null ? String(o.provider) : null,
       };
     });
   }

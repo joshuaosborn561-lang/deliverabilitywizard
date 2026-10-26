@@ -5,7 +5,8 @@ import type { IntendedAction } from "../types.js";
 
 export interface SpendAsk {
   id: string;
-  kind: "buy_mailboxes" | "buy_domain" | "retire_domain";
+  /** D303 — retire_mailbox retires one burned mailbox, never its domain. */
+  kind: "buy_mailboxes" | "buy_domain" | "retire_domain" | "retire_mailbox";
   clientId?: number;
   amountUsd: number;
   payload: Record<string, unknown>;
@@ -22,7 +23,7 @@ export async function intendSpend(
   config: AppConfig,
 ): Promise<IntendedAction> {
   const payload = { ...ask.payload };
-  if (ask.kind === "retire_domain") {
+  if (ask.kind === "retire_domain" || ask.kind === "retire_mailbox") {
     payload.reason = assertOneSentenceReason(String(payload.reason ?? ""));
   }
   const result = await gate.intend({

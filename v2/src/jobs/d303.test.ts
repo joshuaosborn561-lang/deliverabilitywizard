@@ -52,7 +52,11 @@ describe("v2 D303 jobs (shadow intents only)", () => {
       book, store, gate, config, intended: again, now: new Date("2026-11-11T12:00:00Z"),
     });
     assert.equal((await store.listMailboxRests())[0]!.status, "burned");
-    assert.ok(again.some((a) => a.kind === "spend"));
+    const spend = again.find((a) => a.kind === "spend");
+    assert.ok(spend);
+    assert.equal(spend!.payload.spendKind, "retire_mailbox");
+    assert.equal(spend!.payload.amountUsd, 0);
+    assert.equal(spend!.payload.domain, undefined);
   });
 
   it("intends one test_create per missing variant test", async () => {
@@ -66,5 +70,38 @@ describe("v2 D303 jobs (shadow intents only)", () => {
     });
     assert.equal(n, 4);
     assert.ok(intended.every((a) => a.kind === "test_create" && a.executed === false));
+  });
+});
+
+import { runStaffTick } from "./staff.js";
+
+describe("v2 D303 whole-POD rebalance", () => {
+  it("swaps across every campaign of the client's on-week POD", async () => {
+    const store = new MemoryStore();
+    const config = loadConfig({} as NodeJS.ProcessEnv);
+    const gate = new WriteGate(config, store);
+    const now = new Date("2026-10-26T15:00:00Z");
+    const { onWeekPod } = await import("../lib/staffable.js");
+    const tag = `POD-${onWeekPod(now)}`;
+    const mk = (id: number, email: string, campaignIds: number[]) =>
+      ({ id, email, fromName: "", clientId: 5, campaignIds, tags: [tag], smtpOk: true, imapOk: true, messagePerDay: 30, warmupBlocked: false, createdAt: "2026-01-01T00:00:00Z", warmupStartedAt: "2026-01-01T00:00:00Z", signature: "" });
+    const accounts = [
+      ...Array.from({ length: 10 }, (_, i) => mk(i + 1, `g${i}@gmail.com`, [11, 12])),
+      ...Array.from({ length: 10 }, (_, i) => mk(50 + i, `m${i}@x.com`, [12])),
+      ...Array.from({ length: 6 }, (_, i) => mk(80 + i, `s${i}@x.com`, [])),
+    ];
+    const result = await runStaffTick({
+      book: { fetchedAt: now.toISOString(), campaigns: [
+        { id: 11, name: "One", status: "ACTIVE", clientId: 5 },
+        { id: 12, name: "Two", status: "ACTIVE", clientId: 5 },
+      ], accounts },
+      fleetEmails: [], gate, store, config, now, runQa: false,
+      inboxkitShares: new Map([[5, 0.8]]),
+    });
+    const rebalance = result.intended.filter((a) => (a.payload as { reason?: string }).reason === "d303_esp_rebalance");
+    assert.ok(rebalance.length > 0);
+    const campaigns = new Set(rebalance.map((a) => a.campaignId));
+    assert.ok(campaigns.has(11) && campaigns.has(12), "both campaigns of the POD get swaps");
+    assert.ok(rebalance.every((a) => a.executed === false));
   });
 });

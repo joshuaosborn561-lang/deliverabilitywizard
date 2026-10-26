@@ -13,7 +13,6 @@ import {
 } from "../lib/mailboxRest.js";
 import { missingVariantTests } from "../lib/d303.js";
 import { owesWarmup, podOf, onWeekPod } from "../lib/staffable.js";
-import { burnedRetireReason } from "../lib/retireReason.js";
 import { intendSpend } from "./spend.js";
 import type { AppConfig } from "../config.js";
 import type { WriteGate } from "../shadow.js";
@@ -99,18 +98,20 @@ export async function restMailboxIntents(opts: {
       }
     }
     if (decision.action === "burn") {
-      const domain = account.email.split("@")[1] ?? "";
+      // Retire this one mailbox only — never its domain. No spend: a
+      // replacement needs its own approval.
       opts.intended.push(
         await intendSpend(
           {
             id: `d303-burn-${account.email.toLowerCase()}`,
-            kind: "retire_domain",
+            kind: "retire_mailbox",
             clientId: record.clientId,
-            amountUsd: opts.config.spendCapDomainUsd,
+            amountUsd: 0,
             payload: {
-              domain,
               email: account.email,
-              reason: burnedRetireReason({ domain, isolationVerdict: "INFRA" }),
+              accountId: account.id,
+              campaignIds: record.removedFromCampaigns,
+              reason: `Mailbox ${account.email} is burned and should be retired on its own.`,
               burnReason: record.burnReason,
               needsApproval: true,
             },

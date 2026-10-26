@@ -174,6 +174,11 @@ const ConfigSchema = z.object({
    * D43 — 2 weeks on / 2 weeks off for client inboxes, split A/B per client.
    */
   enableClientRest: boolFromEnv(true),
+  /** D303 — LOCKED rest-then-burn, ESP auto-rebalance, send-window converge. */
+  enableMailboxRest: boolFromEnv(true),
+  enableEspRebalance: boolFromEnv(true),
+  enableSendWindowConverge: boolFromEnv(true),
+  cronCanonConverge: z.string().default("41 * * * *"),
   /**
    * D221 — there is no separate generic send-clock. POD rotation is
    * the only generic rotation. Default OFF. The leftover days knob
@@ -643,6 +648,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableCriticalSweep: env.ENABLE_CRITICAL_SWEEP,
     cronCriticalSweep: env.CRON_CRITICAL_SWEEP ?? "7,37 * * * *",
     enableClientRest: env.ENABLE_CLIENT_REST,
+    enableMailboxRest: env.ENABLE_MAILBOX_REST,
+    enableEspRebalance: env.ENABLE_ESP_REBALANCE,
+    enableSendWindowConverge: env.ENABLE_SEND_WINDOW_CONVERGE,
+    cronCanonConverge: env.CRON_CANON_CONVERGE ?? "41 * * * *",
     enableGenericSendRest: env.ENABLE_GENERIC_SEND_REST,
     genericSendRestDays: env.GENERIC_SEND_REST_DAYS ?? "14",
     enablePodControls: env.ENABLE_POD_CONTROLS,

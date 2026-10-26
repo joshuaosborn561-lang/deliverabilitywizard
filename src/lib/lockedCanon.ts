@@ -17,6 +17,17 @@ export const LOCKED_GENERICS_LEDGER_RULE =
 
 export const LOCKED_ESP_MATCH_GAP_RULE =
   "ESP matching + 10m gap: every Smartlead campaign has AI ESP matching ON (enable_ai_esp_matching: true) and min_time_btw_emails = 10, always (D304). The wizard flags and fixes drift on sight with settings / schedule writes only, never a status change; STOPPED campaigns are left alone.";
+export const LOCKED_PER_VARIANT_TESTS_RULE =
+  "Per-variant tests (D303): every A/B variant of every campaign gets its own placement test and its own canary-copy test, never one test per campaign.";
+
+export const LOCKED_ESP_REBALANCE_RULE =
+  "ESP mix (D303): an on-week POD off the client's InboxKit Microsoft share is auto-rebalanced, not only reported, using only swaps canon already allows: warm mailboxes, the same client, generics from the Generics Ledger; every swap is 1-for-1 so POD-40 never drops.";
+
+export const LOCKED_SEND_WINDOW_RULE =
+  "Send windows (D303): every campaign sends Mon–Thu 8am–7pm America/New_York; automation converges any campaign that drifts and keeps its own send gap and daily cap.";
+
+export const LOCKED_MAILBOX_REST_RULE =
+  "Mailbox rest (D303): when isolation shows the mailbox, not the copy, is the cause (same-ESP placement under 80%), the mailbox is pulled from its POD and campaigns, keeps warmup on, and rests 14 days; a free warm generic covers its seat, recorded in the Generics Ledger with client, POD and covering_for. After 14 days the mailbox goes back automatically and the generic comes out, the same way as the warm-swap. Every mailbox keeps a rest_count and rest history. It is BURNED if it reads under 80% again after going back on, or if rest_count goes over 3: pulled permanently and a retire/replace request is raised; any replacement spend needs approval. This replaces kill-only (D51/D128) for this case only.";
 
 export function extractLockedCanonSection(markdown: string): string {
   const heading = `## ${LOCKED_CANON_HEADING}`;
@@ -36,5 +47,9 @@ export function lockedCanonSectionBody(): string {
     `- ${LOCKED_POD_40_RULE}`,
     `- ${LOCKED_GENERICS_LEDGER_RULE}`,
     `- ${LOCKED_ESP_MATCH_GAP_RULE}`,
+    `- ${LOCKED_PER_VARIANT_TESTS_RULE}`,
+    `- ${LOCKED_ESP_REBALANCE_RULE}`,
+    `- ${LOCKED_SEND_WINDOW_RULE}`,
+    `- ${LOCKED_MAILBOX_REST_RULE}`,
   ].join("\n");
 }

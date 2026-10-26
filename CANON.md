@@ -39,6 +39,10 @@ Changes to this section require Josh's explicit approval. PRs that alter it must
 - POD-40: every client POD A and POD B must each hold >=40 warm seats the client owns (TechEvo 30), counted per POD, never per campaign; borrowed seats never count; when under, rotate free warm generics in (Insight: no generics, alert Josh daily). Never narrow, skip the off-week POD, or exempt any client from the count.
 - Generics Ledger: Every generic inbox we own has exactly one row: email, ESP, warmup on/off, assigned client (blank = free pool), assigned POD (A/B), assigned_at, and covering_for (the specific branded seats of that client it stands in for, each with its 21-day warm-ready date). All generics warm continuously; any generic found not warming gets warmup turned back on the same day. A generic is assigned only to fill one client's POD to 40 (30 TechEvo), to one client and one POD, and never moves PODs. Branded is preferred: when a covered branded seat reaches 21 days warm, it goes into the POD and the generic it covered comes out the same day: unlinked, client_id cleared, POD/POC tags stripped, signature reset, back to the free pool. No generic is assigned or released outside the ledger. Insight never receives generics; every other client, including PowerGRYD, does. CornerStone-domain inboxes are never generics and never in the pool. A generic on a live campaign without a ledger row, a generic tagged to Insight, a generic not warming, or a POD under 40 with no free warm generic alerts Josh the same day.
 - ESP matching + 10m gap: every Smartlead campaign has AI ESP matching ON (enable_ai_esp_matching: true) and min_time_btw_emails = 10, always (D304). The wizard flags and fixes drift on sight with settings / schedule writes only, never a status change; STOPPED campaigns are left alone.
+- Per-variant tests (D303): every A/B variant of every campaign gets its own placement test and its own canary-copy test, never one test per campaign.
+- ESP mix (D303): an on-week POD off the client's InboxKit Microsoft share is auto-rebalanced, not only reported, using only swaps canon already allows: warm mailboxes, the same client, generics from the Generics Ledger; every swap is 1-for-1 so POD-40 never drops.
+- Send windows (D303): every campaign sends Mon–Thu 8am–7pm America/New_York; automation converges any campaign that drifts and keeps its own send gap and daily cap.
+- Mailbox rest (D303): when isolation shows the mailbox, not the copy, is the cause (same-ESP placement under 80%), the mailbox is pulled from its POD and campaigns, keeps warmup on, and rests 14 days; a free warm generic covers its seat, recorded in the Generics Ledger with client, POD and covering_for. After 14 days the mailbox goes back automatically and the generic comes out, the same way as the warm-swap. Every mailbox keeps a rest_count and rest history. It is BURNED if it reads under 80% again after going back on, or if rest_count goes over 3: pulled permanently and a retire/replace request is raised; any replacement spend needs approval. This replaces kill-only (D51/D128) for this case only.
 
 ## Mission
 
@@ -319,8 +323,10 @@ Caps ramp manually (35 on Oct 12).
   is a single window — do not invent Friday. `min_time_btw_emails`
   stays 10 and `max_leads_per_day` stays 10000. The build skill
   writes this on setup.   Custom non-standard windows (Cold Call
-  Followup-style afternoon) are left alone — there is no schedule-window converge, so a hand-set afternoon campaign is
-  not overwritten back to the standing window. **CALLER FOLLOW-UP
+  Followup-style afternoon) are no longer left alone: **D303
+  converges every ACTIVE client campaign** back to the standing
+  window each hour, keeping its own send gap and daily cap
+  (shells and the caller follow-up class are skipped). **CALLER FOLLOW-UP
   (D242)** is Mon–Fri 07:00–20:00 America/Chicago,
   `min_time_btw_emails` 10 (D304; the 3-minute gap is superseded) —
   never converge that class's window back to Mon–Thu.
@@ -488,6 +494,9 @@ Caps ramp manually (35 on Oct 12).
   mix on top. An ACTIVE campaign whose on-week staffable
   mix breaks that target is an `esp_mix` Canon finding (D217) —
   **except Insight, which is exempt (D314: mostly Microsoft by design).**
+  **D303 auto-rebalances it**: 1-for-1 swaps only, warm seats only,
+  same client only, generics only from the Generics Ledger (never
+  Insight), so POD-40 never drops.
   `/health` `canonFindings` counts **ACTIVE campaigns only**;
   campaign-check prunes STOPPED / COMPLETED / deleted leftover
   rows so they cannot keep flagging (D263).
@@ -832,8 +841,24 @@ Caps ramp manually (35 on Oct 12).
 
 - **Kill-only** (D51): placement %, bounce %, blacklists, and leftover
   HOLD-UNTIL tags do NOT pull a mailbox off an ACTIVE campaign (D128). The
-  only removals are Josh killing a mailbox / retiring its domain, and the
-  21-day warmup gate (D105). Health backfills to the floor afterwards.
+  only removals are Josh killing a mailbox / retiring its domain, the
+  21-day warmup gate (D105), and the **D303 rest-then-burn rule**. Health
+  backfills to the floor afterwards.
+- **Rest-then-burn** (D303, LOCKED): when isolation lands INFRA and a
+  mailbox's own same-ESP placement is under 80% (the mailbox, not the
+  copy, is the cause), it is pulled from its POD and campaigns with
+  warmup left ON and rests 14 days. A free warm ledger generic covers the
+  seat (`covering_for` = the rested mailbox, ready date = rest end). After
+  14 days the mailbox goes back and the generic is released, warm-swap
+  style. `rest_count` + history per mailbox. Under 80% again after
+  returning, or `rest_count` > 3, = BURNED: pulled for good and a
+  retire/replace action is opened (spend still needs approval).
+- **Per-variant tests** (D303, LOCKED): each A/B variant of the tested
+  step gets its own placement test (`[variant X]` in the test name, its
+  own `sequence_mapping_id`) and its own canary-copy test.
+- **Mailbox summary** (D303): the monitor pages
+  `spam-test/report/mailboxes-summary` by limit/offset until every
+  mailbox is read.
 - 80% same-ESP live / 85% launch (promo tab = miss) are **readings** — the
   launch bar blocks QA-unpause of a new campaign (D46/D106), the live number
   never rotates (D32/D51). Never use the blended all-ESP score for anything

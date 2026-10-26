@@ -1,3 +1,5 @@
+import { CanonConvergeService } from "./services/canonConverge.js";
+import { onWeekCohort as onWeekCohortD303 } from "./lib/restCohort.js";
 import express from "express";
 import cron from "node-cron";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -611,6 +613,9 @@ async function main(): Promise<void> {
     copyCanary,
   );
   campaignBounceAutostop.setIsolationBranch(isolationBranch);
+  // D303 — LOCKED rest-then-burn / ESP rebalance / send-window converge.
+  const canonConverge = new CanonConvergeService({ smartlead, state, slack, config });
+  if (config.enableMailboxRest) isolationBranch.setRestRule(canonConverge);
   const podControls = new PodControlService(
     config,
     smartlead,
@@ -697,6 +702,11 @@ async function main(): Promise<void> {
     slack,
     inboxkitClientSplits,
   );
+  if (config.enableEspRebalance) {
+    campaignCheck.setEspRebalancer((input) =>
+      canonConverge.rebalanceFromCampaign({ ...input, pod: onWeekCohortD303() }),
+    );
+  }
   const holdEnforcement = new HoldEnforcementService(
     config,
     smartlead,
@@ -1842,6 +1852,27 @@ async function main(): Promise<void> {
     // (live 2026-08-26 D121: attach ended 06:35:31, boot health
     // skipped 06:36:01). The 15-minute cron is soon enough.
   }
+
+  // D303 — rests due back after 14 days; send windows to Mon–Thu 8–7 ET.
+  cron.schedule(config.cronCanonConverge, () => {
+    void (async () => {
+      if (config.enableMailboxRest) {
+        const back = await canonConverge.returnDueRests();
+        if (back.length) console.log(`[d303] rest over, back on: ${back.length}`);
+      }
+      if (config.enableSendWindowConverge) {
+        const inventory = await inventoryBook.get();
+        const r = await canonConverge.convergeSendWindows(inventory.campaigns);
+        console.log(
+          `[d303] send-window converge changed=${r.changed.length} skipped=${r.skipped.length}`,
+        );
+      }
+      await state.save();
+    })().catch((error) => {
+      console.error("[d303] Unhandled cron error", error);
+      feedBugRemediator("canon-converge-cron", error);
+    });
+  });
 
   // D205 — always schedule so disabled / after-hours ticks still
   // refresh lastOkAt. No boot kick (D122).

@@ -528,6 +528,19 @@ export class SmartleadClient {
     );
   }
 
+  /** D303 — set the campaign send window (POST /campaigns/{id}/schedule). */
+  updateCampaignSchedule(
+    campaignId: number,
+    schedule: Record<string, unknown>,
+  ): Promise<unknown> {
+    return this.mutate(() =>
+      this.request(`campaigns/${campaignId}/schedule`, {
+        method: "POST",
+        body: schedule,
+      }),
+    );
+  }
+
   /** D77 — assign the Smartlead client tag on a campaign. */
   setCampaignClientId(campaignId: number, clientId: number): Promise<unknown> {
     return this.updateCampaignSettings(campaignId, { client_id: clientId });

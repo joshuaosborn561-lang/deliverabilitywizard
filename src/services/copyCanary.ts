@@ -1,6 +1,11 @@
 import type { AppConfig } from "../config.js";
 import type { SlackClient } from "../clients/slack.js";
 import {
+  sequenceVariantTargets,
+  variantTestSuffix,
+} from "../lib/sequenceVariants.js";
+import { livingVariantCopyCanaryId } from "../lib/canaryCoverage.js";
+import {
   accountEmail,
   campaignIdsOf,
   pickSequence,
@@ -223,6 +228,22 @@ export class CopyCanaryService {
         const emails = picks.map((row) => row.email.toLowerCase());
         this.state.setCopyCanaries(campaign.id, emails, testId);
         result.testsEnsured += 1;
+        // D303 — one canary-copy test per A/B variant, not one per campaign.
+        if (!listFailed) {
+          try {
+            result.testsEnsured += await this.ensureVariantCopyTests(
+              campaign,
+              campaigns,
+              picks,
+              dryRun,
+              listed,
+              providerIds,
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            result.errors.push(`#${campaign.id} variants: ${message}`);
+          }
+        }
         for (const email of emails) {
           result.attached.push({ campaignId: campaign.id, email });
         }
@@ -778,6 +799,101 @@ export class CopyCanaryService {
     }
     const created = await this.smartDelivery.createManualPlacement(payload);
     return String(created.id);
+  }
+
+  /**
+   * D303 — the primary canary covers variant A (the first variant). Every
+   * further A/B variant gets its own canary-copy test on the same paused
+   * shell, sending that variant's copy. Returns tests created or reused.
+   */
+  async ensureVariantCopyTests(
+    campaign: SmartleadCampaign,
+    campaigns: SmartleadCampaign[],
+    picks: PoolMailboxRecord[],
+    dryRun: boolean,
+    listed: unknown,
+    providerIds: number[],
+  ): Promise<number> {
+    if (!this.smartDelivery) return 0;
+    const sequences = await this.smartlead.getCampaignSequences(campaign.id);
+    const sequence = pickSequence(sequences ?? [], this.config.sequenceNumber);
+    if (!sequence) return 0;
+    const targets = sequenceVariantTargets(sequence);
+    if (targets.length < 2) return 0;
+    const tests = normalizeTestList(listed);
+    let ensured = 0;
+    for (const target of targets.slice(1)) {
+      const stored = this.state.getVariantCopyCanaryTestId(campaign.id, target.key);
+      const living = livingVariantCopyCanaryId(campaign.id, target.label, tests);
+      if (living) {
+        if (stored !== living) this.state.setVariantCopyCanaryTestId(campaign.id, target.key, living);
+        ensured += 1;
+        continue;
+      }
+      if (dryRun) {
+        ensured += 1;
+        continue;
+      }
+      if (!providerIds.length) throw new Error("no SmartDelivery provider_ids");
+      const body = target.body;
+      const html = /<[a-z][\s\S]*>/i.test(body) ? body : htmlFromPlain(stripHtml(body) || body);
+      const senderAccountIds = picks
+        .map((row) => row.smartleadAccountId)
+        .filter((id): id is number => typeof id === "number" && id > 0);
+      // Keep the shell on the primary copy so the primary canary never
+      // flips; the variant's copy rides in this test's own sequence.
+      const primary = await this.loadCampaignCopy(campaign.id);
+      const shell = await ensureCanaryShell({
+        smartlead: this.smartlead,
+        campaigns,
+        live: campaign,
+        subject: primary.subject || "",
+        bodyHtml: primary.bodyHtml,
+        senderAccountIds,
+        dryRun,
+        sequenceNumber: this.config.sequenceNumber,
+      });
+      const payload = isolationManualPayload({
+        testName: canaryCopyTestName(
+          campaign.id,
+          campaign.name,
+          variantTestSuffix(target, targets.length),
+        ),
+        description: [
+          "Dedicated unwarmed canary fleet (per-variant, D303).",
+          `Live campaign ID: ${campaign.id}`,
+          `Variant: ${target.label}`,
+          `Canary shell ID: ${shell.campaignId}`,
+        ].join("\n"),
+        senderAccounts: picks.map((row) => row.email.toLowerCase()),
+        sequence: copySequence(campaign.name || `Campaign ${campaign.id}`, target.subject, html),
+        providerIds,
+        campaignId: shell.campaignId,
+        sequenceMappingId: shell.sequenceMappingId,
+      });
+      const scheduledAt = paddedScheduleDate();
+      const created = this.config.autoPlacementTests
+        ? await this.smartDelivery.createAutomatedPlacement({
+            ...payload,
+            every_days: this.config.placementTestEveryDays,
+            schedule_start_time: scheduledAt.toISOString(),
+            scheduler_cron_value: schedulerCronValue(
+              this.config.placementTestEveryDays,
+              scheduledAt,
+            ),
+            test_end_date: addDaysIso(
+              new Date(),
+              this.config.placementTestEndDays > 0
+                ? this.config.placementTestEndDays
+                : OPEN_ENDED_TEST_DAYS,
+            ),
+            provider_ids: providerIds,
+          })
+        : await this.smartDelivery.createManualPlacement(payload);
+      this.state.setVariantCopyCanaryTestId(campaign.id, target.key, String(created.id));
+      ensured += 1;
+    }
+    return ensured;
   }
 
   private async loadCampaignCopy(

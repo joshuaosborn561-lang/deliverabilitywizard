@@ -294,6 +294,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D297 | Live | Old-wizard fix: health-pass scan-backfill honors the stage AbortSignal (and Smartlead fetches stop, no retry-as-timeout), runs after isolation-buy-resume, skips when less than ~20 minutes remain in the 45-minute health lock, and HTTP 429s log the Smartlead endpoint. LOCKED section unchanged. |
 | D299 | Live — stringify batching amended by D300; 60-minute freeze quarantine stays | Freeze/restart loop 2026-10-23: state/hot stringify batches compact values so one JSON.stringify cannot pin the loop for seconds; a health-loop stage that freeze-exits 3 times is quarantined for 60 minutes so leftover resume does not restart there forever. Thresholds are not widened. LOCKED section unchanged. |
 | D300 | Live | Freeze/restart loop after D299 (2026-10-23): objects/arrays are never native-stringified; persist and indexAccountsByCampaign yield to timers; campaign-health snapshots use a campaign Map and yield. lastOk stamps unchanged. Thresholds not widened. LOCKED section unchanged. |
+| D303 | Live | LOCKED canon change (Josh 2026-10-25): per-variant placement + canary-copy tests; mailboxes-summary paged to every mailbox; on-week POD ESP mix auto-rebalanced (1-for-1, warm, same client, ledger generics); every ACTIVE client campaign converged to Mon–Thu 8–7 ET; mailbox rest-then-burn (14-day rest, generic covers, rest_count, burn on repeat or >3) replaces kill-only for mailbox-cause INFRA. POD-40, Insight no-generics, no cross-client generics, 21-day warmup unchanged. |
 | D301 | Live | POD ESP mix matches each client's InboxKit Google/Microsoft split (±max(2, 10% of the POD) of round(POD × Microsoft share)); 1/3 floor is fallback only when InboxKit has no row. SMTP smtp.gmail.com and type:google are Gmail; type:m365 / type:azure are Microsoft. min-40 / campaign top-up pick generics toward that split. Finding text shows the client's target. Parlay ~54%, EMCOR ~60%, Peterson ~35%. LOCKED section unchanged. |
 
 ---
@@ -11060,3 +11061,46 @@ map + cache. `src/services/campaignTopUp.test.ts` fill order.
 `src/guards/lockedCanon.test.ts` LOCKED section unchanged.
 
 
+## D303 — Per-variant tests, ESP rebalance, send-window converge, rest-then-burn (LOCKED)
+
+**Date.** 2026-10-25 (Josh, approved in the Deliverability chat, 8:35pm CT).
+
+**Decision.** Five changes, added to the LOCKED section:
+
+1. Every A/B variant of every campaign gets its own placement test and
+   its own canary-copy test, instead of one per campaign.
+2. `resultMonitor.checkMailboxSummary()` pages
+   `spam-test/report/mailboxes-summary` with limit/offset until every
+   mailbox is read (it read 10 of ~2,151).
+3. An on-week POD off the client's InboxKit Microsoft share (D301) is
+   auto-rebalanced, not only reported, using only swaps canon already
+   allows: warm seats, same client, ledger generics. 1-for-1 so POD-40
+   never drops.
+4. Every ACTIVE client campaign converges to Mon–Thu 08:00–19:00
+   America/New_York (D182 window), keeping its own gap and daily cap.
+   Shells and the D242 caller follow-up class are skipped.
+5. Mailbox rest-then-burn: when isolation shows the mailbox (same-ESP
+   placement under 80%), not the copy, is the cause, the mailbox is
+   pulled from its POD and campaigns, keeps warmup on, rests 14 days; a
+   free warm generic covers the seat in the Generics Ledger (client, POD,
+   covering_for). After 14 days it goes back and the generic comes out.
+   rest_count + history per mailbox. BURNED if under 80% again after
+   returning, or rest_count over 3: pulled permanently, retire/replace
+   action opened; replacement spend needs approval. The misleading
+   "Isolation is remediating this" alert text is replaced.
+
+**Why.** Josh (2026-10-25): one test per campaign hid weak variants; the
+summary read 10 mailboxes; esp_mix and drifting windows were only
+reported; kill-only left mailbox-caused spam running.
+
+**Supersedes / amends.** Amends D51 / D128 kill-only for the
+mailbox-is-the-cause case only. Amends D182's "no schedule-window
+converge". Amends D217 / D301 esp_mix from report-only to rebalance.
+Does not change POD-40, Insight no-generics, generics never shared
+across clients, or the 21-day warmup.
+
+**Guards.** `src/guards/canon.test.ts` D303. `src/guards/lockedCanon.test.ts`
+LOCKED section. `src/lib/sequenceVariants.test.ts`,
+`src/lib/mailboxRest.test.ts`, `src/lib/espRebalance.test.ts`,
+`src/lib/sendWindow.test.ts`, `src/services/canonConverge.test.ts`,
+`src/services/resultMonitor.mailboxSummary.test.ts`.

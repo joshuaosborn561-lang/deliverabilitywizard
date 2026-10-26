@@ -1,3 +1,5 @@
+import type { CanonConvergeService } from "./canonConverge.js";
+import { onWeekCohort } from "../lib/restCohort.js";
 import { randomUUID } from "node:crypto";
 import type { AppConfig } from "../config.js";
 import type { SlackClient } from "../clients/slack.js";
@@ -92,6 +94,13 @@ export class IsolationBranchService {
     private readonly rig: IsolationRigService,
     private readonly copyCanary?: CopyCanaryService,
   ) {}
+
+  /** D303 — rest-then-burn hook. Wired in index.ts. */
+  private restRule: Pick<CanonConvergeService, "onIsolationVerdict"> | null = null;
+
+  setRestRule(rule: Pick<CanonConvergeService, "onIsolationVerdict"> | null): void {
+    this.restRule = rule;
+  }
 
   async run(opts: {
     dryRun?: boolean;
@@ -450,6 +459,26 @@ export class IsolationBranchService {
             .map((row) => row.domain)
             .join(", ")}`,
         );
+      }
+    }
+
+    // D303 — mailbox (not copy) is the cause: rest it 14 days, generic
+    // covers its seat; burn on repeat. Replaces kill-only (D51/D128) here.
+    if (decided.verdict === "INFRA" && !opts.dryRun && this.restRule) {
+      try {
+        const clientId = typeof campaign.client_id === "number" ? campaign.client_id : null;
+        if (clientId !== null) {
+          await this.restRule.onIsolationVerdict({
+            verdict: decided.verdict,
+            clientId,
+            pod: onWeekCohort(),
+            campaignId,
+            accounts,
+            sameEspOf: (email) => this.state.getMailboxControl(email),
+          });
+        }
+      } catch (error) {
+        console.warn(`[isolation-branch] D303 rest rule #${campaignId} failed`, error);
       }
     }
 

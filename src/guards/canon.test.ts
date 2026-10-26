@@ -7448,9 +7448,12 @@ describe("owner intent — D182 standing send window is Mon–Thu 8am–7pm ET",
     );
     assert.match(
       canon,
-      /no schedule-window converge/,
+      // D303 (Josh, LOCKED, 2026-10-25) superseded D182's no-converge
+      // clause: every ACTIVE client campaign converges; caller follow-up
+      // (D242) and shells stay skipped.
+      /D303\s+converges every ACTIVE client campaign[\s\S]*?caller follow-up class are skipped/,
       stop(
-        "CANON says custom windows are not overwritten (D182).",
+        "CANON says the D303 converge skips the caller follow-up class (D182/D242/D303).",
         "CANON.md lost the no-converge clause — a later writer could smash afternoon campaigns.",
       ),
     );
@@ -18662,8 +18665,8 @@ describe("owner intent — D301 POD ESP mix matches InboxKit client split", () =
 
     assert.match(
       canon,
-      /Canon as of \*\*D301\*\*/,
-      stop("CANON is dated D301.", "CANON.md header is not D301."),
+      /Canon as of \*\*D30[1-9]\*\*/,
+      stop("CANON is dated D301 or later.", "CANON.md header is not D301+."),
     );
     assert.match(
       canon,
@@ -18748,3 +18751,26 @@ describe("owner intent — D301 POD ESP mix matches InboxKit client split", () =
   });
 });
 
+
+describe("owner intent — D303 LOCKED rest-then-burn / per-variant / converge", () => {
+  it("D303: CANON, ledger, LOCKED text and code agree", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const canon = await read("../../CANON.md");
+    const decisions = await read("../../DECISIONS.md");
+    const locked = await read("../../docs/LOCKED-CANON.md");
+    const slack = await read("../clients/slack.ts");
+    const monitor = await read("../services/resultMonitor.ts");
+    assert.match(canon, /Canon as of \*\*D303\*\*/);
+    assert.match(decisions, /## D303 — /);
+    assert.match(decisions, /^\| D303 \|/m);
+    for (const doc of [canon, locked]) {
+      assert.match(doc, /Per-variant tests \(D303\)/);
+      assert.match(doc, /Mailbox rest \(D303\)/);
+      assert.match(doc, /Send windows \(D303\)/);
+      assert.match(doc, /ESP mix \(D303\)/);
+    }
+    assert.doesNotMatch(slack, /Isolation is remediating this/);
+    assert.match(monitor, /getMailboxSummaryPage/);
+  });
+});

@@ -19,9 +19,12 @@ export function isIsolationManagedTestName(name: string | undefined): boolean {
 export function canaryCopyTestName(
   campaignId: number,
   campaignName?: string,
+  variantSuffix = "",
 ): string {
   const label = campaignName?.trim() ? ` ${campaignName.trim()}` : "";
-  return `${CANARY_COPY_TEST_PREFIX} #${campaignId}${label}`.slice(0, 120);
+  // D303 — keep the [variant X] suffix inside the 120-char cap.
+  const head = `${CANARY_COPY_TEST_PREFIX} #${campaignId}${variantSuffix}`;
+  return `${head}${label}`.slice(0, Math.max(120, head.length));
 }
 
 export function campaignIdFromCanaryTestName(

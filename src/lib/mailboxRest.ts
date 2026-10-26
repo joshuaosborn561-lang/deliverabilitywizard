@@ -38,6 +38,8 @@ export interface MailboxRestRecord {
   history: MailboxRestEvent[];
   burnedAt: string | null;
   burnReason: string | null;
+  /** Set when the approved retire_mailbox ask executed. */
+  retiredAt?: string | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;

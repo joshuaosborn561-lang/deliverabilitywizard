@@ -63,6 +63,11 @@ describe("D303 canon converge service", () => {
     });
     assert.equal(again[0]!.action, "burn");
     assert.equal(state.getMailboxRest("box@client.com")!.status, "burned");
+    const ask = state.listIsolationActions().find((a) => a.kind === "retire_mailbox");
+    assert.ok(ask, "burn opens a mailbox-level retire ask");
+    assert.equal(ask!.detail.email, "box@client.com");
+    assert.equal(ask!.detail.domain, undefined);
+    assert.ok(!state.listIsolationActions().some((a) => a.kind === "retire"));
   });
 
   it("COPY verdict or healthy mailbox does nothing", async () => {
@@ -105,5 +110,34 @@ describe("D303 canon converge service", () => {
     assert.ok(calls.includes("add 11 300"));
     assert.ok(calls.includes("rm 11 77"));
     assert.equal(state.getGenericSeat("outgen@pool.com")!.assignedClientId, null);
+  });
+
+  it("whole on-week POD: rebalance swaps across every client campaign, skips shells", async () => {
+    const { svc, calls } = await rig({ now: new Date("2026-10-26T12:00:00Z") });
+    const old = "2025-01-01T00:00:00Z";
+    const mk = (id: number, email: string, campaigns: number[]) =>
+      ({ id, from_email: email, client_id: 5, created_at: old, type: email.includes("gmail") ? "GMAIL" : "OUTLOOK", campaigns: campaigns.map((c) => ({ id: c })), campaign_ids: campaigns });
+    const allAccounts = [
+      ...Array.from({ length: 12 }, (_, i) => mk(100 + i, `m${i}@c.com`, [11, 12])),
+      ...Array.from({ length: 2 }, (_, i) => mk(200 + i, `g${i}@gmail.com`, [11, 12])),
+      ...Array.from({ length: 6 }, (_, i) => mk(300 + i, `s${i}@gmail.com`, [])),
+    ];
+    const campaigns = [
+      { id: 11, name: "One", status: "ACTIVE", client_id: 5 },
+      { id: 12, name: "Two", status: "ACTIVE", client_id: 5 },
+      { id: 13, name: "Shell canary", status: "ACTIVE", client_id: 5 },
+    ];
+    const r = await svc.rebalanceFromCampaign({
+      campaign: campaigns[0] as never, pod: "A", microsoftShare: 0.5,
+      attached: allAccounts.slice(0, 14) as never, allAccounts: allAccounts as never, campaigns: campaigns as never,
+    });
+    assert.ok(r.swaps > 0, r.reason);
+    assert.ok(calls.some((c) => c.startsWith("add 11 ")) && calls.some((c) => c.startsWith("add 12 ")));
+    assert.ok(calls.some((c) => c.startsWith("rm 12 ")));
+    const again = await svc.rebalanceFromCampaign({
+      campaign: campaigns[1] as never, pod: "A", microsoftShare: 0.5,
+      attached: [], allAccounts: allAccounts as never, campaigns: campaigns as never,
+    });
+    assert.equal(again.swaps, 0, "once per client per pass");
   });
 });

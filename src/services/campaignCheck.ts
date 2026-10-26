@@ -211,6 +211,7 @@ export class CampaignCheckService {
         microsoftShare: number | undefined;
         attached: SmartleadAccountWithCampaigns[];
         allAccounts: SmartleadAccountWithCampaigns[];
+        campaigns?: SmartleadCampaign[];
       }) => Promise<{ swaps: number; reason: string }>)
     | null = null;
 
@@ -1655,6 +1656,7 @@ export class CampaignCheckService {
                   return Boolean(e && serving.includes(e));
                 }),
                 allAccounts: input.accounts,
+                campaigns: [...input.campaigns.values()],
               });
               console.log(
                 `[campaign-check] D303 ESP rebalance #${campaign.id}: swaps=${done.swaps} (${done.reason})`,

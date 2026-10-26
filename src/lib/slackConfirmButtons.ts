@@ -11,6 +11,7 @@ export const NEEDS_YOU_APPROVE_ACTION = "needs_you_approve_client";
 
 export type IsolationAskKind =
   | "retire_domain"
+  | "retire_mailbox"
   | "buy_domains"
   | "buy_isolation_domain"
   | "buy_canary_fleet"
@@ -25,6 +26,7 @@ export function isolationAskNeedsConfirm(
   if (decision !== "approve") return false;
   return (
     kind === "retire_domain" ||
+    kind === "retire_mailbox" ||
     kind === "buy_domains" ||
     kind === "buy_isolation_domain" ||
     kind === "buy_canary_fleet"

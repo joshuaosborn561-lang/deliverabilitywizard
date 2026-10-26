@@ -15,6 +15,7 @@ export function slackRoleOf(
 export function canDecideIsolationAction(
   kind:
     | "retire_domain"
+    | "retire_mailbox"
     | "buy_domains"
     | "buy_isolation_domain"
     | "buy_canary_fleet"
@@ -29,6 +30,7 @@ export function canDecideIsolationAction(
     kind === "swap_copy" ||
     kind === "add_signature_tag" ||
     kind === "retire_domain" ||
+    kind === "retire_mailbox" ||
     kind === "buy_domains"
   ) {
     return role === "owner" || role === "operator";

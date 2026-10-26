@@ -2265,6 +2265,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     if (kind === "buy_isolation_domain") return "Buy it and arm the rig";
     if (kind === "buy_domains") return "Buy replacements";
     if (kind === "retire_domain") return "Retire this domain";
+    if (kind === "retire_mailbox") return "Retire this mailbox";
     if (kind === "swap_copy") return "Edit the copy";
     if (kind === "add_signature_tag") return "Add %signature%";
     return kind;

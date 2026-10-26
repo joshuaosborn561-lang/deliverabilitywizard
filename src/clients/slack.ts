@@ -1268,6 +1268,7 @@ export class SlackClient {
     actionId: string;
     kind:
       | "retire_domain"
+      | "retire_mailbox"
       | "buy_domains"
       | "buy_isolation_domain"
       | "buy_canary_fleet"
@@ -1291,7 +1292,9 @@ export class SlackClient {
           ? "Buy replacements"
           : details.kind === "buy_canary_fleet"
             ? "Buy canary fleet"
-            : "Retire this domain";
+            : details.kind === "retire_mailbox"
+              ? "Retire this mailbox"
+              : "Retire this domain";
     const findPhrase = details.element?.trim() ?? "";
     const suggested = details.suggestedSwap ?? "";
     const text =
@@ -1313,6 +1316,8 @@ export class SlackClient {
                 ? "Cayden cannot approve a purchase. Josh: tap Buy canary fleet. Slack will ask you to confirm. That buys two domains, three inboxes each (one Google, one Outlook). Warmup stays off. They send campaign copy in placement tests and stay off live campaigns. Nothing is bought until you confirm."
                 : details.kind === "add_signature_tag"
                     ? "Josh or Cayden: tap Add %signature%. I will append the tag to the steps that are missing it and change nothing else. The campaign stays blocked until the tag exists."
+                    : details.kind === "retire_mailbox"
+                      ? "Josh or Cayden: tap Retire this mailbox. Only this one mailbox is pulled for good; its domain and the other inboxes on it stay. Nothing is bought — a replacement needs its own approval."
                     : details.kind === "retire_domain"
                       ? "Cayden: tap Retire this domain. Slack will ask you to confirm before anything is pulled or bought. Before you confirm, mark this domain a bad outbound sender. Confirming pulls every inbox on that domain, buys a replacement domain with matching Google/Outlook mix (client-named when the burned domain is a client domain — never a generic/pool spin, D161/D173), and lets generics cover the campaigns until those warm (D150). Goliath / client 548611 follows the same Retire path (D181). The Oct 15 Goliath campaign hold is separate and unchanged. Josh can tap too."
                       : "Josh or Cayden: *Use suggested edit* applies REPLACE WITH fleet-wide (D133). *Write my own edit* opens a Slack form that shows REMOVE again so you can type a different replacement.",

@@ -33,7 +33,7 @@ import {
   scheduleOnCanon,
 } from "../lib/sendWindow.js";
 import { planEspRebalance, type PodSeat, type SpareSeat } from "../lib/espRebalance.js";
-import { requestRetireOrCover } from "../lib/retireAsk.js";
+import { requestRetireMailbox } from "../lib/retireAsk.js";
 import {
   callerFollowUpPolicyFromConfig,
   isCallerFollowUpCampaign,
@@ -139,15 +139,15 @@ export class CanonConvergeService {
       if (decision.action === "rest") {
         record = await this.coverSeat(record, account);
       } else {
-        const domain = email.split("@")[1] ?? "";
-        await requestRetireOrCover({
+        // Retire this one mailbox only — never its domain.
+        await requestRetireMailbox({
           store: this.deps.state,
           slack: this.deps.slack,
-          config: this.deps.config as AppConfig,
-          domain,
-          preferRetire: true,
+          email,
+          accountId: account.id,
+          campaignIds: record.removedFromCampaigns,
+          clientId: record.clientId,
           proof: record.burnReason ?? "burned",
-          extraDetail: { failingEmails: [email], d303Burned: true },
         }).catch((error) =>
           console.warn(`[d303] retire request for ${email} failed`, error),
         );
@@ -263,6 +263,8 @@ export class CanonConvergeService {
     pod: "A" | "B";
     microsoftShare: number | undefined;
     campaignIds: number[];
+    /** Campaigns the outgoing seat is on; the incoming seat joins exactly those. */
+    campaignsForSeat?: (email: string) => number[];
     podSeats: Array<PodSeat & { accountId: number }>;
     spares: Array<SpareSeat & { accountId: number }>;
   }): Promise<{ swaps: number; reason: string }> {
@@ -289,7 +291,8 @@ export class CanonConvergeService {
         });
         if (!ok.ok) continue;
       }
-      for (const cid of input.campaignIds) {
+      const seatCampaigns = input.campaignsForSeat?.(swap.out.email) ?? input.campaignIds;
+      for (const cid of seatCampaigns.length ? seatCampaigns : input.campaignIds) {
         await this.deps.smartlead.addEmailAccountsToCampaign(cid, [inId]);
         await this.deps.smartlead.removeEmailAccountsFromCampaign(cid, [outId]);
       }
@@ -303,10 +306,16 @@ export class CanonConvergeService {
     return { swaps: plan.swaps.length, reason: plan.reason };
   }
 
+  /** clientId → last whole-POD rebalance (ms), so one pass per client per run. */
+  private readonly rebalancedAt = new Map<number, number>();
+
   /**
-   * Build POD / spare seats for one on-week campaign that drew an
-   * esp_mix finding, then rebalance. Spares: the same client's warm
-   * branded mailboxes on no campaign, and free warm ledger generics.
+   * D303 — rebalance the WHOLE on-week POD of the client whose campaign drew
+   * an esp_mix finding: every seat on any of the client's ACTIVE client
+   * campaigns (shells / caller follow-up excluded). Each swap is applied to
+   * every campaign the outgoing seat is on, so POD-40 holds everywhere.
+   * Spares: the client's warm branded seats on no campaign, then free warm
+   * ledger generics.
    */
   async rebalanceFromCampaign(input: {
     campaign: SmartleadCampaign;
@@ -314,10 +323,28 @@ export class CanonConvergeService {
     microsoftShare: number | undefined;
     attached: SmartleadAccountWithCampaigns[];
     allAccounts: SmartleadAccountWithCampaigns[];
-  }): Promise<{ swaps: number; reason: string }> {
+    campaigns?: SmartleadCampaign[];
+  }): Promise<{ swaps: number; reason: string; campaigns?: number[] }> {
     const clientId = input.campaign.client_id;
     if (typeof clientId !== "number") return { swaps: 0, reason: "no client" };
-    const now = this.now().getTime();
+    const nowMs = this.now().getTime();
+    const last = this.rebalancedAt.get(clientId);
+    if (last !== undefined && nowMs - last < 50 * 60 * 1000) {
+      return { swaps: 0, reason: "POD already rebalanced this pass" };
+    }
+    this.rebalancedAt.set(clientId, nowMs);
+    const caller = callerFollowUpPolicyFromConfig(this.deps.config as AppConfig);
+    const podCampaigns = (input.campaigns ?? [input.campaign]).filter(
+      (c) =>
+        c.client_id === clientId &&
+        isActive(c) &&
+        !isAnyShellCampaign(c) &&
+        !isGabeFollowUpCampaign(c) &&
+        !isCallerFollowUpCampaign(c, caller),
+    );
+    if (!podCampaigns.some((c) => c.id === input.campaign.id)) podCampaigns.push(input.campaign);
+    const podCampaignIds = new Set(podCampaigns.map((c) => c.id));
+
     const warmMs = GENERIC_LEDGER_WARMUP_DAYS * 86_400_000;
     const bucket = (a: SmartleadAccountWithCampaigns) => {
       const b = senderEspBucket(a);
@@ -329,19 +356,28 @@ export class CanonConvergeService {
         .filter((r) => r.status !== "returned")
         .map((r) => r.email),
     );
+    const campaignsOfSeat = new Map<string, number[]>();
     const podSeats: Array<PodSeat & { accountId: number }> = [];
-    for (const a of input.attached) {
+    const seen = new Set<string>();
+    const consider = (a: SmartleadAccountWithCampaigns, extra: number[] = []) => {
       const email = accountEmail(a)?.toLowerCase();
       const esp = bucket(a);
-      if (!email || !esp || typeof a.id !== "number") continue;
+      if (!email || !esp || typeof a.id !== "number") return;
+      const onPod = [...new Set([...campaignIdsOf(a), ...extra])].filter((id) => podCampaignIds.has(id));
+      if (!onPod.length) return;
+      campaignsOfSeat.set(email, [...new Set([...(campaignsOfSeat.get(email) ?? []), ...onPod])]);
+      if (seen.has(email)) return;
+      seen.add(email);
       podSeats.push({ email, esp, generic: Boolean(this.deps.state.getGenericSeat(email)), accountId: a.id });
-    }
-    const onPod = new Set(podSeats.map((s) => s.email));
+    };
+    for (const a of input.attached) consider(a, [input.campaign.id]);
+    for (const a of input.allAccounts) consider(a);
+
     const spares: Array<SpareSeat & { accountId: number }> = [];
     for (const a of input.allAccounts) {
       const email = accountEmail(a)?.toLowerCase();
       const esp = bucket(a);
-      if (!email || !esp || typeof a.id !== "number" || onPod.has(email) || resting.has(email)) continue;
+      if (!email || !esp || typeof a.id !== "number" || seen.has(email) || resting.has(email)) continue;
       const seat = this.deps.state.getGenericSeat(email);
       if (seat) {
         if (!isFreeWarmLedgerSeat(seat, this.now()) || seat.warmupEnabled === false) continue;
@@ -350,16 +386,18 @@ export class CanonConvergeService {
       }
       if (a.client_id !== clientId || campaignIdsOf(a).length) continue;
       const created = a.created_at ? Date.parse(a.created_at) : NaN;
-      const warm = Number.isFinite(created) && now - created >= warmMs;
+      const warm = Number.isFinite(created) && nowMs - created >= warmMs;
       spares.push({ email, esp, generic: false, warm, clientId, accountId: a.id });
     }
-    return this.rebalancePod({
+    const done = await this.rebalancePod({
       clientId,
       pod: input.pod,
       microsoftShare: input.microsoftShare,
-      campaignIds: [input.campaign.id],
+      campaignIds: [...podCampaignIds],
+      campaignsForSeat: (email) => campaignsOfSeat.get(email) ?? [],
       podSeats,
       spares,
     });
+    return { ...done, campaigns: [...podCampaignIds] };
   }
 }

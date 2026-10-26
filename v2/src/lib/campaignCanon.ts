@@ -126,3 +126,42 @@ export function plainTextSettingsPayload(): Record<string, unknown> {
     enable_ai_esp_matching: true,
   };
 }
+
+/**
+ * D304 — LOCKED: every non-STOPPED campaign has ESP matching ON and a
+ * 10-minute gap. Caller follow-ups keep their D242 3m gap pending Josh.
+ * Settings / schedule intents only; never status.
+ */
+export interface SendCanonLockDrift {
+  espOff: boolean;
+  gapOff: boolean;
+}
+
+export function sendCanonLockDrift(campaign: SlimCampaign): SendCanonLockDrift | null {
+  if (String(campaign.status ?? "").trim().toUpperCase() === "STOPPED") return null;
+  const espOff = campaign.enableAiEspMatching != null && campaign.enableAiEspMatching !== true;
+  const gapOff =
+    campaign.minTimeBtwnEmails != null &&
+    campaign.minTimeBtwnEmails !== MIN_TIME_BTW_EMAILS &&
+    !isCallerFollowUpCampaign(campaign);
+  if (!espOff && !gapOff) return null;
+  return { espOff, gapOff };
+}
+
+/** Schedule body that keeps the campaign's own window and only sets the gap. */
+export function sendCanonLockSchedulePayload(campaign: SlimCampaign): Record<string, unknown> | null {
+  if (!campaign.timezone || !campaign.daysOfTheWeek?.length || !campaign.startHour || !campaign.endHour) {
+    return null;
+  }
+  const body: Record<string, unknown> = {
+    timezone: campaign.timezone,
+    days_of_the_week: [...campaign.daysOfTheWeek],
+    start_hour: campaign.startHour,
+    end_hour: campaign.endHour,
+    min_time_btw_emails: MIN_TIME_BTW_EMAILS,
+  };
+  if (campaign.maxLeadsPerDay != null && campaign.maxLeadsPerDay > 0) {
+    body.max_new_leads_per_day = campaign.maxLeadsPerDay;
+  }
+  return body;
+}

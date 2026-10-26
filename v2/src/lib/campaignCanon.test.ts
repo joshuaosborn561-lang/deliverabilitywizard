@@ -78,3 +78,30 @@ describe("D182 send window", () => {
     assert.equal(payload.timezone, "America/New_York");
   });
 });
+
+describe("D304 LOCKED send canon (v2 mirror)", () => {
+  const base = { id: 1, name: "x", clientId: 1 } as const;
+  it("skips STOPPED; flags PAUSED / DRAFTED / COMPLETED", async () => {
+    const { sendCanonLockDrift } = await import("./campaignCanon.js");
+    assert.equal(sendCanonLockDrift({ ...base, status: "STOPPED", enableAiEspMatching: false, minTimeBtwnEmails: 20 }), null);
+    for (const status of ["PAUSED", "DRAFTED", "COMPLETED", "ACTIVE"]) {
+      assert.deepEqual(
+        sendCanonLockDrift({ ...base, status, enableAiEspMatching: false, minTimeBtwnEmails: 20 }),
+        { espOff: true, gapOff: true },
+      );
+    }
+    assert.equal(sendCanonLockDrift({ ...base, status: "PAUSED", enableAiEspMatching: true, minTimeBtwnEmails: 10 }), null);
+  });
+  it("schedule payload keeps the window and sets only the gap; no status", async () => {
+    const { sendCanonLockSchedulePayload } = await import("./campaignCanon.js");
+    const body = sendCanonLockSchedulePayload({
+      ...base, status: "PAUSED", timezone: "America/Chicago", daysOfTheWeek: [1, 2, 3, 4, 5],
+      startHour: "09:00", endHour: "17:00", maxLeadsPerDay: 100, minTimeBtwnEmails: 20,
+    });
+    assert.deepEqual(body, {
+      timezone: "America/Chicago", days_of_the_week: [1, 2, 3, 4, 5], start_hour: "09:00",
+      end_hour: "17:00", min_time_btw_emails: 10, max_new_leads_per_day: 100,
+    });
+    assert.equal("status" in (body ?? {}), false);
+  });
+});

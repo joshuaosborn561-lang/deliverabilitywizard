@@ -172,6 +172,7 @@ export const CANON_CORE_KINDS = [
   "plain_text",
   "html_body",
   "send_window",
+  "send_canon_lock",
 ] as const;
 
 export function defaultReleasedCanaryEmails(): string[] {

@@ -44,6 +44,8 @@ import {
   plainTextSettingsPayload,
   plainTextSettingsViolation,
   sendWindowViolation,
+  sendCanonLockDrift,
+  sendCanonLockSchedulePayload,
   standingSchedulePayload,
 } from "../lib/campaignCanon.js";
 import type { WriteGate } from "../shadow.js";
@@ -344,6 +346,49 @@ export async function runStaffTick(opts: {
         poc,
         floor,
       });
+    }
+  }
+
+  // D304 — LOCKED send canon on every non-STOPPED campaign (PAUSED,
+  // DRAFTED and COMPLETED too). Intents only; WRITE_ENABLED gates writes.
+  // Skip what the per-campaign canon above already intended.
+  for (const campaign of opts.book.campaigns) {
+    const drift = sendCanonLockDrift(campaign);
+    if (!drift) continue;
+    const already = new Set(
+      findings.filter((f) => f.campaignId === campaign.id).map((f) => f.kind),
+    );
+    const espOff = drift.espOff && !already.has("esp_matching");
+    const gapOff = drift.gapOff && !already.has("send_window");
+    if (!espOff && !gapOff) continue;
+    const parts: string[] = [];
+    if (espOff) parts.push("enable_ai_esp_matching off, want on");
+    if (gapOff) parts.push(`gap ${campaign.minTimeBtwnEmails}, want ${MIN_TIME_BTW_EMAILS}`);
+    findings.push({ kind: "send_canon_lock", campaignId: campaign.id, detail: `${parts.join("; ")} (D304)` });
+    if (espOff) {
+      intended.push(
+        (
+          await opts.gate.intend({
+            kind: "settings_write",
+            campaignId: campaign.id,
+            payload: { reason: "send_canon_lock", enable_ai_esp_matching: true },
+            run: async () => undefined,
+          })
+        ).action,
+      );
+    }
+    const schedule = gapOff ? sendCanonLockSchedulePayload(campaign) : null;
+    if (schedule) {
+      intended.push(
+        (
+          await opts.gate.intend({
+            kind: "schedule_write",
+            campaignId: campaign.id,
+            payload: { reason: "send_canon_lock", schedule },
+            run: async () => undefined,
+          })
+        ).action,
+      );
     }
   }
 

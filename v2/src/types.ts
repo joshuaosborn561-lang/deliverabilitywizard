@@ -86,10 +86,18 @@ export interface SlimAccount {
   inboxkitWarmedAt?: string | null;
 }
 
+export interface SlimClient {
+  id: number;
+  name?: string | null;
+  logo?: string | null;
+}
+
 export interface InventoryBook {
   fetchedAt: string;
   campaigns: SlimCampaign[];
   accounts: SlimAccount[];
+  /** Smartlead client records: the only source of the signature brand line. */
+  clients?: SlimClient[];
 }
 
 export interface PlacementScore {

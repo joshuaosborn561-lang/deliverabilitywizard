@@ -34,15 +34,18 @@ export function qaCopyAndLeads(opts: {
   sequences?: SequenceSample[];
   leads?: LeadSample[];
   clientBrand?: string;
+  otherClientBrands?: readonly string[];
 }): Finding[] {
   const findings: Finding[] = [];
-  const brand = opts.clientBrand ?? opts.campaign.name.split("|")[0]?.trim();
+  // D298: never fall back to the campaign name for the brand line.
+  const brand = opts.clientBrand;
 
   for (const account of opts.members) {
     const sig = mailboxSignatureMismatch({
       fromName: account.fromName,
       signature: account.signature,
       clientBrand: brand,
+      otherClientBrands: opts.otherClientBrands,
       tags: account.tags,
     });
     if (sig) {

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { QA_LEASE_NAME, QA_LEASE_TTL_MS } from "../canon/constants.js";
 import { isActiveStatus } from "../lib/staffable.js";
 import { qaCopyAndLeads } from "../lib/qa.js";
+import { clientBrandFromRecord, clientBrandList } from "../lib/signature.js";
 import type { WriteGate } from "../shadow.js";
 import type { V2Store } from "../store.js";
 import type {
@@ -60,11 +61,11 @@ export async function runQaTick(opts: {
   const intended: IntendedAction[] = [];
   try {
     const clients = new Map<number, string>();
-    for (const c of opts.book.campaigns) {
-      if (c.clientId != null && !clients.has(c.clientId)) {
-        clients.set(c.clientId, c.name.split("|")[0]?.trim() ?? String(c.clientId));
-      }
+    for (const c of opts.book.clients ?? []) {
+      const brand = clientBrandFromRecord(c);
+      if (brand) clients.set(c.id, brand);
     }
+    const allBrands = clientBrandList(opts.book.clients ?? []);
     for (const campaign of opts.book.campaigns) {
       if (!isActiveStatus(campaign.status)) continue;
       const members = opts.book.accounts.filter((a) => a.campaignIds.includes(campaign.id));
@@ -74,6 +75,7 @@ export async function runQaTick(opts: {
         sequences: opts.sequences,
         leads: opts.leads,
         clientBrand: campaign.clientId != null ? clients.get(campaign.clientId) : undefined,
+        otherClientBrands: allBrands,
       });
       findings.push(...rows);
       for (const f of rows) {

@@ -3,7 +3,7 @@ import { V2_SMARTLEAD_PAGE_DELAY_MS, V2_STAFF_ACCOUNT_PAGE_CAP } from "../canon/
 import { getJson, type ScheduleFn } from "./http.js";
 import { abortableSleep, throwIfAborted } from "../lib/tickClock.js";
 import { dedupeById } from "../lib/inventory.js";
-import type { SequenceSample, SlimAccount, SlimCampaign } from "../types.js";
+import type { SequenceSample, SlimAccount, SlimCampaign, SlimClient } from "../types.js";
 
 const BASE = "https://server.smartlead.ai/api/v1";
 
@@ -28,6 +28,20 @@ export class SmartleadReader {
     u.searchParams.set("api_key", this.apiKey);
     for (const [k, v] of Object.entries(extra)) u.searchParams.set(k, v);
     return u.toString();
+  }
+
+  /** GET client/ — read-only; brand line for mailbox signatures (old wizard parity). */
+  async listClients(signal?: AbortSignal): Promise<SlimClient[]> {
+    const raw = await this.schedule(() => getJson<unknown>(this.url("client/"), {}, signal), signal);
+    const rows = Array.isArray(raw) ? raw : [];
+    return rows
+      .map((row) => row as Record<string, unknown>)
+      .filter((r) => r.id != null && Number.isFinite(Number(r.id)))
+      .map((r) => ({
+        id: Number(r.id),
+        name: r.name == null ? null : String(r.name),
+        logo: r.logo == null ? null : String(r.logo),
+      }));
   }
 
   async listCampaigns(signal?: AbortSignal): Promise<SlimCampaign[]> {

@@ -36,6 +36,8 @@ import {
   TickTimeoutError,
   withTickDeadline,
   type TickHandle,
+  budgetSignal,
+  ISOLATION_BUDGET,
 } from "./lib/tickClock.js";
 import { hasTag, isActiveStatus } from "./lib/staffable.js";
 import { SmartleadReader } from "./clients/smartlead.js";
@@ -47,7 +49,7 @@ import { runStaffTick } from "./jobs/staff.js";
 import { retryOn429, SharedSmartleadLimiter } from "./lib/limiter.js";
 import { WriteGate } from "./shadow.js";
 import { MemoryStore, PostgresStore, type V2Store } from "./store.js";
-import type { SequenceSample, SpamTest } from "./types.js";
+import type { SequenceSample, SlimClient, SpamTest } from "./types.js";
 
 const config = loadConfig();
 const store: V2Store = config.databaseUrl
@@ -95,7 +97,7 @@ const smartlead = config.smartleadApiKey
 const smartDelivery = config.smartDeliveryApiKey
   ? new SmartDeliveryReader(config.smartDeliveryApiKey, (fn, signal) => retryOn429(fn, signal))
   : null;
-const inboxkit = config.inboxkitApiKey ? new InboxkitReader(config.inboxkitApiKey) : null;
+const inboxkit = config.inboxkitApiKey ? new InboxkitReader(config.inboxkitApiKey, config.inboxkitWorkspaceId || undefined) : null;
 
 function progress(stage: string, tick: TickHandle, step: string, extra?: Record<string, string | number | boolean | null>) {
   tick.step(step);
@@ -106,8 +108,16 @@ async function fetchBook(tick: TickHandle) {
   if (!smartlead) throw new Error("SMARTLEAD_API_KEY missing");
   let campaigns: Awaited<ReturnType<SmartleadReader["listCampaigns"]>> = [];
   let accounts: Awaited<ReturnType<SmartleadReader["listAccounts"]>> = [];
+  let clients: SlimClient[] = [];
   let hydrated = 0;
   try {
+    progress("staff", tick, "list_clients");
+    try {
+      clients = await smartlead.listClients(tick.signal);
+    } catch (error) {
+      if (isTickTimeoutError(error) || tick.signal.aborted) throw error;
+      console.error("[v2] list_clients failed; signature checks skip brand-less seats", safeErrorText(error));
+    }
     progress("staff", tick, "list_campaigns");
     campaigns = await smartlead.listCampaigns(tick.signal);
     progress("staff", tick, "list_accounts", { campaigns: campaigns.length });
@@ -142,6 +152,7 @@ async function fetchBook(tick: TickHandle) {
         fetchedAt: new Date().toISOString(),
         campaigns,
         accounts,
+        clients,
       });
       progress("staff", tick, "inventory_saved", {
         campaigns: campaigns.length,
@@ -155,6 +166,7 @@ async function fetchBook(tick: TickHandle) {
     fetchedAt: new Date().toISOString(),
     campaigns,
     accounts,
+    clients,
   };
 }
 
@@ -275,8 +287,7 @@ async function staffPass(): Promise<void> {
         sequences,
         inboxkitShares,
       });
-      const keep = (await store.listFindings()).filter((f) => ISOLATION_FINDING_KINDS.has(f.kind));
-      await store.replaceFindings([...keep, ...result.findings]);
+      await store.replaceFindingsInScope({ except: [...ISOLATION_FINDING_KINDS] }, result.findings);
       console.log(
         formatStageOkLog("staff", {
           findings: result.findings.length,
@@ -311,37 +322,49 @@ async function isolationPass(): Promise<void> {
         return;
       }
       let tests: SpamTest[] = [];
+      // D298: each SmartDelivery phase gets a slice of the tick, so a slow
+      // providerwise report can no longer eat the whole budget (0 scored).
+      const until = (frac: number) =>
+        budgetSignal(tick.signal, frac * V2_ISOLATION_TICK_TIMEOUT_MS - tick.elapsedMs());
+      const listBudget = until(ISOLATION_BUDGET.listTests);
       try {
         progress("isolation", tick, "list_tests", { campaigns: inventory.campaigns.length });
         tests = await smartDelivery!.listTests({
-          signal: tick.signal,
+          signal: listBudget.signal,
           onProgress: (info) => progress("isolation", tick, "list_tests", { page: info.page }),
         });
-        const ranked = prioritizeTestsToHydrate(tests, inventory.campaigns);
-        progress("isolation", tick, "hydrate_senders", { listed: tests.length });
+      } catch (error) {
+        if (tick.signal.aborted || (!isAbortError(error) && !isTickTimeoutError(error))) throw error;
+        if (!tests.length) throw error;
+      } finally {
+        listBudget.dispose();
+      }
+      const ranked = prioritizeTestsToHydrate(tests, inventory.campaigns);
+      progress("isolation", tick, "hydrate_senders", { listed: tests.length });
+      const senderBudget = until(ISOLATION_BUDGET.hydrateSenders);
+      try {
         tests = await smartDelivery!.hydrateSenders(
           ranked,
           V2_ISOLATION_SENDER_HYDRATE_CAP,
-          tick.signal,
+          senderBudget.signal,
           (info) => progress("isolation", tick, "hydrate_senders", { n: info.n, id: info.id }),
         );
-        progress("isolation", tick, "hydrate_providers");
+      } finally {
+        senderBudget.dispose();
+      }
+      progress("isolation", tick, "hydrate_providers");
+      const providerBudget = until(ISOLATION_BUDGET.hydrateProviders);
+      try {
         tests = await smartDelivery!.hydrateProviderSplits(
           tests,
           V2_ISOLATION_PROVIDER_HYDRATE_CAP,
-          tick.signal,
+          providerBudget.signal,
           (info) => progress("isolation", tick, "hydrate_providers", { n: info.n, id: info.id }),
         );
-      } catch (error) {
-        if (!isAbortError(error) && !isTickTimeoutError(error)) throw error;
-        if (!tests.length) throw error;
-        console.log(
-          formatProgressLog("isolation", "partial_tests", {
-            tests: tests.length,
-            elapsed_ms: tick.elapsedMs(),
-          }),
-        );
+      } finally {
+        providerBudget.dispose();
       }
+      tick.throwIfAborted();
       console.log(
         formatProgressLog("isolation", "isolation_tick", {
           tests: tests.length,
@@ -363,8 +386,7 @@ async function isolationPass(): Promise<void> {
       if (tick.signal.aborted && result.scored === 0) {
         throw new TickTimeoutError(tick.hungIn, tick.elapsedMs());
       }
-      const keep = (await store.listFindings()).filter((f) => !ISOLATION_FINDING_KINDS.has(f.kind));
-      await store.replaceFindings([...keep, ...result.findings]);
+      await store.replaceFindingsInScope({ only: [...ISOLATION_FINDING_KINDS] }, result.findings);
       console.log(
         formatStageOkLog("isolation", {
           scored: result.scored,
@@ -392,7 +414,7 @@ async function inboxkitPass(): Promise<void> {
     async (tick) => {
       progress("inboxkit", tick, "list_mailboxes");
       const book = await store.loadInventory();
-      const seats = await inboxkit!.listMailboxes();
+      const seats = await inboxkit!.listMailboxes(tick.signal);
       const result = await runInboxkitSweep({
         seats,
         accounts: book?.accounts ?? [],

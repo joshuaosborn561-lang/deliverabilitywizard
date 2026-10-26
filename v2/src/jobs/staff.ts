@@ -12,7 +12,7 @@ import {
 import { isCopyCanaryFleetEmail } from "../lib/fleet.js";
 import { genericIdleFindings } from "../lib/genericIdle.js";
 import { staffingInventoryReady } from "../lib/inventory.js";
-import { mailboxSignatureMismatch } from "../lib/signature.js";
+import { clientBrandFromRecord, clientBrandList, signatureMismatch } from "../lib/signature.js";
 import {
   azureWouldReplaceGoogle,
   espMixBroken,
@@ -87,6 +87,7 @@ export async function runStaffTick(opts: {
   const week = onWeekPod(now);
   const clients = clientsOf(opts.book);
   const rebalancedClients = new Set<number>();
+  const allBrands = clientBrandList(opts.book.clients ?? []);
   const holds = await opts.store.listHolds();
   const heldIds = new Set(
     holds.filter((h) => writersMustSkipHold(h, now.getTime())).map((h) => h.accountId),
@@ -117,7 +118,7 @@ export async function runStaffTick(opts: {
     if (!poc && !isActiveStatus(campaign.status)) continue;
 
     const members = opts.book.accounts.filter((a) => a.campaignIds.includes(campaign.id));
-    const brand = clients.get(campaign.clientId ?? -1) ?? campaign.name.split("|")[0]?.trim();
+    const brand = clients.get(campaign.clientId ?? -1);
     const floor = seatTargetForCampaign(campaign);
     const staffingReady = staffingInventoryReady(opts.book);
 
@@ -286,10 +287,11 @@ export async function runStaffTick(opts: {
         }
       }
 
-      const sig = mailboxSignatureMismatch({
+      const sig = signatureMismatch({
         fromName: account.fromName,
         signature: account.signature,
         clientBrand: brand,
+        otherClientBrands: allBrands,
         tags: account.tags,
       });
       if (sig) {
@@ -298,7 +300,7 @@ export async function runStaffTick(opts: {
           campaignId: campaign.id,
           accountId: account.id,
           email: account.email,
-          detail: sig,
+          detail: sig.reason,
         });
         intended.push(
           (
@@ -307,7 +309,7 @@ export async function runStaffTick(opts: {
               campaignId: campaign.id,
               accountId: account.id,
               email: account.email,
-              payload: { reason: sig },
+              payload: { reason: sig.reason, signature: sig.desired },
               run: async () => undefined,
             })
           ).action,
@@ -466,12 +468,12 @@ function foreignClient(account: SlimAccount, campaign: SlimCampaign): boolean {
   return true;
 }
 
-function clientsOf(book: InventoryBook): Map<number, string> {
+/** D298: brand comes from the Smartlead client record only, never a campaign name. */
+export function clientsOf(book: InventoryBook): Map<number, string> {
   const map = new Map<number, string>();
-  for (const c of book.campaigns) {
-    if (c.clientId != null && !map.has(c.clientId)) {
-      map.set(c.clientId, c.name.split("|")[0]?.trim() ?? String(c.clientId));
-    }
+  for (const c of book.clients ?? []) {
+    const brand = clientBrandFromRecord(c);
+    if (brand) map.set(c.id, brand);
   }
   return map;
 }

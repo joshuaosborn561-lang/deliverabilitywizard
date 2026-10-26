@@ -5,6 +5,9 @@ import pg from "pg";
 import { randomUUID } from "node:crypto";
 import { V2_RATE_SLOT_TTL_MS } from "./canon/constants.js";
 import { dedupeById } from "./lib/inventory.js";
+import { dedupeFindings, inScope, type FindingScope } from "./lib/findings.js";
+
+const FINDINGS_INSERT_BATCH = 1000;
 import { leaseIsStale } from "./lib/tickClock.js";
 import { isIdenticalPending, payloadReason, type PendingIntentQuery } from "./lib/pendingIntent.js";
 import {
@@ -38,6 +41,8 @@ export interface V2Store {
   saveInventory(book: InventoryBook): Promise<void>;
   loadInventory(): Promise<InventoryBook | null>;
   replaceFindings(rows: Finding[]): Promise<void>;
+  /** Replace only the kinds in `scope`; rows outside it are left alone. Dedupes. */
+  replaceFindingsInScope(scope: FindingScope, rows: Finding[]): Promise<void>;
   listFindings(): Promise<Finding[]>;
   logIntended(action: IntendedAction): Promise<IntendedAction>;
   listIntended(since?: Date): Promise<IntendedAction[]>;
@@ -120,10 +125,18 @@ export class MemoryStore implements V2Store {
     return this.inventory ? structuredClone(this.inventory) : null;
   }
   async replaceFindings(rows: Finding[]): Promise<void> {
-    this.findings = rows.map((r) => ({ ...r, at: r.at ?? new Date().toISOString() }));
+    this.findings = dedupeFindings(rows).map((r) => ({ ...r, at: r.at ?? new Date().toISOString() }));
+  }
+  async replaceFindingsInScope(scope: FindingScope, rows: Finding[]): Promise<void> {
+    const keep = this.findings.filter((f) => !inScope(f.kind, scope));
+    const fresh = dedupeFindings(rows.filter((r) => inScope(r.kind, scope))).map((r) => ({
+      ...r,
+      at: r.at ?? new Date().toISOString(),
+    }));
+    this.findings = [...keep, ...fresh];
   }
   async listFindings(): Promise<Finding[]> {
-    return [...this.findings];
+    return dedupeFindings(this.findings);
   }
   async logIntended(action: IntendedAction): Promise<IntendedAction> {
     const row: IntendedAction = {
@@ -549,11 +562,12 @@ export class PostgresStore implements V2Store {
         );
       }
       await client.query(
-        `INSERT INTO inventory_meta (id, fetched_at, campaign_count, account_count)
-         VALUES (1, $1, $2, $3)
+        `INSERT INTO inventory_meta (id, fetched_at, campaign_count, account_count, clients)
+         VALUES (1, $1, $2, $3, $4)
          ON CONFLICT (id) DO UPDATE SET fetched_at = EXCLUDED.fetched_at,
-           campaign_count = EXCLUDED.campaign_count, account_count = EXCLUDED.account_count`,
-        [book.fetchedAt, campaigns.length, accounts.length],
+           campaign_count = EXCLUDED.campaign_count, account_count = EXCLUDED.account_count,
+           clients = EXCLUDED.clients`,
+        [book.fetchedAt, campaigns.length, accounts.length, JSON.stringify(book.clients ?? [])],
       );
       await client.query("COMMIT");
     } catch (error) {
@@ -565,7 +579,7 @@ export class PostgresStore implements V2Store {
   }
 
   async loadInventory(): Promise<InventoryBook | null> {
-    const meta = await this.pool.query("SELECT fetched_at FROM inventory_meta WHERE id = 1");
+    const meta = await this.pool.query("SELECT fetched_at, clients FROM inventory_meta WHERE id = 1");
     if (!meta.rowCount) return null;
     const campaigns = await this.pool.query("SELECT * FROM inventory_campaigns");
     const accounts = await this.pool.query("SELECT * FROM inventory_accounts");
@@ -573,19 +587,47 @@ export class PostgresStore implements V2Store {
       fetchedAt: meta.rows[0].fetched_at.toISOString(),
       campaigns: campaigns.rows.map(rowToCampaign),
       accounts: accounts.rows.map(rowToAccount),
+      clients: Array.isArray(meta.rows[0].clients) ? meta.rows[0].clients : [],
     };
   }
 
   async replaceFindings(rows: Finding[]): Promise<void> {
+    await this.replaceFindingsWhere("TRUE", [], rows);
+  }
+
+  async replaceFindingsInScope(scope: FindingScope, rows: Finding[]): Promise<void> {
+    const inside = rows.filter((r) => inScope(r.kind, scope));
+    if ("only" in scope) {
+      await this.replaceFindingsWhere("kind = ANY($1::text[])", [[...scope.only]], inside);
+    } else {
+      await this.replaceFindingsWhere("NOT (kind = ANY($1::text[]))", [[...scope.except]], inside);
+    }
+  }
+
+  /**
+   * Serialized (advisory lock) delete + batched insert. Row-by-row inserts of
+   * ~310k findings were eating the staff and isolation tick budgets.
+   */
+  private async replaceFindingsWhere(where: string, params: unknown[], rows: Finding[]): Promise<void> {
+    const unique = dedupeFindings(rows);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query("DELETE FROM findings");
-      for (const row of rows) {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('v2_findings'))");
+      await client.query(`DELETE FROM findings WHERE ${where}`, params);
+      for (let i = 0; i < unique.length; i += FINDINGS_INSERT_BATCH) {
+        const chunk = unique.slice(i, i + FINDINGS_INSERT_BATCH);
         await client.query(
           `INSERT INTO findings (kind, campaign_id, account_id, email, detail, at)
-           VALUES ($1,$2,$3,$4,$5,NOW())`,
-          [row.kind, row.campaignId ?? null, row.accountId ?? null, row.email ?? null, redactSecrets(row.detail)],
+           SELECT k, c, a, e, d, NOW()
+           FROM unnest($1::text[], $2::int[], $3::int[], $4::text[], $5::text[]) AS t(k, c, a, e, d)`,
+          [
+            chunk.map((r) => r.kind),
+            chunk.map((r) => r.campaignId ?? null),
+            chunk.map((r) => r.accountId ?? null),
+            chunk.map((r) => r.email ?? null),
+            chunk.map((r) => redactSecrets(r.detail)),
+          ],
         );
       }
       await client.query("COMMIT");
@@ -599,14 +641,14 @@ export class PostgresStore implements V2Store {
 
   async listFindings(): Promise<Finding[]> {
     const r = await this.pool.query("SELECT * FROM findings ORDER BY at DESC");
-    return r.rows.map((row) => ({
+    return dedupeFindings(r.rows.map((row) => ({
       kind: row.kind,
       campaignId: row.campaign_id ?? undefined,
       accountId: row.account_id ?? undefined,
       email: row.email ?? undefined,
       detail: row.detail,
       at: row.at.toISOString(),
-    }));
+    })));
   }
 
   async logIntended(action: IntendedAction): Promise<IntendedAction> {

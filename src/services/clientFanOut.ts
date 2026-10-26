@@ -211,7 +211,7 @@ export class ClientFanOutService {
         // same inboxes back out seconds later made the pull a no-op and the
         // 21-day clock (D1/D50/D105) fiction. Freshly imported client inboxes
         // wait out their clock; pre-warmed fleets and exempt tags still flow.
-        if (owesWarmup(account, email, this.config, this.state)) {
+        if (owesWarmup(account, email, this.config, this.state, now)) {
           result.skipped.push(`${email}: owes warmup (D139)`);
           continue;
         }
@@ -252,7 +252,7 @@ export class ClientFanOutService {
             email,
             account,
             campaign,
-            warmed: !owesWarmup(account, email, this.config, this.state),
+            warmed: !owesWarmup(account, email, this.config, this.state, now),
             policy: callerFollowUpPolicyFromConfig(this.config),
           });
           if (!classAttach.ok) {
@@ -449,6 +449,7 @@ export class ClientFanOutService {
       campaigns: campaigns as SmartleadCampaign[],
       accounts: accounts as SmartleadAccountWithCampaigns[],
       result,
+      now,
     });
 
     const skipReasons = new Map<string, number>();
@@ -506,6 +507,7 @@ export class ClientFanOutService {
     campaigns: SmartleadCampaign[];
     accounts: SmartleadAccountWithCampaigns[];
     result: ClientFanOutResult;
+    now?: Date;
   }): Promise<void> {
     const policy = callerFollowUpPolicyFromConfig(this.config);
     const living = input.campaigns.filter(
@@ -521,7 +523,7 @@ export class ClientFanOutService {
       if (classWalked % FAN_OUT_YIELD_EVERY === 0) await yieldEventLoop();
       const email = accountEmail(account);
       if (!email || !account.id) continue;
-      const warmed = !owesWarmup(account, email, this.config, this.state);
+      const warmed = !owesWarmup(account, email, this.config, this.state, input.now);
       const on = new Set(campaignIdsOf(account));
       for (const campaign of living) {
         if (on.has(campaign.id)) continue;

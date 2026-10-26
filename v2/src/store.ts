@@ -1,3 +1,4 @@
+import type { MailboxRestRecord } from "./lib/mailboxRest.js";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import pg from "pg";
@@ -63,6 +64,9 @@ export interface V2Store {
   listStamps(): Promise<StageStamp[]>;
   upsertGeneric(seat: GenericSeat): Promise<void>;
   listGenerics(): Promise<GenericSeat[]>;
+  /** D303 — mailbox rest-then-burn ledger. */
+  upsertMailboxRest(row: MailboxRestRecord): Promise<void>;
+  listMailboxRests(): Promise<MailboxRestRecord[]>;
   saveComparison(report: unknown): Promise<void>;
   recordEspMatrix(row: EspInboxDay): Promise<void>;
   listEspMatrix(sinceDay?: string): Promise<EspInboxDay[]>;
@@ -225,6 +229,13 @@ export class MemoryStore implements V2Store {
   }
   async listGenerics(): Promise<GenericSeat[]> {
     return [...this.generics];
+  }
+  mailboxRests = new Map<string, MailboxRestRecord>();
+  async upsertMailboxRest(row: MailboxRestRecord): Promise<void> {
+    this.mailboxRests.set(row.email.toLowerCase(), row);
+  }
+  async listMailboxRests(): Promise<MailboxRestRecord[]> {
+    return [...this.mailboxRests.values()];
   }
   async saveComparison(report: unknown): Promise<void> {
     this.comparisons.push(report);
@@ -923,6 +934,21 @@ export class PostgresStore implements V2Store {
       releasedAt: row.released_at ? row.released_at.toISOString() : null,
       reason: row.reason,
     }));
+  }
+
+  async upsertMailboxRest(row: MailboxRestRecord): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO mailbox_rests (email, record, status, rest_count, rest_until, updated_at)
+       VALUES ($1,$2,$3,$4,$5,NOW())
+       ON CONFLICT (email) DO UPDATE SET record = EXCLUDED.record, status = EXCLUDED.status,
+         rest_count = EXCLUDED.rest_count, rest_until = EXCLUDED.rest_until, updated_at = NOW()`,
+      [row.email.toLowerCase(), row, row.status, row.restCount, row.restUntil],
+    );
+  }
+
+  async listMailboxRests(): Promise<MailboxRestRecord[]> {
+    const r = await this.pool.query("SELECT record FROM mailbox_rests");
+    return r.rows.map((row) => row.record as MailboxRestRecord);
   }
 
   async saveComparison(report: unknown): Promise<void> {

@@ -332,7 +332,10 @@ export function duplicateCanaryTests(
   tests: SpamTest[],
   campaignId: number,
 ): SpamTest[] {
-  return tests.filter((t) => campaignIdFromCanaryTestName(t.name) === campaignId);
+  // D303 — a [variant X] canary is that variant's own test, not a duplicate.
+  return tests.filter(
+    (t) => campaignIdFromCanaryTestName(t.name) === campaignId && !/\[variant [^\]]+\]/.test(String(t.name ?? "")),
+  );
 }
 
 export function pickLivingCanaryTest(tests: SpamTest[], campaignId: number): SpamTest | undefined {

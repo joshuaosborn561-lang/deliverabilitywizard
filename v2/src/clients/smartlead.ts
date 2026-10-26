@@ -1,3 +1,4 @@
+import { variantsFromSequenceRow } from "../lib/d303.js";
 import { V2_SMARTLEAD_PAGE_DELAY_MS, V2_STAFF_ACCOUNT_PAGE_CAP } from "../canon/constants.js";
 import { getJson, type ScheduleFn } from "./http.js";
 import { abortableSleep, throwIfAborted } from "../lib/tickClock.js";
@@ -135,6 +136,8 @@ export class SmartleadReader {
       return {
         campaignId,
         body: String(r.email_body ?? r.sequence_body ?? r.body ?? ""),
+        seqNumber: r.seq_number == null ? null : Number(r.seq_number),
+        variants: variantsFromSequenceRow(r),
         delayInDays:
           r.seq_delay_details == null && r.delay_in_days == null
             ? null

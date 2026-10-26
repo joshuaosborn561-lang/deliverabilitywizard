@@ -162,6 +162,9 @@ export interface TerlSubstitution {
 export interface SequenceSample {
   campaignId: number;
   body: string;
+  /** D303 — step number and its A/B variants (id = sequence_mapping_id). */
+  seqNumber?: number | null;
+  variants?: Array<{ id: number; label: string }>;
   delayInDays?: number | null;
 }
 

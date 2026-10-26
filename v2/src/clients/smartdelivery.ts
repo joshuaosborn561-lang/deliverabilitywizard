@@ -59,6 +59,31 @@ export class SmartDeliveryReader {
     return all;
   }
 
+  /**
+   * D303 — page spam-test/report/mailboxes-summary with limit/offset until
+   * every mailbox is read (unpaged it returns ~10 of ~2,151).
+   */
+  async listMailboxSummary(signal?: AbortSignal, pageSize = 100, maxPages = 200): Promise<Record<string, unknown>[]> {
+    const all: Record<string, unknown>[] = [];
+    let prevFirst: string | undefined;
+    for (let page = 0, offset = 0; page < maxPages; page += 1) {
+      throwIfAborted(signal, "mailbox_summary");
+      const u = new URL(this.url("spam-test/report/mailboxes-summary"));
+      u.searchParams.set("limit", String(pageSize));
+      u.searchParams.set("offset", String(offset));
+      const raw = await this.schedule(() => getJson<unknown>(u.toString(), {}, signal), signal);
+      const rows = mailboxSummaryRows(raw);
+      if (!rows.length) break;
+      const first = JSON.stringify(rows[0]);
+      if (page > 0 && first === prevFirst) break;
+      prevFirst = first;
+      all.push(...rows);
+      if (rows.length < pageSize) break;
+      offset += rows.length;
+    }
+    return all;
+  }
+
   async getSenderAccountWise(testId: string, signal?: AbortSignal): Promise<unknown> {
     return this.schedule(
       () =>
@@ -271,4 +296,19 @@ function senderFromUnknown(
         : Boolean(o.inbox ?? o.landed_inbox ?? o.is_inbox);
   const provider = String(o.provider ?? o.esp ?? o.seed_provider ?? o.provider_name ?? "unknown");
   return { email, inbox, provider };
+}
+
+export function mailboxSummaryRows(raw: unknown): Record<string, unknown>[] {
+  if (Array.isArray(raw)) return raw as Record<string, unknown>[];
+  if (raw && typeof raw === "object") {
+    for (const key of ["data", "result", "mailboxes", "rows"]) {
+      const v = (raw as Record<string, unknown>)[key];
+      if (Array.isArray(v)) return v as Record<string, unknown>[];
+      if (v && typeof v === "object") {
+        const inner = mailboxSummaryRows(v);
+        if (inner.length) return inner;
+      }
+    }
+  }
+  return [];
 }

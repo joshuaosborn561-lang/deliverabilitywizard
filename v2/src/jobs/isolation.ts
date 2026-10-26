@@ -31,6 +31,8 @@ import { burnedRetireReason } from "../lib/retireReason.js";
 import { isActiveStatus } from "../lib/staffable.js";
 import { throwIfAborted } from "../lib/tickClock.js";
 import { intendSpend } from "./spend.js";
+import { restMailboxIntents, returnDueRestIntents, variantTestIntents } from "./d303.js";
+import { mailboxCauseEmails, sameEspInboxBySender } from "../lib/d303.js";
 import { runQaTick } from "./qa.js";
 import type { WriteGate } from "../shadow.js";
 import type { V2Store } from "../store.js";
@@ -93,6 +95,9 @@ export async function runIsolationTick(opts: {
   const senderUgly = new Map<number, PlacementScore>();
   const copyInboxByCampaign = new Map<number, { inbox: number; total: number }>();
   const warmedInboxByCampaign = new Map<number, { inbox: number; total: number }>();
+
+  // D303 — rests whose 14 days are up go back; covering generic comes out.
+  await returnDueRestIntents({ book: opts.book, store: opts.store, gate: opts.gate, intended, now });
 
   const priority = prioritizeCampaigns({
     campaigns: opts.book.campaigns,
@@ -165,6 +170,11 @@ export async function runIsolationTick(opts: {
           })
         ).action,
       );
+    }
+
+    // D303 — one placement + one canary-copy test per A/B variant.
+    if (opts.sequences?.length && isActiveStatus(campaign.status)) {
+      await variantTestIntents({ campaign, sequences: opts.sequences, tests: opts.tests, gate: opts.gate, intended });
     }
 
     const warmedTest = opts.tests.find(
@@ -391,7 +401,36 @@ export async function runIsolationTick(opts: {
       }
     }
 
+    // D303 — mailbox (same-ESP under 80%), not copy, is the cause: rest
+    // it 14 days with a generic covering; burn on repeat. Replaces the
+    // domain-retire intent for this case only.
+    let rested = 0;
     if (verdict.verdict === "INFRA" || uglyScore.failureClass === "sender") {
+      const warmed = opts.tests.find(
+        (t) => Number(t.campaignId) === campaign.id && !isCanaryCopyTestName(t.name),
+      );
+      const readings = sameEspInboxBySender(warmed);
+      const causes = mailboxCauseEmails(readings).map((email) => ({
+        email,
+        sameEspInbox: readings.get(email)!,
+      }));
+      if (causes.length) {
+        rested = (
+          await restMailboxIntents({
+            campaign,
+            causes,
+            book: opts.book,
+            store: opts.store,
+            gate: opts.gate,
+            config: opts.config,
+            intended,
+            now,
+          })
+        ).length;
+      }
+    }
+
+    if (rested === 0 && (verdict.verdict === "INFRA" || uglyScore.failureClass === "sender")) {
       const domain = (opts.book.accounts.find((a) => a.campaignIds.includes(campaign.id))?.email ?? "")
         .split("@")[1] ?? campaign.name;
       const reason = burnedRetireReason({

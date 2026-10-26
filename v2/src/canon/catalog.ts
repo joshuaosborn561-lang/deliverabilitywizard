@@ -53,7 +53,7 @@ export const CANON_CATALOG: readonly CanonRule[] = [
   { d: 48, title: "isolation reports; tests unlimited", job: 4, status: "implemented", note: "isolation worker" },
   { d: 49, title: "humans for retire/buy/copy; fleet dies on 3+ fails", job: 4, status: "implemented", note: "spend + copy hunt are intended actions" },
   { d: 50, title: "live-send warmup 21 days", job: 3, status: "implemented", note: "gate pulls under-21" },
-  { d: 51, title: "kill-only; no placement/bounce pulls", job: 3, status: "implemented", note: "only warmup gate and Josh kill detach" },
+  { d: 51, title: "kill-only; no placement/bounce pulls", job: 3, status: "implemented", note: "only warmup gate, Josh kill detach, and D303 rest-then-burn" },
   { d: 52, title: "lead runout watch", job: "none", status: "omitted", note: "leads belong elsewhere" },
   { d: 53, title: "sending IP census", job: "none", status: "omitted", note: "NICE, not a seven-job" },
   { d: 54, title: "dedicated canary fleet size 10", job: 4, status: "implemented", note: "released 2026-10-05 list never scored" },
@@ -265,6 +265,7 @@ export const CANON_CATALOG: readonly CanonRule[] = [
   { d: 281, title: "v2 tick timeout + abort + TTL lease; health-only workers; isolation off Smartlead limiter", job: "process", status: "implemented", note: "staff 10m / isolation 8m AbortController; lease and rate-slot TTL; progress logs; page/hydrate/sequence caps; createHealthApp" },
   { d: 282, title: "Insight 582890 Josh-only senders; never backfill", job: 1, status: "implemented", note: "isInsightJoshAllowedSender; skip min40/understaffed; insight_non_josh_sender flag only" },
   { d: 284, title: "v2 tick deadline races work; 60/min token bucket; quiet-hours skip before I/O", job: "process", status: "implemented", note: "raceDeadline/withTickDeadline/capWaitMs; Retry-After capped to remaining; isolation scores fetched tests on abort" },
+  { d: 303, title: "LOCKED: per-variant tests, ESP rebalance, send-window converge, mailbox rest-then-burn", job: 4, status: "implemented", note: "intended only (shadow): per-variant test_create; esp_mix 1-for-1 swaps; schedule_write; 14-day rest + generic cover, burn on repeat or rest_count>3; mailbox_rests table. mailboxes-summary is not read by v2" },
 ];
 
 export function catalogByD(d: number): CanonRule | undefined {

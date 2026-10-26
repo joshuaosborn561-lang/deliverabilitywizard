@@ -129,7 +129,7 @@ export function plainTextSettingsPayload(): Record<string, unknown> {
 
 /**
  * D304 — LOCKED: every non-STOPPED campaign has ESP matching ON and a
- * 10-minute gap. Caller follow-ups keep their D242 3m gap pending Josh.
+ * 10-minute gap. Caller follow-ups included (D304 supersedes D242's 3m gap).
  * Settings / schedule intents only; never status.
  */
 export interface SendCanonLockDrift {
@@ -142,8 +142,7 @@ export function sendCanonLockDrift(campaign: SlimCampaign): SendCanonLockDrift |
   const espOff = campaign.enableAiEspMatching != null && campaign.enableAiEspMatching !== true;
   const gapOff =
     campaign.minTimeBtwnEmails != null &&
-    campaign.minTimeBtwnEmails !== MIN_TIME_BTW_EMAILS &&
-    !isCallerFollowUpCampaign(campaign);
+    campaign.minTimeBtwnEmails !== MIN_TIME_BTW_EMAILS;
   if (!espOff && !gapOff) return null;
   return { espOff, gapOff };
 }

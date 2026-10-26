@@ -36,7 +36,8 @@ export const CALLER_FOLLOWUP_SENDER_TAG = "GABE-VM-RESERVED";
 export const CALLER_FOLLOWUP_NAME_PREFIX = "Gabe Calls |";
 export const CALLER_FOLLOWUP_CAMPAIGN_IDS = [4085158, 4085159, 4085160] as const;
 export const CALLER_FOLLOWUP_HOME_CLIENT_ID = SALESGLIDER_CLIENT_ID;
-export const CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS = 3;
+/** D304 supersedes D242's 3-minute gap: caller follow-ups use 10. */
+export const CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS = 10;
 export const CALLER_FOLLOWUP_BRIDGE_SENDERS = [
   { email: "gabriel@sorrelquotaio.co", id: 24255344 },
   { email: "gabriel@goldworkio.co", id: 24255318 },

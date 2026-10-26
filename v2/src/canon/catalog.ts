@@ -223,7 +223,7 @@ export const CANON_CATALOG: readonly CanonRule[] = [
   { d: 239, title: "named count is 21d excluding reserved/canary", job: 1, status: "implemented", note: "isStaffableSender" },
   { d: 240, title: "released canary list; size 10", job: 4, status: "implemented", note: "aminarodriguez never scored" },
   { d: 241, title: "reserved seats skip mutating stages", job: 2, status: "implemented", note: "GABE-VM-RESERVED" },
-  { d: 242, title: "CALLER FOLLOW-UP class", job: 2, status: "implemented", note: "ids + prefix + tag" },
+  { d: 242, title: "CALLER FOLLOW-UP class", job: 2, status: "implemented", note: "ids + prefix + tag; gap 10 per D304 (3m superseded)" },
   { d: 243, title: "client-named hosts never generic; later-of clock", job: 1, status: "implemented", note: "warmupClockStartedAt" },
   { d: 244, title: "reserved tag does not skip 21-day / own-campaign", job: 2, status: "implemented", note: "owned gabe@ still owe warmup" },
   { d: 245, title: "InboxKit lapsed shape; skip ending seats", job: 6, status: "implemented", note: "isLapsedSeat" },
@@ -264,7 +264,7 @@ export const CANON_CATALOG: readonly CanonRule[] = [
   { d: 280, title: "v2 workers boot-tick; copy-canary scores; per-campaign findings; purge stale attaches", job: "process", status: "implemented", note: "all roles bind /health; skip reasons logged; idempotent placement_scores unique; unwarmed copy-canary counts; unknown settings not flagged; pending attach purge on staff boot" },
   { d: 281, title: "v2 tick timeout + abort + TTL lease; health-only workers; isolation off Smartlead limiter", job: "process", status: "implemented", note: "staff 10m / isolation 8m AbortController; lease and rate-slot TTL; progress logs; page/hydrate/sequence caps; createHealthApp" },
   { d: 282, title: "Insight 582890 Josh-only senders; never backfill", job: 1, status: "implemented", note: "isInsightJoshAllowedSender; skip min40/understaffed; insight_non_josh_sender flag only" },
-  { d: 304, title: "LOCKED: ESP matching on + 10m gap on every non-STOPPED campaign", job: 5, status: "implemented", note: "send_canon_lock; intended settings_write / schedule_write keeping the campaign window; never status; caller follow-ups keep D242 gap" },
+  { d: 304, title: "LOCKED: ESP matching on + 10m gap on every non-STOPPED campaign", job: 5, status: "implemented", note: "send_canon_lock; intended settings_write / schedule_write keeping the campaign window; never status; supersedes D242 3m caller follow-up gap (now 10)" },
   { d: 284, title: "v2 tick deadline races work; 60/min token bucket; quiet-hours skip before I/O", job: "process", status: "implemented", note: "raceDeadline/withTickDeadline/capWaitMs; Retry-After capped to remaining; isolation scores fetched tests on abort" },
 ];
 

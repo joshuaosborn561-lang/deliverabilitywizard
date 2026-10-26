@@ -105,3 +105,15 @@ describe("D304 LOCKED send canon (v2 mirror)", () => {
     assert.equal("status" in (body ?? {}), false);
   });
 });
+
+describe("D304 supersedes D242 caller follow-up 3m gap (v2)", () => {
+  it("caller follow-up at 3m is drift; constant is 10", async () => {
+    const { sendCanonLockDrift } = await import("./campaignCanon.js");
+    const { CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS } = await import("../canon/constants.js");
+    assert.equal(CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS, 10);
+    assert.deepEqual(
+      sendCanonLockDrift({ id: 4085158, name: "Gabe Calls | SalesGlider", status: "ACTIVE", clientId: 1, enableAiEspMatching: true, minTimeBtwnEmails: 3 }),
+      { espOff: false, gapOff: true },
+    );
+  });
+});

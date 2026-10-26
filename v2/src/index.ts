@@ -329,9 +329,12 @@ async function isolationPass(): Promise<void> {
           elapsed_ms: tick.elapsedMs(),
         }),
       );
+      // D303 — variant ids for per-variant test intents (capped like staff).
+      const isolationSequences = await loadSequences(inventory.campaigns, tick).catch(() => []);
       const result = await runIsolationTick({
         book: inventory,
         tests,
+        sequences: isolationSequences,
         fleetEmails: fleetFromBook(inventory.accounts),
         gate,
         store,

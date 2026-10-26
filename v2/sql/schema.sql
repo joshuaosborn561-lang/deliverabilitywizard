@@ -251,3 +251,16 @@ SET detail = regexp_replace(
   'gi'
 )
 WHERE detail ~* '(api[_-]?key|access[_-]?token|token|secret|password)=';
+
+-- D303 — mailbox rest-then-burn ledger (rest_count + history in record).
+CREATE TABLE IF NOT EXISTS mailbox_rests (
+  email TEXT PRIMARY KEY,
+  record JSONB NOT NULL,
+  status TEXT NOT NULL,
+  rest_count INTEGER NOT NULL DEFAULT 0,
+  rest_until TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- D303 — generics record which seat they cover (rest cover included).
+ALTER TABLE generic_seats ADD COLUMN IF NOT EXISTS covering_for JSONB;

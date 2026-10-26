@@ -1,4 +1,5 @@
 import type { AppConfig } from "../config.js";
+import { planEspFloorSwaps } from "../lib/d303.js";
 import {
   CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS,
   CALLER_FOLLOWUP_SENDER_TAG,
@@ -141,6 +142,49 @@ export async function runStaffTick(opts: {
           campaignId: campaign.id,
           detail: `${campaign.name} on-week ESP mix under 1/3 of real POD size`,
         });
+        // D303 — auto-rebalance (intended): 1-for-1, warm, same client,
+        // ledger generics only. POD size never drops.
+        const generics = await opts.store.listGenerics();
+        const pod = opts.book.accounts.filter(
+          (a) =>
+            a.campaignIds.includes(campaign.id) &&
+            isStaffableSender(a, { fleetEmails: opts.fleetEmails, now: now.getTime(), requireOnWeekPod: true, onWeek: week }),
+        );
+        const swaps = planEspFloorSwaps({
+          clientId: campaign.clientId,
+          pod,
+          spares: opts.book.accounts.filter((a) => !heldIds.has(a.id)),
+          generics,
+          warm: (a) => !owesWarmup(a, opts.fleetEmails, now.getTime()),
+        });
+        for (const swap of swaps) {
+          intended.push(
+            (
+              await opts.gate.intend({
+                kind: "attach",
+                campaignId: campaign.id,
+                accountId: swap.in.id,
+                email: swap.in.email,
+                payload: {
+                  reason: "d303_esp_rebalance",
+                  replaces: swap.out.email,
+                  ...(swap.inIsGeneric ? { ledger: { clientId: campaign.clientId, pod: week } } : {}),
+                },
+                run: async () => undefined,
+              })
+            ).action,
+            (
+              await opts.gate.intend({
+                kind: "detach",
+                campaignId: campaign.id,
+                accountId: swap.out.id,
+                email: swap.out.email,
+                payload: { reason: "d303_esp_rebalance", replacedBy: swap.in.email },
+                run: async () => undefined,
+              })
+            ).action,
+          );
+        }
       }
       if (!poc && !insightExemptFromSenderTopUp(campaign)) {
         findings.push(

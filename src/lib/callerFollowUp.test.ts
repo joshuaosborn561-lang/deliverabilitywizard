@@ -322,22 +322,22 @@ describe("CALLER FOLLOW-UP class (D242)", () => {
     assert.equal(callerFollowUpSkipsEspMix(regular), false);
   });
 
-  it("rule 6: Mon-Fri 07:00-20:00 America/Chicago, min_time_btw_emails 3", () => {
+  it("rule 6: Mon-Fri 07:00-20:00 America/Chicago, min_time_btw_emails 10 (D304)", () => {
     assert.equal(CALLER_FOLLOWUP_TIMEZONE, "America/Chicago");
     assert.equal(CALLER_FOLLOWUP_START_HOUR, 7);
     assert.equal(CALLER_FOLLOWUP_END_HOUR, 20);
     assert.deepEqual([...CALLER_FOLLOWUP_DAYS_OF_WEEK], [1, 2, 3, 4, 5]);
-    assert.equal(CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS, 3);
-    assert.equal(callerFollowUpSkipsCanonMinGap(gabeCallsDeepRoots), true);
-    assert.equal(isCallerFollowUpCanonGapValue(3), true);
-    assert.equal(isCallerFollowUpCanonGapValue(10), false);
+    assert.equal(CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS, 10);
+    assert.equal(callerFollowUpSkipsCanonMinGap(gabeCallsDeepRoots), false);
+    assert.equal(isCallerFollowUpCanonGapValue(10), true);
+    assert.equal(isCallerFollowUpCanonGapValue(3), false);
     assert.equal(
       callerFollowUpScheduleHolds({
         timezone: "America/Chicago",
         daysOfTheWeek: [1, 2, 3, 4, 5],
         startHour: 7,
         endHour: 20,
-        minTimeBtwEmails: 3,
+        minTimeBtwEmails: 10,
       }),
       true,
     );

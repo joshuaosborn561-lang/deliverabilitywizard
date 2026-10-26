@@ -295,7 +295,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D299 | Live — stringify batching amended by D300; 60-minute freeze quarantine stays | Freeze/restart loop 2026-10-23: state/hot stringify batches compact values so one JSON.stringify cannot pin the loop for seconds; a health-loop stage that freeze-exits 3 times is quarantined for 60 minutes so leftover resume does not restart there forever. Thresholds are not widened. LOCKED section unchanged. |
 | D300 | Live | Freeze/restart loop after D299 (2026-10-23): objects/arrays are never native-stringified; persist and indexAccountsByCampaign yield to timers; campaign-health snapshots use a campaign Map and yield. lastOk stamps unchanged. Thresholds not widened. LOCKED section unchanged. |
 | D301 | Live | POD ESP mix matches each client's InboxKit Google/Microsoft split (±max(2, 10% of the POD) of round(POD × Microsoft share)); 1/3 floor is fallback only when InboxKit has no row. SMTP smtp.gmail.com and type:google are Gmail; type:m365 / type:azure are Microsoft. min-40 / campaign top-up pick generics toward that split. Finding text shows the client's target. Parlay ~54%, EMCOR ~60%, Peterson ~35%. LOCKED section unchanged. |
-| D304 | Live — LOCKED | Every Smartlead campaign: enable_ai_esp_matching ON and min_time_btw_emails 10. Campaign-check (hourly/all) flags and fixes drift on every non-STOPPED campaign: ESP via POST /settings, gap via POST /schedule echoing the current window. Never status. Caller follow-ups keep the D242 3m gap pending Josh. |
+| D304 | Live — LOCKED | Every Smartlead campaign: enable_ai_esp_matching ON and min_time_btw_emails 10. Campaign-check (hourly/all) flags and fixes drift on every non-STOPPED campaign: ESP via POST /settings, gap via POST /schedule echoing the current window. Never status. Supersedes D242's 3m caller follow-up gap (now 10). |
 | D307 | Live | Tests that persist age-pruned ledgers (placement scores, copy suspects) stamp fixture times relative to now so D257's 14-day placement-score retention cannot drop a living row. Production prune windows and isolation sidecar persist are unchanged. LOCKED section unchanged. |
 
 ---
@@ -11123,9 +11123,12 @@ only through `/status`, which this path never calls. A campaign with no
 schedule window to echo keeps a `campaign_send_gap` finding instead of a
 guessed window. DRY_RUN reports drift only.
 
-**Open.** Caller follow-ups (D242) send at a 3-minute gap. They get ESP
-matching but keep their gap until Josh says whether "every campaign"
-includes them. D138's ACTIVE-only `/settings` gap write is left as is.
+**Supersedes D242's gap.** Josh's "every campaign" covers caller
+follow-ups: their 3-minute `min_time_btw_emails` becomes 10
+(`CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS`, creation and repair, and the
+min-gap converge no longer skips them). The rest of D242 (Mon–Fri
+07:00–20:00 Chicago window, staffing / ESP-mix exemptions) stands.
+D138's ACTIVE-only `/settings` gap write is left as is.
 
 **Guards.** `src/lib/campaignSendCanon.test.ts`;
 `src/guards/canon.test.ts` D304; `src/guards/lockedCanon.test.ts`

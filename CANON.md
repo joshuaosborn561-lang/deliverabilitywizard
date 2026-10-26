@@ -72,8 +72,8 @@ one-client-per-sender exception. Every stage respects:
 5. Exempt from the half-client staffing floor and the 30/30 ESP
    mix check.
 6. Schedule Mon–Fri 07:00–20:00 America/Chicago,
-   `min_time_btw_emails` 3. Never converge back to Mon–Thu or the
-   10-minute canon values.
+   `min_time_btw_emails` 10 (D304 supersedes D242's 3-minute gap).
+   Never converge the Mon–Fri window back to Mon–Thu.
 7. Exempt from runway and top-up alerts.
 8. Prewarmed (`WARMUP-GATE-EXEMPT`). Warmup stays on. Placement,
    bounce, and blacklist still monitor; if one needs to be killed
@@ -304,8 +304,8 @@ Caps ramp manually (35 on Oct 12).
   Followup-style afternoon) are left alone — there is no schedule-window converge, so a hand-set afternoon campaign is
   not overwritten back to the standing window. **CALLER FOLLOW-UP
   (D242)** is Mon–Fri 07:00–20:00 America/Chicago,
-  `min_time_btw_emails` 3 — never converge that class back to
-  Mon–Thu or the 10-minute canon gap.
+  `min_time_btw_emails` 10 (D304; the 3-minute gap is superseded) —
+  never converge that class's window back to Mon–Thu.
 - **Sequence delays** (D186): step 1 stays `delay_in_days: 0`.
   Step 2 must be **2 days** on every client campaign that has
   a second email. Canary shells, pod-control shells, the

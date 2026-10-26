@@ -15,8 +15,7 @@
  * Neither endpoint accepts a status field. Status has its own endpoint,
  * which this module never calls.
  *
- * Caller follow-ups keep their own D242 gap (3 minutes) until Josh says
- * otherwise; ESP matching still applies to them.
+ * Caller follow-ups are included: D304 supersedes D242's 3-minute gap.
  */
 
 export const SEND_CANON_GAP_MINS = 10;

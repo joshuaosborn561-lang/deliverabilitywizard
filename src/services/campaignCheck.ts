@@ -367,7 +367,6 @@ export class CampaignCheckService {
     // "first" mode stays light. Only rows that carry the fields are judged.
     const sendCanonRows: CampaignCheckResult["findings"] = [];
     if (mode === "hourly" || mode === "all") {
-      const callerPolicy = callerFollowUpPolicyFromConfig(this.config);
       for (const campaign of campaigns as SmartleadCampaign[]) {
         throwIfAborted(opts.signal);
         const row = campaign as SmartleadCampaign & SendCanonCampaign;
@@ -377,9 +376,7 @@ export class CampaignCheckService {
         const outcome = await convergeSendCanon(row, this.smartlead, {
           dryRun: this.config.dryRun,
           espExempt: !("enable_ai_esp_matching" in row),
-          gapExempt:
-            !("min_time_btwn_emails" in row) ||
-            callerFollowUpSkipsCanonMinGap(campaign, callerPolicy),
+          gapExempt: !("min_time_btwn_emails" in row),
         });
         if (!outcome) continue;
         if (outcome.fixed.length) {

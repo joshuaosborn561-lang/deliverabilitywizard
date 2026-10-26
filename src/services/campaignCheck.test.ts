@@ -2046,7 +2046,7 @@ describe("D241 GABE-VM-RESERVED campaign-check", () => {
     assert.deepEqual(writes, []);
   });
 
-  it("D242: does not converge min_gap, understaffed, or ESP mix on Gabe Calls", async () => {
+  it("D242: does not converge understaffed or ESP mix on Gabe Calls; gap goes to 10 (D304)", async () => {
     const state = new StateStore(stateFile());
     await state.load();
     const settings: Array<[number, Record<string, unknown>]> = [];
@@ -2092,7 +2092,7 @@ describe("D241 GABE-VM-RESERVED campaign-check", () => {
     } as unknown as SmartleadClient;
     const service = mkCheck(loadConfig({}), sl, delivery(), state);
     const hourly = await service.run({ mode: "hourly" });
-    assert.deepEqual(settings, []);
+    assert.deepEqual(settings, [[4085158, { min_time_btwn_emails: 10 }]]);
     const row = hourly.findings.find((item) => item.campaignId === 4085158);
     assert.equal(
       (row?.findings ?? []).some((finding) => finding.kind === "campaign_min_gap"),

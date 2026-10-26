@@ -22,7 +22,8 @@ export const CALLER_FOLLOWUP_CAMPAIGN_IDS_DEFAULT = [
 ] as const;
 
 export const CALLER_FOLLOWUP_HOME_CLIENT_ID = 345263;
-export const CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS = 3;
+/** D304 supersedes D242's 3-minute gap: caller follow-ups use the canon 10. */
+export const CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS = 10;
 export const CALLER_FOLLOWUP_TIMEZONE = "America/Chicago";
 export const CALLER_FOLLOWUP_START_HOUR = 7;
 export const CALLER_FOLLOWUP_END_HOUR = 20;
@@ -449,9 +450,11 @@ export function callerFollowUpSkipsCanonMinGap(
       }
     | null
     | undefined,
-  policy: CallerFollowUpPolicy = DEFAULT_CALLER_FOLLOWUP_POLICY,
+  _policy: CallerFollowUpPolicy = DEFAULT_CALLER_FOLLOWUP_POLICY,
 ): boolean {
-  return isCallerFollowUpCampaign(campaign, policy);
+  // D304 — the LOCKED 10m gap covers caller follow-ups too. No skip.
+  void campaign;
+  return false;
 }
 
 export function callerFollowUpScheduleHolds(input: {

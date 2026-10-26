@@ -14122,7 +14122,7 @@ describe("owner intent — D242 CALLER FOLLOW-UP campaign class", () => {
     assert.equal(CALLER_FOLLOWUP_NAME_PREFIX_DEFAULT, "Gabe Calls |");
     assert.equal(CALLER_FOLLOWUP_SENDER_TAG_DEFAULT, "GABE-VM-RESERVED");
     assert.equal(CALLER_FOLLOWUP_TIMEZONE, "America/Chicago");
-    assert.equal(CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS, 3);
+    assert.equal(CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS, 10); // D304 supersedes the 3m gap
     assert.equal(
       isCallerFollowUpCampaign({ id: 4085160, name: "Gabe Calls | Deep Roots" }),
       true,
@@ -14162,7 +14162,7 @@ describe("owner intent — D242 CALLER FOLLOW-UP campaign class", () => {
     );
     assert.equal(
       callerFollowUpSkipsCanonMinGap({ id: 4085160, name: "Gabe Calls | Deep Roots" }),
-      true,
+      false, // D304 — caller follow-ups get the 10m gap
     );
     assert.equal(
       callerFollowUpSkipsRunwayAndTopUpAlerts({ id: 4085160, name: "Gabe Calls | Deep Roots" }),

@@ -225,7 +225,7 @@ monitoring is the health job.
   window — do not invent a Friday slot.
 - 08:00–19:00 America/New_York (Eastern). Not Chicago 09:00–18:00
   (retired by D182).
-- `min_time_btw_emails: 10`. Do not use 13 or 20. The hourly checker
+- `min_time_btw_emails: 10` on every campaign (LOCKED, D304). Do not use 13 or 20. The hourly checker
   converges any drift back to 10 on sight, campaign and mailbox level
   (D138) — do not fight it.
 - `max_leads_per_day: 10000` is uncapped at campaign level. Real bound is
@@ -246,6 +246,8 @@ monitoring is the health job.
 }
 ```
 
+- `enable_ai_esp_matching: true` on every campaign (LOCKED, D304). The
+  hourly checker turns it back on if it drifts.
 - `send_as_plain_text: true` is delivery-layer. Bodies are still the `<div>`
   HTML below.
 - Tracking fully off.

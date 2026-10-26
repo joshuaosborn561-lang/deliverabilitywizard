@@ -295,6 +295,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D299 | Live — stringify batching amended by D300; 60-minute freeze quarantine stays | Freeze/restart loop 2026-10-23: state/hot stringify batches compact values so one JSON.stringify cannot pin the loop for seconds; a health-loop stage that freeze-exits 3 times is quarantined for 60 minutes so leftover resume does not restart there forever. Thresholds are not widened. LOCKED section unchanged. |
 | D300 | Live | Freeze/restart loop after D299 (2026-10-23): objects/arrays are never native-stringified; persist and indexAccountsByCampaign yield to timers; campaign-health snapshots use a campaign Map and yield. lastOk stamps unchanged. Thresholds not widened. LOCKED section unchanged. |
 | D301 | Live | POD ESP mix matches each client's InboxKit Google/Microsoft split (±max(2, 10% of the POD) of round(POD × Microsoft share)); 1/3 floor is fallback only when InboxKit has no row. SMTP smtp.gmail.com and type:google are Gmail; type:m365 / type:azure are Microsoft. min-40 / campaign top-up pick generics toward that split. Finding text shows the client's target. Parlay ~54%, EMCOR ~60%, Peterson ~35%. LOCKED section unchanged. |
+| D304 | Live — LOCKED | Every Smartlead campaign: enable_ai_esp_matching ON and min_time_btw_emails 10. Campaign-check (hourly/all) flags and fixes drift on every non-STOPPED campaign: ESP via POST /settings, gap via POST /schedule echoing the current window. Never status. Caller follow-ups keep the D242 3m gap pending Josh. |
 | D307 | Live | Tests that persist age-pruned ledgers (placement scores, copy suspects) stamp fixture times relative to now so D257's 14-day placement-score retention cannot drop a living row. Production prune windows and isolation sidecar persist are unchanged. LOCKED section unchanged. |
 
 ---
@@ -11102,3 +11103,30 @@ score uses `STATE_RETENTION.placementScoresMs` relative to now.
 LOCKED section unchanged.
 
 
+## D304 — LOCKED: ESP matching always on, 10-minute gap, every campaign
+
+**Decision (Josh, 2026-10-25 11:36pm CT, relayed in his words):** "Yes,
+lock ESP matching always on with a 10 minute gap for every campaign".
+
+**Rule.** Every Smartlead campaign has `enable_ai_esp_matching: true`
+and `min_time_btw_emails: 10`. Added to the LOCKED section of CANON.md
+and docs/LOCKED-CANON.md, so this PR and any change to it never
+auto-merge (D285).
+
+**Enforcement.** `src/lib/campaignSendCanon.ts`, called from
+campaign-check in hourly / all modes, judges every non-STOPPED campaign
+(ACTIVE, PAUSED, DRAFTED, COMPLETED). ESP matching is written with POST
+`/campaigns/{id}/settings`; the gap with POST `/campaigns/{id}/schedule`,
+echoing the campaign's current timezone, days, hours and daily cap so
+only the gap moves. Neither endpoint has a status field; status moves
+only through `/status`, which this path never calls. A campaign with no
+schedule window to echo keeps a `campaign_send_gap` finding instead of a
+guessed window. DRY_RUN reports drift only.
+
+**Open.** Caller follow-ups (D242) send at a 3-minute gap. They get ESP
+matching but keep their gap until Josh says whether "every campaign"
+includes them. D138's ACTIVE-only `/settings` gap write is left as is.
+
+**Guards.** `src/lib/campaignSendCanon.test.ts`;
+`src/guards/canon.test.ts` D304; `src/guards/lockedCanon.test.ts`
+LOCKED text mirrored.

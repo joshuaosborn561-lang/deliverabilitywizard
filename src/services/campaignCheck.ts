@@ -117,6 +117,10 @@ import type { SpamTestSummary } from "../types/index.js";
 import { isTerminalCampaignStatus } from "./campaignBounceAutostop.js";
 import { campaignSettingsWriteBody } from "../lib/bounceAutopause.js";
 import {
+  convergeSendCanon,
+  type SendCanonCampaign,
+} from "../lib/campaignSendCanon.js";
+import {
   readMessagePerDay,
   readMinTimeGapMins,
 } from "../lib/mailboxSendSettings.js";
@@ -355,6 +359,44 @@ export class CampaignCheckService {
         console.log(
           `[campaign-check] pruned deleted #${row.campaignId} ${row.name} (D263)`,
         );
+      }
+    }
+    // D304 — LOCKED: ESP matching ON + 10m gap on every non-STOPPED
+    // campaign (PAUSED / DRAFTED / COMPLETED too). Settings and schedule
+    // writes only, never status. Hourly / all only, so the health-pass
+    // "first" mode stays light. Only rows that carry the fields are judged.
+    const sendCanonRows: CampaignCheckResult["findings"] = [];
+    if (mode === "hourly" || mode === "all") {
+      const callerPolicy = callerFollowUpPolicyFromConfig(this.config);
+      for (const campaign of campaigns as SmartleadCampaign[]) {
+        throwIfAborted(opts.signal);
+        const row = campaign as SmartleadCampaign & SendCanonCampaign;
+        if (!("enable_ai_esp_matching" in row) && !("min_time_btwn_emails" in row)) {
+          continue;
+        }
+        const outcome = await convergeSendCanon(row, this.smartlead, {
+          dryRun: this.config.dryRun,
+          espExempt: !("enable_ai_esp_matching" in row),
+          gapExempt:
+            !("min_time_btwn_emails" in row) ||
+            callerFollowUpSkipsCanonMinGap(campaign, callerPolicy),
+        });
+        if (!outcome) continue;
+        if (outcome.fixed.length) {
+          await sleep(WRITE_GAP_MS);
+          console.log(
+            `[campaign-check] #${campaign.id} send canon fixed ${outcome.fixed.join("+")} (D304)`,
+          );
+        }
+        if (outcome.problems.length) {
+          sendCanonRows.push({
+            campaignId: campaign.id,
+            name: String(campaign.name ?? campaign.id),
+            kind: "hourly",
+            passed: true,
+            findings: outcome.problems,
+          });
+        }
       }
     }
     for (const campaign of campaigns as SmartleadCampaign[]) {
@@ -715,6 +757,12 @@ export class CampaignCheckService {
     console.log(
       `[campaign-check] mode=${mode} examined=${result.examined} firstSeen=${result.firstSeen} firstChecked=${result.firstChecked} firstPassed=${result.firstPassed} swept=${result.swept} blocked=${result.blocked.length} deferred=${result.deferred}`,
     );
+    // D304 — merge send-canon findings after the per-campaign rows.
+    for (const extra of sendCanonRows) {
+      const row = result.findings.find((r) => r.campaignId === extra.campaignId);
+      if (row) row.findings.push(...extra.findings);
+      else result.findings.push(extra);
+    }
     return result;
   }
 

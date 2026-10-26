@@ -30,6 +30,8 @@ export const CAMPAIGN_CHECK_KINDS = [
   "mailbox_gap",
   "mailbox_volume",
   "campaign_min_gap",
+  "esp_matching_off",
+  "campaign_send_gap",
   "step2_delay",
   "below_launch_bar",
   "merge_tag_blank",

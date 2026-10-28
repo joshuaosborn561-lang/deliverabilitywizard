@@ -96,27 +96,48 @@ export function sendCanonSkipsStatus(status: unknown): boolean {
   return String(status ?? "").trim().toUpperCase() === "STOPPED";
 }
 
-/** D306 — standing window. Skip Gabe, shells, tests, STOPPED. */
+/**
+ * D306 (Josh, 2026-10-27 8:08pm CT): any cold-call campaign.
+ * Name contains `Calls |` (Gabe, Cayden, future callers) plus the
+ * D242 CALLER FOLLOW-UP detection (config ids / `Gabe Calls |`).
+ */
+export function isCallsCampaign(campaign: {
+  id?: number | null;
+  name?: string | null;
+}): boolean {
+  if (isCallerFollowUpCampaign(campaign)) return true;
+  return String(campaign.name ?? "").includes("Calls |");
+}
+
+/** D306: Booking Follow Up campaigns keep their own send window. */
+export function isBookingFollowUpCampaign(campaign: {
+  name?: string | null;
+}): boolean {
+  return String(campaign.name ?? "").includes("Booking Follow Up");
+}
+
+/** D306 — standing window. Skip Calls | / D242 / Booking Follow Up / shells / tests / STOPPED. */
 export function campaignHasSendWindowRule(campaign: {
   id?: number | null;
   name?: string | null;
   status?: string | null;
 }): boolean {
   if (sendCanonSkipsStatus(campaign.status)) return false;
-  if (isCallerFollowUpCampaign(campaign)) return false;
+  if (isCallsCampaign(campaign)) return false;
+  if (isBookingFollowUpCampaign(campaign)) return false;
   if (isShellOrWordHuntCampaign(campaign)) return false;
   if (isTestCampaign(campaign)) return false;
   return true;
 }
 
-/** D304 gap applies everywhere except STOPPED and CALLER FOLLOW-UP. */
+/** D304 gap applies everywhere except STOPPED and Calls | / D242. */
 export function campaignHasSendGapRule(campaign: {
   id?: number | null;
   name?: string | null;
   status?: string | null;
 }): boolean {
   if (sendCanonSkipsStatus(campaign.status)) return false;
-  if (isCallerFollowUpCampaign(campaign)) return false;
+  if (isCallsCampaign(campaign)) return false;
   return true;
 }
 
@@ -172,9 +193,10 @@ export function plainTextSettingsPayload(): Record<string, unknown> {
 
 /**
  * D304 / D306 — LOCKED send canon. ESP matching ON on every
- * non-STOPPED campaign. 10-minute gap except CALLER FOLLOW-UP
+ * non-STOPPED campaign. 10-minute gap except Calls | / D242
  * (D306 restores D242's 3m). Window-eligible campaigns also
  * converge to the standing Mon–Thu 08:00–19:00 ET window.
+ * Booking Follow Up windows stay; they still take the 10m gap.
  * Settings / schedule intents only; never status.
  */
 export interface SendCanonLockDrift {
@@ -226,12 +248,13 @@ export function sendCanonLockDrift(campaign: SlimCampaign): SendCanonLockDrift |
 
 /**
  * D306: window-eligible campaigns get the standing body (custom
- * windows overwritten). Shells / tests echo their window and only
- * set the 10m gap. Gabe / STOPPED return null.
+ * windows overwritten). Shells / tests / Booking Follow Up echo
+ * their window and only set the 10m gap. Calls | / D242 / STOPPED
+ * return null.
  */
 export function sendCanonLockSchedulePayload(campaign: SlimCampaign): Record<string, unknown> | null {
   if (sendCanonSkipsStatus(campaign.status)) return null;
-  if (isCallerFollowUpCampaign(campaign)) return null;
+  if (isCallsCampaign(campaign)) return null;
   if (campaignHasSendWindowRule(campaign)) {
     return standingSchedulePayload();
   }

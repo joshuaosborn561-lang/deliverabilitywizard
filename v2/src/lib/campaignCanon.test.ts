@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  campaignHasSendGapRule,
+  campaignHasSendWindowRule,
   espMatchingViolation,
   htmlBodyViolation,
+  isBookingFollowUpCampaign,
+  isCallsCampaign,
   looksLikeHtml,
   plainTextSettingsViolation,
   sendWindowViolation,
@@ -73,6 +77,22 @@ describe("D182 send window", () => {
       sendWindowViolation(campaign({ id: 4085158, name: "Gabe Calls | SalesGlider" })),
       null,
     );
+    assert.equal(
+      sendWindowViolation(campaign({ id: 4236756, name: "Cayden Calls | SalesGlider" })),
+      null,
+    );
+    assert.equal(
+      sendWindowViolation(
+        campaign({
+          id: 20,
+          name: "Booking Follow Up - SalesGlider",
+          daysOfTheWeek: [1, 2, 3, 4, 5],
+          maxLeadsPerDay: 100,
+        }),
+      ),
+      null,
+    );
+    assert.ok(sendWindowViolation(campaign({ name: "SalesGlider Nurture", timezone: "America/Chicago" })));
     const payload = standingSchedulePayload();
     assert.deepEqual(payload.days_of_the_week, [1, 2, 3, 4]);
     assert.equal(payload.timezone, "America/New_York");
@@ -124,6 +144,95 @@ describe("D304 LOCKED send canon (v2 mirror)", () => {
       min_time_btw_emails: 10,
       max_new_leads_per_day: 500,
     });
+  });
+});
+
+describe("D306 send-window exemptions (Calls | + Booking Follow Up)", () => {
+  it("skips every Calls | campaign and every Booking Follow Up; enforces the rest", () => {
+    assert.equal(isCallsCampaign({ id: 4236756, name: "Cayden Calls | SalesGlider" }), true);
+    assert.equal(isCallsCampaign({ id: 99, name: "Ada Calls | Acme" }), true);
+    assert.equal(isCallsCampaign({ id: 4085158, name: "Gabe Lopez Follow-up" }), true);
+    assert.equal(isBookingFollowUpCampaign({ name: "Booking Follow Up - SalesGlider" }), true);
+    assert.equal(
+      campaignHasSendWindowRule({ id: 4236756, name: "Cayden Calls | SalesGlider", status: "PAUSED" }),
+      false,
+    );
+    assert.equal(
+      campaignHasSendWindowRule({
+        id: 20,
+        name: "Booking Follow Up - SalesGlider",
+        status: "COMPLETED",
+      }),
+      false,
+    );
+    assert.equal(
+      campaignHasSendWindowRule({ id: 21, name: "SalesGlider Nurture", status: "ACTIVE" }),
+      true,
+    );
+    assert.equal(
+      campaignHasSendWindowRule({ id: 22, name: "SG Referral Hosts 1015 – PE", status: "ACTIVE" }),
+      true,
+    );
+    assert.equal(
+      campaignHasSendWindowRule({
+        id: 23,
+        name: "SG Subs BizDev AirPods/Tickets 1019",
+        status: "ACTIVE",
+      }),
+      true,
+    );
+    assert.equal(
+      campaignHasSendGapRule({ id: 4236756, name: "Cayden Calls | SalesGlider", status: "PAUSED" }),
+      false,
+    );
+    assert.equal(
+      campaignHasSendGapRule({
+        id: 20,
+        name: "Booking Follow Up - SalesGlider",
+        status: "COMPLETED",
+      }),
+      true,
+    );
+  });
+
+  it("Calls | payload is null; Booking Follow Up echoes the window", async () => {
+    const { sendCanonLockSchedulePayload } = await import("./campaignCanon.js");
+    assert.equal(
+      sendCanonLockSchedulePayload({
+        id: 4236756,
+        name: "Cayden Calls | SalesGlider",
+        status: "PAUSED",
+        clientId: 1,
+        timezone: "America/Chicago",
+        daysOfTheWeek: [1, 2, 3, 4, 5],
+        startHour: "07:00",
+        endHour: "20:00",
+        minTimeBtwnEmails: 3,
+      }),
+      null,
+    );
+    assert.deepEqual(
+      sendCanonLockSchedulePayload({
+        id: 20,
+        name: "Booking Follow Up - SalesGlider",
+        status: "COMPLETED",
+        clientId: 1,
+        timezone: "America/New_York",
+        daysOfTheWeek: [1, 2, 3, 4, 5],
+        startHour: "08:00",
+        endHour: "19:00",
+        maxLeadsPerDay: 100,
+        minTimeBtwnEmails: 20,
+      }),
+      {
+        timezone: "America/New_York",
+        days_of_the_week: [1, 2, 3, 4, 5],
+        start_hour: "08:00",
+        end_hour: "19:00",
+        min_time_btw_emails: 10,
+        max_new_leads_per_day: 100,
+      },
+    );
   });
 });
 

@@ -273,8 +273,12 @@ Caps ramp manually (35 on Oct 12).
   standing window (D306 supersedes D182's "no schedule-window
   converge"). Campaign-check / v2 staff intend `schedule_write`
   only — never the status endpoint. **CALLER FOLLOW-UP (D242)**
-  keeps Mon–Fri 07:00–20:00 America/Chicago with a 3-minute gap
-  (D306 restores D242's gap). Shells, canaries, word-hunt, test
+  and every campaign whose name contains `Calls |` (Gabe Calls,
+  Cayden Calls, any future caller) keep their windows and the
+  3-minute gap (D306 restores D242's gap). **Booking Follow Up**
+  campaigns keep their windows (D304 10m gap still applies).
+  Everything else is overwritten, including SG Nurture, Referral
+  Hosts, and SG Subs 1019. Shells, canaries, word-hunt, test
   campaigns, and STOPPED are skipped.
 - **ESP matching** (D274): Gmail senders to Gmail recipients,
   Outlook to Outlook. Every ACTIVE campaign's Smartlead

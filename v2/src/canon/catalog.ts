@@ -172,7 +172,7 @@ export const CANON_CATALOG: readonly CanonRule[] = [
   { d: 179, title: "retired domain not re-asked", job: 7, status: "omitted", note: "spend execute" },
   { d: 180, title: "merge-tag fill QA, never edit copy", job: 5, status: "implemented", note: "merge_tag_blank finding only" },
   { d: 181, title: "Goliath burned domains follow Retire", job: 7, status: "omitted", note: "spend" },
-  { d: 182, title: "send window Mon–Thu 08:00–19:00 ET", job: 5, status: "implemented", note: "staff check; D306 overwrites custom windows via schedule_write; CALLER FOLLOW-UP / shells / tests / STOPPED exempt" },
+  { d: 182, title: "send window Mon–Thu 08:00–19:00 ET", job: 5, status: "implemented", note: "staff check; D306 overwrites custom windows via schedule_write; Calls | / D242 / Booking Follow Up / shells / tests / STOPPED exempt" },
   { d: 183, title: "Outlook 15, Gmail 30, Azure 2/5", job: 1, status: "implemented", note: "caps in constants" },
   { d: 184, title: "exclusive-blank Insight staff", job: "none", status: "retired", note: "D192" },
   { d: 186, title: "step 2 delay is 2 days", job: 5, status: "implemented", note: "STEP2_DELAY_DAYS; D306 checks step 3 (finding only)" },
@@ -265,7 +265,7 @@ export const CANON_CATALOG: readonly CanonRule[] = [
   { d: 281, title: "v2 tick timeout + abort + TTL lease; health-only workers; isolation off Smartlead limiter", job: "process", status: "implemented", note: "staff 10m / isolation 8m AbortController; lease and rate-slot TTL; progress logs; page/hydrate/sequence caps; createHealthApp" },
   { d: 282, title: "Insight 582890 Josh-only senders; never backfill", job: 1, status: "implemented", note: "isInsightJoshAllowedSender; skip min40/understaffed; insight_non_josh_sender flag only" },
   { d: 304, title: "LOCKED: ESP matching on + 10m gap on every non-STOPPED campaign", job: 5, status: "implemented", note: "send_canon_lock; settings_write / schedule_write; never status; D306 restores Gabe 3m and overwrites custom windows" },
-  { d: 306, title: "14-day warmup; breakup-step check only; send-window converge", job: 5, status: "implemented", note: "WARMUP_DAYS 14; missing_breakup_step finding only (never sequence_write); schedule_write standing Mon–Thu 08:00–19:00 ET; skip Gabe / shells / tests / STOPPED; never status" },
+  { d: 306, title: "14-day warmup; breakup-step check only; send-window converge", job: 5, status: "implemented", note: "WARMUP_DAYS 14; missing_breakup_step finding only (never sequence_write); schedule_write standing Mon–Thu 08:00–19:00 ET; skip Calls | / D242 / Booking Follow Up / shells / tests / STOPPED; never status" },
   { d: 284, title: "v2 tick deadline races work; 60/min token bucket; quiet-hours skip before I/O", job: "process", status: "implemented", note: "raceDeadline/withTickDeadline/capWaitMs; Retry-After capped to remaining; isolation scores fetched tests on abort" },
 ];
 

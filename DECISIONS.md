@@ -290,7 +290,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D282 | Live | Insight (Smartlead client 582890) campaigns may only send from Josh Osborn inboxes on SalesGlider or Insight domains; no generics / other named senders; floor is Josh-seats only, never backfill; `insight_non_josh_sender` flags existing violations; understaffed/min40 suppressed |
 | D284 | Live | v2 tick deadline actually ends the pass (Promise.race + abortable fetch/retry); 429 Retry-After never sleeps past the deadline; 60/min token bucket; quiet-hours skip before I/O; isolation scores fetched tests on abort so 0% campaigns get flagged |
 | D304 | Live — LOCKED; caller-follow-up 10m gap restored to 3 by D306 | Every Smartlead campaign: enable_ai_esp_matching ON and min_time_btw_emails 10. Intended settings / schedule writes only, never status. D306 restores D242's 3m gap on caller follow-ups and overwrites custom send windows. |
-| D306 | Live — LOCKED | Warmup is 14 days for every seat (named and generic). Breakup-step CHECK ONLY (`missing_breakup_step` if no seq_number 3 or step 3 delay is not 2). Send-window converge Mon–Thu 08:00–19:00 America/New_York; custom windows overwritten; skip Gabe / shells / tests / STOPPED; never status. Josh: "Take [21] down to fourteen days. So that everything gets fourteen." |
+| D306 | Live — LOCKED | Warmup is 14 days for every seat (named and generic). Breakup-step CHECK ONLY (`missing_breakup_step` if no seq_number 3 or step 3 delay is not 2). Send-window converge Mon–Thu 08:00–19:00 America/New_York; custom windows overwritten; skip Calls | / D242 / Booking Follow Up / shells / tests / STOPPED; never status. Josh: "Take [21] down to fourteen days. So that everything gets fourteen." |
 
 ---
 
@@ -10363,11 +10363,24 @@ Three canon changes in one call:
    and 1-step tests.
 3. **Send-window converge.** `schedule_write` intents to
    Monday–Thursday 08:00–19:00 America/New_York. Custom
-   windows overwritten. Skip Gabe (3m Chicago), shells /
-   tests / STOPPED. Never status.
+   windows overwritten. Skip every cold-call campaign —
+   any name containing `Calls |` (Gabe Calls, Cayden Calls,
+   any future caller) as well as D242 (they keep 3m
+   Chicago) — and every Booking Follow Up campaign (window
+   left untouched; D304 10m gap still applies). Also skip
+   shells / tests / STOPPED. Everything else is enforced,
+   including SG Nurture, Referral Hosts, and SG Subs 1019.
+   Never status.
+
+**Send-window exemptions (Josh, 2026-10-27 8:08pm CT).**
+Exempt every cold call campaign (name contains `Calls |`,
+plus D242) and every Booking Follow Up campaign. Their
+windows are left untouched.
 
 **Why.** Josh approved the three changes together on
-2026-10-27.
+2026-10-27. The 8:08pm CT call named the window
+exemptions so Cayden Calls and Booking Follow Up are
+not overwritten.
 
 **Supersedes / amends.** Supersedes D50 / D105 duration.
 Supersedes D182's no-converge clause. Supersedes D186's

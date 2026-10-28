@@ -514,6 +514,7 @@ export function owesWarmup(
     | "extraGenericMailboxes"
   >,
   state: Pick<StateStore, "getPoolMailbox" | "isCopyCanary">,
+  now?: Date,
 ): boolean {
   if (isWarmupGateExempt(tagNames(account as SmartleadEmailAccount))) return false;
   if (state.isCopyCanary(email)) return false;
@@ -521,7 +522,7 @@ export function owesWarmup(
     return false;
   }
   const started = warmupClockStartedAt(account, email, state);
-  const days = started != null ? daysSince(started) : null;
+  const days = started != null ? daysSince(started, now?.getTime()) : null;
   return days == null || days < owedWarmupDays(false, config);
 }
 

@@ -266,6 +266,7 @@ async function main(): Promise<void> {
   }
 
   const smartleadLimiter = new SmartleadLimiter();
+  const smartDeliveryLimiter = new SmartleadLimiter();
   const smartlead = new SmartleadClient(config.smartleadApiKey || "missing", {
     limiter: smartleadLimiter,
   });
@@ -278,7 +279,11 @@ async function main(): Promise<void> {
   smartlead.setMutationQueue(mutationQueue);
   const smartDelivery = new SmartDeliveryClient(
     config.smartDeliveryApiKey || "missing",
-    { limiter: smartleadLimiter },
+    // D305 — SmartDelivery (spam-test) is a separate host with its own
+    // quota. Sharing the Smartlead limiter let spam-test 429 storms pause
+    // and hold slots for every Smartlead call, timing out canary-adopt,
+    // test-reconcile and min40-topup together.
+    { limiter: smartDeliveryLimiter },
   );
   const inboxkit = config.inboxkitApiKey
     ? new InboxKitClient(

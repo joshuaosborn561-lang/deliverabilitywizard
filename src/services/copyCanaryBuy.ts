@@ -207,8 +207,12 @@ export class CopyCanaryBuyService {
       ReturnType<SmartleadClient["listAllEmailAccounts"]>
     > = [];
     try {
+      // D305 — the registered-fleet pass only reads tags/emails, never
+      // campaign memberships. fetch_campaigns=true on the whole fleet took
+      // >6m under 429s and starved the canary-adopt stage (10m budget)
+      // before copy-test attach ran, so live campaigns showed no canary.
       accounts = await this.smartlead.listAllEmailAccounts({
-        fetchCampaigns: true,
+        fetchCampaigns: false,
       });
     } catch (error) {
       console.warn(

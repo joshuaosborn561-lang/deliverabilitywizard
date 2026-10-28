@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { insightSequenceIllegal } from "./signature.js";
-import { mergeTagHoles, qaCopyAndLeads, step2DelayWrong } from "./qa.js";
+import { mergeTagHoles, missingBreakupStep, qaCopyAndLeads, step2DelayWrong } from "./qa.js";
 import { bounceRateIsEvidence, bounceLoopMayPause, classifyBounceReason } from "./bounce.js";
 
 describe("copy / bounce QA", () => {
@@ -29,6 +29,52 @@ describe("copy / bounce QA", () => {
   it("D186: step 2 must be 2 days", () => {
     assert.equal(step2DelayWrong(1), true);
     assert.equal(step2DelayWrong(2), false);
+  });
+
+  it("D306: breakup step is check only", () => {
+    assert.equal(
+      missingBreakupStep([
+        { campaignId: 1, body: "one", seqNumber: 1, delayInDays: 0 },
+        { campaignId: 1, body: "two", seqNumber: 2, delayInDays: 2 },
+      ]),
+      "step 3 missing (want delay 2d so it lands on day 4)",
+    );
+    assert.equal(
+      missingBreakupStep([
+        { campaignId: 1, body: "one", seqNumber: 1, delayInDays: 0 },
+      ]),
+      null,
+    );
+    assert.equal(
+      missingBreakupStep([
+        { campaignId: 1, body: "one", seqNumber: 1, delayInDays: 0 },
+        { campaignId: 1, body: "two", seqNumber: 2, delayInDays: 2 },
+        { campaignId: 1, body: "three", seqNumber: 3, delayInDays: 2 },
+      ]),
+      null,
+    );
+    const findings = qaCopyAndLeads({
+      campaign: { id: 1, name: "Acme", status: "ACTIVE", clientId: 10 },
+      members: [],
+      sequences: [
+        { campaignId: 1, body: "Hi %signature%", seqNumber: 1, delayInDays: 0 },
+        { campaignId: 1, body: "Next %signature%", seqNumber: 2, delayInDays: 2 },
+      ],
+    });
+    assert.ok(findings.some((f) => f.kind === "missing_breakup_step"));
+    assert.equal(
+      findings.some((f) => f.kind === "sequence_write"),
+      false,
+    );
+    const gabe = qaCopyAndLeads({
+      campaign: { id: 4085158, name: "Gabe Calls | SalesGlider", status: "ACTIVE", clientId: 1 },
+      members: [],
+      sequences: [
+        { campaignId: 4085158, body: "Hi", seqNumber: 1, delayInDays: 0 },
+        { campaignId: 4085158, body: "Next", seqNumber: 2, delayInDays: 2 },
+      ],
+    });
+    assert.equal(gabe.some((f) => f.kind === "missing_breakup_step"), false);
   });
 
   it("D255: Insight in-body Josh Osborn / Insight close is illegal", () => {

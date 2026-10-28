@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D284** (2026-10-17). One page of current truth. When a new
+Canon as of **D306** (2026-10-27). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -103,16 +103,15 @@ Caps ramp manually (35 on Oct 12).
 
 ## Mailboxes
 
-- **Warmup clock**: a mailbox owes **21 days from its InboxKit import**
+- **Warmup clock**: a mailbox owes **14 days from its InboxKit import**
   (`warmedAt` stamped at import) **or from Smartlead `created_at` /
-  warmup start, whichever is later** (D1 clock, D50 duration, D243
-  later-of). A seat bought before it was imported still owes 21 days
+  warmup start, whichever is later** (D1 clock, D306 duration, D243
+  later-of). A seat bought before it was imported still owes 14 days
   from the later Smartlead clock. WARMUP-GATE-EXEMPT and
-  PREWARMED_DOMAINS skip the clock (D227/D142). "Warmed
-  ≥14d" is **reporting-only** (pool plan / briefs); the wizard live-send
-  gate stays **21 days** (D50/D105/D192). The warmup
-  gate is **ON** and pulls an under-21-day mailbox off ACTIVE campaigns on
-  the health pass (D105). The gate ledgers every pull per membership: the
+  PREWARMED_DOMAINS skip the clock (D227/D142). Named and generic
+  seats share the same 14-day clock (D306). The warmup
+  gate is **ON** and pulls an under-14-day mailbox off ACTIVE campaigns on
+  the health pass (D105/D306). The gate ledgers every pull per membership: the
   same membership pulled 3+ times in 24h means a writer **outside this
   app** keeps re-adding it — logged every pass and named on the EOD brief
   for a human to switch off; the gate keeps pulling meanwhile, but the
@@ -123,7 +122,7 @@ Caps ramp manually (35 on Oct 12).
   cleartechco.com) and every from-name fleet in `EXTRA_GENERIC_MAILBOXES`
   (D19/D142); the canary fleet (which never staffs anyway, D54);
   **and every seat tagged `WARMUP-GATE-EXEMPT`** (D227). That tag
-  counts as 21+ days warm for `isStaffableSender`, the generic-pool
+  counts as 14+ days warm for `isStaffableSender`, the generic-pool
   named count, min40-topup, and surplus return — including when
   Smartlead still reports warmup-blocked or a short import clock.
   The tidalstackco.com Azure/Entra fleet Josh tagged that way is
@@ -266,17 +265,17 @@ Caps ramp manually (35 on Oct 12).
   `desiredMailboxSignature` for SalesGlider stays Name /
   SalesGlider. D178 in-body close is retired (D255) — do not
   write Josh Osborn / Insight into sequence copy.
-- **Send window** (D182): live campaigns send **Monday–Thursday
+- **Send window** (D182 / D306): live campaigns send **Monday–Thursday
   08:00–19:00 America/New_York**. No Friday, no weekends. Smartlead
   is a single window — do not invent Friday. `min_time_btw_emails`
   stays 10 and `max_leads_per_day` stays 10000. The build skill
-  writes this on setup. Campaign-check **flags** a mismatch and
-  intends a `schedule_write` back to that window (shadow logs it;
-  CALLER FOLLOW-UP is exempt). Custom Cold Call Followup-style
-  afternoon windows in the old wizard still have no schedule-window converge,
-  so a hand-set afternoon campaign is not overwritten there. **CALLER FOLLOW-UP (D242)** is Mon–Fri 07:00–20:00
-  America/Chicago, `min_time_btw_emails` 3 — never converge that
-  class back to Mon–Thu or the 10-minute canon gap.
+  writes this on setup. Custom windows are overwritten to this
+  standing window (D306 supersedes D182's "no schedule-window
+  converge"). Campaign-check / v2 staff intend `schedule_write`
+  only — never the status endpoint. **CALLER FOLLOW-UP (D242)**
+  keeps Mon–Fri 07:00–20:00 America/Chicago with a 3-minute gap
+  (D306 restores D242's gap). Shells, canaries, word-hunt, test
+  campaigns, and STOPPED are skipped.
 - **ESP matching** (D274): Gmail senders to Gmail recipients,
   Outlook to Outlook. Every ACTIVE campaign's Smartlead
   `enable_ai_esp_matching` must be on. Off (or missing) is an
@@ -289,13 +288,17 @@ Caps ramp manually (35 on Oct 12).
   outside weekdays **6am–8pm America/Chicago**. Overnight and
   weekend work waits. Amends D248's Slack-only quiet hours so
   the 15-minute staff and isolation ticks skip the window too.
-- **Sequence delays** (D186): step 1 stays `delay_in_days: 0`.
+- **Sequence delays** (D186 / D306): step 1 stays `delay_in_days: 0`.
   Step 2 must be **2 days** on every client campaign that has
-  a second email. Canary shells, pod-control shells, the
-  word-hunt shell, and 1-step instrumentation are skipped.
-  Campaign-check flags `step2_delay` and writes step 2 back
-  to 2 when safe (same `sequencesForWrite` path as other
-  sequence writes). Do not change step 3+ delays.
+  a second email. Step 3 is the breakup: it must exist and its
+  delay must be **2 days** so it lands on day 4. Canary shells,
+  pod-control shells, the word-hunt shell, Gabe caller follow-ups,
+  and 1-step instrumentation are skipped. Campaign-check flags
+  `step2_delay` and writes step 2 back to 2 when safe. It flags
+  `missing_breakup_step` when step 3 is missing or not 2 —
+  check only, never write sequences for step 3. D306 supersedes
+  D186's "don't touch step 3+" for check purposes. v2 records
+  the finding as intent only (no sequence_write).
 - Disconnected mailboxes are re-authed every health pass; reconnect results
   Slack as action results (D94).
 

@@ -135,6 +135,10 @@ export class SmartleadReader {
       return {
         campaignId,
         body: String(r.email_body ?? r.sequence_body ?? r.body ?? ""),
+        seqNumber:
+          r.seq_number == null || r.seq_number === ""
+            ? null
+            : Number(r.seq_number),
         delayInDays:
           r.seq_delay_details == null && r.delay_in_days == null
             ? null

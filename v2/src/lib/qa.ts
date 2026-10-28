@@ -1,5 +1,7 @@
-import { STEP2_DELAY_DAYS } from "../canon/constants.js";
+import { STEP2_DELAY_DAYS, STEP3_DELAY_DAYS } from "../canon/constants.js";
 import type { Finding, LeadSample, SequenceSample, SlimAccount, SlimCampaign } from "../types.js";
+import { isShellOrWordHuntCampaign, isTestCampaign } from "./campaignCanon.js";
+import { isCallerFollowUpCampaign } from "./poc.js";
 import { mailboxSignatureMismatch } from "./signature.js";
 
 /** D180 — pages merge_tag_blank; never rewrites live copy or lead fields. */
@@ -21,6 +23,32 @@ export function mergeTagHoles(sample: {
 export function step2DelayWrong(delayInDays: number | null | undefined): boolean {
   if (delayInDays == null) return false;
   return delayInDays !== STEP2_DELAY_DAYS;
+}
+
+/** D306 — check only. Never a sequence_write. */
+export function missingBreakupStep(
+  sequences: SequenceSample[] | null | undefined,
+): string | null {
+  const rows = sequences ?? [];
+  const numbered = rows.filter(
+    (s) => s.seqNumber != null && Number.isFinite(Number(s.seqNumber)),
+  );
+  if (!numbered.length) return null;
+  const hasStep2 = numbered.some((s) => Number(s.seqNumber) === 2);
+  const step3 = numbered.find((s) => Number(s.seqNumber) === 3);
+  if (!hasStep2 && !step3) return null;
+  if (!step3) return "step 3 missing (want delay 2d so it lands on day 4)";
+  if (step3.delayInDays !== STEP3_DELAY_DAYS) {
+    return `step 3 delay ${step3.delayInDays == null ? "unset" : `${step3.delayInDays}d`} (want ${STEP3_DELAY_DAYS} so it lands on day 4)`;
+  }
+  return null;
+}
+
+function campaignHasBreakupStepRule(campaign: SlimCampaign): boolean {
+  if (isCallerFollowUpCampaign(campaign)) return false;
+  if (isShellOrWordHuntCampaign(campaign)) return false;
+  if (isTestCampaign(campaign)) return false;
+  return true;
 }
 
 export function sequenceHasSignatureTag(body: string): boolean {
@@ -83,6 +111,16 @@ export function qaCopyAndLeads(opts: {
         kind: "step2_delay",
         campaignId: opts.campaign.id,
         detail: `step 2 delay is ${seq.delayInDays}, want ${STEP2_DELAY_DAYS}`,
+      });
+    }
+  }
+  if (campaignHasBreakupStepRule(opts.campaign)) {
+    const breakup = missingBreakupStep(seqs);
+    if (breakup) {
+      findings.push({
+        kind: "missing_breakup_step",
+        campaignId: opts.campaign.id,
+        detail: breakup,
       });
     }
   }

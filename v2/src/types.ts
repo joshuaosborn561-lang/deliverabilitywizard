@@ -163,6 +163,7 @@ export interface SequenceSample {
   campaignId: number;
   body: string;
   delayInDays?: number | null;
+  seqNumber?: number | null;
 }
 
 export interface LeadSample {

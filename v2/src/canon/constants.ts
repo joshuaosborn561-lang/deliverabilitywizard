@@ -24,7 +24,8 @@ export const M365_CAMPAIGN_PER_DAY = 15;
 export const GOOGLE_CAMPAIGN_PER_DAY = 30;
 export const MIN_TIME_BTW_EMAILS = 10;
 export const STEP2_DELAY_DAYS = 2;
-export const WARMUP_DAYS = 21;
+export const STEP3_DELAY_DAYS = 2;
+export const WARMUP_DAYS = 14;
 export const INBOX_THRESHOLD = 80;
 export const LAUNCH_BAR = 85;
 export const BOUNCE_RATE_THRESHOLD = 5;
@@ -36,8 +37,8 @@ export const CALLER_FOLLOWUP_SENDER_TAG = "GABE-VM-RESERVED";
 export const CALLER_FOLLOWUP_NAME_PREFIX = "Gabe Calls |";
 export const CALLER_FOLLOWUP_CAMPAIGN_IDS = [4085158, 4085159, 4085160] as const;
 export const CALLER_FOLLOWUP_HOME_CLIENT_ID = SALESGLIDER_CLIENT_ID;
-/** D304 supersedes D242's 3-minute gap: caller follow-ups use 10. */
-export const CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS = 10;
+/** D306 restores D242's 3-minute gap on CALLER FOLLOW-UP. */
+export const CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS = 3;
 export const CALLER_FOLLOWUP_BRIDGE_SENDERS = [
   { email: "gabriel@sorrelquotaio.co", id: 24255344 },
   { email: "gabriel@goldworkio.co", id: 24255318 },
@@ -160,6 +161,7 @@ export const CANON_CORE_KINDS = [
   "inbox_missing_known_good",
   "merge_tag_blank",
   "step2_delay",
+  "missing_breakup_step",
   "generic_idle",
   "generic_multi_client",
   "generic_outside_table",

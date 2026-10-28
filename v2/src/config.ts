@@ -37,9 +37,9 @@ const ConfigSchema = z.object({
     .string()
     .default("https://deliverabilitywizard-production.up.railway.app/health"),
   runToken: z.string().default(""),
-  poolWarmupDays: z.coerce.number().int().positive().default(21),
-  campaignMinWarmupDays: z.coerce.number().int().positive().default(21),
-  freshInboxWarmupDays: z.coerce.number().int().positive().default(21),
+  poolWarmupDays: z.coerce.number().int().positive().default(14),
+  campaignMinWarmupDays: z.coerce.number().int().positive().default(14),
+  freshInboxWarmupDays: z.coerce.number().int().positive().default(14),
   remediationInboxThreshold: z.coerce.number().min(0).max(100).default(80),
   launchBar: z.coerce.number().min(0).max(100).default(85),
   bounceRateThreshold: z.coerce.number().min(0).max(100).default(5),

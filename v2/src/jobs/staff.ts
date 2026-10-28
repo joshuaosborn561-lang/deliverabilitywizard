@@ -232,7 +232,7 @@ export async function runStaffTick(opts: {
           campaignId: campaign.id,
           accountId: account.id,
           email: account.email,
-          detail: `${account.email} owes 21-day warmup`,
+          detail: `${account.email} owes 14-day warmup`,
         });
         intended.push(
           (
@@ -360,11 +360,13 @@ export async function runStaffTick(opts: {
     );
     const espOff = drift.espOff && !already.has("esp_matching");
     const gapOff = drift.gapOff && !already.has("send_window");
-    if (!espOff && !gapOff) continue;
+    const windowOff = drift.windowOff && !already.has("send_window");
+    if (!espOff && !gapOff && !windowOff) continue;
     const parts: string[] = [];
     if (espOff) parts.push("enable_ai_esp_matching off, want on");
+    if (windowOff) parts.push("custom window, want Mon–Thu 08:00–19:00 America/New_York");
     if (gapOff) parts.push(`gap ${campaign.minTimeBtwnEmails}, want ${MIN_TIME_BTW_EMAILS}`);
-    findings.push({ kind: "send_canon_lock", campaignId: campaign.id, detail: `${parts.join("; ")} (D304)` });
+    findings.push({ kind: "send_canon_lock", campaignId: campaign.id, detail: `${parts.join("; ")} (D304/D306)` });
     if (espOff) {
       intended.push(
         (
@@ -377,7 +379,8 @@ export async function runStaffTick(opts: {
         ).action,
       );
     }
-    const schedule = gapOff ? sendCanonLockSchedulePayload(campaign) : null;
+    const schedule =
+      windowOff || gapOff ? sendCanonLockSchedulePayload(campaign) : null;
     if (schedule) {
       intended.push(
         (

@@ -46,10 +46,10 @@ describe("v2 config defaults", () => {
     assert.equal(writesAllowed(cfg), true);
   });
 
-  it("D1/D50: warmup is 21 days", () => {
-    assert.equal(defaults.poolWarmupDays, 21);
-    assert.equal(defaults.campaignMinWarmupDays, 21);
-    assert.equal(defaults.freshInboxWarmupDays, 21);
+  it("D1/D50/D306: warmup is 14 days", () => {
+    assert.equal(defaults.poolWarmupDays, 14);
+    assert.equal(defaults.campaignMinWarmupDays, 14);
+    assert.equal(defaults.freshInboxWarmupDays, 14);
   });
 
   it("D5/D32: 80% same-ESP reading", () => {

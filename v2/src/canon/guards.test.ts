@@ -85,8 +85,8 @@ describe("v2 canon catalog covers CANON.md", () => {
 });
 
 describe("ported live constants", () => {
-  it("D50/D105: warmup is 21 days", () => {
-    assert.equal(WARMUP_DAYS, 21);
+  it("D50/D105/D306: warmup is 14 days", () => {
+    assert.equal(WARMUP_DAYS, 14);
   });
   it("D192: Insight ≠ SalesGlider", () => {
     assert.equal(INSIGHT_CLIENT_ID, 582890);

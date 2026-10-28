@@ -22,7 +22,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 
 | Decision | Status |
 |---|---|
-| D1 | Live (the import clock) — duration superseded by D50 (21 days); start is the later of purchase and Smartlead import/warmup (D243) |
+| D1 | Live (the import clock) — duration superseded by D50 then D306 (14 days); start is the later of purchase and Smartlead import/warmup (D243) |
 | D2 | Live |
 | D3 | Live — qualified by D26/D27 |
 | D4 | Live — retire / cover-buy Slack taps also Cayden (D190) |
@@ -68,7 +68,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D47 | Live |
 | D48 | Live (rig unarmed until `ISOLATION_DOMAIN` is set) |
 | D49 | Live |
-| D50 | Live |
+| D50 | Live — duration superseded by D306 (14 days) |
 | D51 | Live (kill-only) — warmup-gate-off clause superseded by D105 |
 | D52 | Live |
 | D53 | Live |
@@ -196,10 +196,10 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D179 | Live | A known-retired domain never opens a fresh actionable Retire ask or a second replacement buy when old / recurrent 5.1.8 evidence reappears; confirm is a fail-safe no-op |
 | D180 | Live | Merge tags / custom fields cannot silently send blank — campaign-check samples sequences vs lead `custom_fields` (multi-offset, ~80% fill) and cheap sent-body holes; `merge_tag_blank` is a core CANON finding and Slack miss; never auto-edits live copy or remaps leads |
 | D181 | Live — Cayden Retire/Buy CTA and strike Slack silence added by D190 | Goliath / Smartlead client 548611 burned domains follow the normal Retire ask — D174 never-retire / never-burn / cover-only convert is reversed |
-| D182 | Live — v2 intends a schedule_write on mismatch; old wizard still does not overwrite custom windows | Standing send window is Monday–Thursday 08:00–19:00 America/New_York — no Friday; gap 10 and max_leads 10000 unchanged; custom afternoon windows are not overwritten |
+| D182 | Live — no-converge clause superseded by D306 | Standing send window is Monday–Thursday 08:00–19:00 America/New_York — no Friday; gap 10 and max_leads 10000 unchanged; custom windows are now overwritten (D306) |
 | D183 | Live | Outlook / Microsoft Smartlead senders converge to 15 campaign emails/day; Gmail/SMTP stay at MESSAGE_PER_DAY=30 |
 | D184 | Superseded by D192 — exclusive-blank Insight staff inside 345263 is obsolete; never revive | Insight campaigns staff only seats not on ACTIVE SalesGlider; exclusive Insight may be empty-signed; NEVER blank ACTIVE SG staff; QA flags shared staff or SalesGlider-in-sig; no salesglider* fleet-empty |
-| D186 | Live | Client campaign sequence step 2 waits 2 days (`seq_delay_details.delay_in_days = 2`); step 1 stays 0; shells / 1-step skipped; campaign-check flags `step2_delay` and auto-fixes via `sequencesForWrite`; step 3+ not converged |
+| D186 | Live — step-3 "don't touch" superseded for check purposes by D306 | Client campaign sequence step 2 waits 2 days (`seq_delay_details.delay_in_days = 2`); step 1 stays 0; shells / 1-step skipped; campaign-check flags `step2_delay` and auto-fixes via `sequencesForWrite`; D306 flags step 3 (check only, never writes) |
 | D187 | Live | Ops Placement lists up to 80 ACTIVE live tests (was 40) |
 | D189 | Superseded by D229 — Insight rests like any named client; off-week unlinks (D228 on-week-only campaigns) | Client-rest does not unlink or bench mailboxes off Insight campaigns (client 345263); D184 exclusive staff survives the A/B fortnight |
 | D190 | Live | Burned-domain Slack pages once per strike; Cayden (or Josh) taps Retire / cover Buy; leftover D174 protected copy is healed and silent |
@@ -289,6 +289,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D281 | Live — abort amended by D284 (Promise.race + capped Retry-After) | v2 tick hard timeout + AbortController; in-flight lease and rate-slot TTL; isolation off the Smartlead limiter; workers serve /health only; per-tick request budget + progress logs |
 | D282 | Live | Insight (Smartlead client 582890) campaigns may only send from Josh Osborn inboxes on SalesGlider or Insight domains; no generics / other named senders; floor is Josh-seats only, never backfill; `insight_non_josh_sender` flags existing violations; understaffed/min40 suppressed |
 | D284 | Live | v2 tick deadline actually ends the pass (Promise.race + abortable fetch/retry); 429 Retry-After never sleeps past the deadline; 60/min token bucket; quiet-hours skip before I/O; isolation scores fetched tests on abort so 0% campaigns get flagged |
+| D304 | Live — LOCKED; caller-follow-up 10m gap restored to 3 by D306 | Every Smartlead campaign: enable_ai_esp_matching ON and min_time_btw_emails 10. Intended settings / schedule writes only, never status. D306 restores D242's 3m gap on caller follow-ups and overwrites custom send windows. |
+| D306 | Live — LOCKED | Warmup is 14 days for every seat (named and generic). Breakup-step CHECK ONLY (`missing_breakup_step` if no seq_number 3 or step 3 delay is not 2). Send-window converge Mon–Thu 08:00–19:00 America/New_York; custom windows overwritten; skip Gabe / shells / tests / STOPPED; never status. Josh: "Take [21] down to fourteen days. So that everything gets fourteen." |
 
 ---
 
@@ -10344,5 +10346,35 @@ hydrate. Tests: hung fetch ignoring abort, 8h Retry-After
 capped, weekday scoring pass flags 0% campaigns.
 
 ---
+
+## D306 — 14-day warmup, breakup-step check, send-window converge
+
+**Decision (Josh, 2026-10-27 7:33pm CT, in his words):** "Take
+[21] down to fourteen days. So that everything gets fourteen."
+
+Three canon changes in one call:
+
+1. **Warmup is 14 days for every seat**, named and generic.
+   v2 `poolWarmupDays` / `campaignMinWarmupDays` /
+   `freshInboxWarmupDays` and `WARMUP_DAYS` default to 14.
+2. **Breakup-step CHECK ONLY.** Flag `missing_breakup_step`
+   when there is no `seq_number` 3 or step 3 delay is not 2.
+   Intent only — never `sequence_write`. Skip shells, Gabe,
+   and 1-step tests.
+3. **Send-window converge.** `schedule_write` intents to
+   Monday–Thursday 08:00–19:00 America/New_York. Custom
+   windows overwritten. Skip Gabe (3m Chicago), shells /
+   tests / STOPPED. Never status.
+
+**Why.** Josh approved the three changes together on
+2026-10-27.
+
+**Supersedes / amends.** Supersedes D50 / D105 duration.
+Supersedes D182's no-converge clause. Supersedes D186's
+"don't touch step 3+" for check purposes. Restores D242's
+3-minute caller-follow-up gap (amends D304 for that class).
+
+**Guards.** v2 catalog D306; `v2/src/lib/campaignCanon.test.ts`;
+`v2/src/lib/qa.test.ts`; `v2/src/config.test.ts`.
 
 

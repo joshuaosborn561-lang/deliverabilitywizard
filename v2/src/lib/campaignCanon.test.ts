@@ -87,33 +87,71 @@ describe("D304 LOCKED send canon (v2 mirror)", () => {
     for (const status of ["PAUSED", "DRAFTED", "COMPLETED", "ACTIVE"]) {
       assert.deepEqual(
         sendCanonLockDrift({ ...base, status, enableAiEspMatching: false, minTimeBtwnEmails: 20 }),
-        { espOff: true, gapOff: true },
+        { espOff: true, gapOff: true, windowOff: false },
       );
     }
     assert.equal(sendCanonLockDrift({ ...base, status: "PAUSED", enableAiEspMatching: true, minTimeBtwnEmails: 10 }), null);
   });
-  it("schedule payload keeps the window and sets only the gap; no status", async () => {
-    const { sendCanonLockSchedulePayload } = await import("./campaignCanon.js");
+  it("D306: window-eligible payload overwrites a custom window; no status", async () => {
+    const { sendCanonLockSchedulePayload, standingSchedulePayload } = await import("./campaignCanon.js");
     const body = sendCanonLockSchedulePayload({
       ...base, status: "PAUSED", timezone: "America/Chicago", daysOfTheWeek: [1, 2, 3, 4, 5],
       startHour: "09:00", endHour: "17:00", maxLeadsPerDay: 100, minTimeBtwnEmails: 20,
     });
-    assert.deepEqual(body, {
-      timezone: "America/Chicago", days_of_the_week: [1, 2, 3, 4, 5], start_hour: "09:00",
-      end_hour: "17:00", min_time_btw_emails: 10, max_new_leads_per_day: 100,
-    });
+    assert.deepEqual(body, standingSchedulePayload());
     assert.equal("status" in (body ?? {}), false);
+  });
+
+  it("D306: shells echo the window and only set the 10m gap", async () => {
+    const { sendCanonLockSchedulePayload } = await import("./campaignCanon.js");
+    const body = sendCanonLockSchedulePayload({
+      id: 2,
+      name: "Canary shell: #4 Live A",
+      status: "ACTIVE",
+      clientId: 1,
+      timezone: "America/Chicago",
+      daysOfTheWeek: [1, 2, 3, 4],
+      startHour: "09:00",
+      endHour: "18:00",
+      maxLeadsPerDay: 500,
+      minTimeBtwnEmails: 20,
+    });
+    assert.deepEqual(body, {
+      timezone: "America/Chicago",
+      days_of_the_week: [1, 2, 3, 4],
+      start_hour: "09:00",
+      end_hour: "18:00",
+      min_time_btw_emails: 10,
+      max_new_leads_per_day: 500,
+    });
   });
 });
 
-describe("D304 supersedes D242 caller follow-up 3m gap (v2)", () => {
-  it("caller follow-up at 3m is drift; constant is 10", async () => {
+describe("D306 restores D242 caller follow-up 3m gap (v2)", () => {
+  it("caller follow-up at 3m is not gap drift; constant is 3", async () => {
     const { sendCanonLockDrift } = await import("./campaignCanon.js");
     const { CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS } = await import("../canon/constants.js");
-    assert.equal(CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS, 10);
-    assert.deepEqual(
-      sendCanonLockDrift({ id: 4085158, name: "Gabe Calls | SalesGlider", status: "ACTIVE", clientId: 1, enableAiEspMatching: true, minTimeBtwnEmails: 3 }),
-      { espOff: false, gapOff: true },
+    assert.equal(CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS, 3);
+    assert.equal(
+      sendCanonLockDrift({
+        id: 4085158,
+        name: "Gabe Calls | SalesGlider",
+        status: "ACTIVE",
+        clientId: 1,
+        enableAiEspMatching: true,
+        minTimeBtwnEmails: 3,
+        timezone: "America/Chicago",
+        daysOfTheWeek: [1, 2, 3, 4, 5],
+        startHour: "07:00",
+        endHour: "20:00",
+      }),
+      null,
     );
+  });
+
+  it("never mentions a status writer", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const source = await readFile(new URL("./campaignCanon.ts", import.meta.url), "utf8");
+    assert.doesNotMatch(source, /updateCampaignStatus|\/status/);
   });
 });

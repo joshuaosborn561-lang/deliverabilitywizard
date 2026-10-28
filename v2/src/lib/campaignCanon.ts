@@ -1,12 +1,10 @@
 /**
- * D182 / D274 / D275 — campaign ESP matching, plain text + tracking off,
- * standing send window. Intended writes only in shadow.
+ * D182 / D274 / D275 / D304 / D306 — campaign ESP matching, plain text
+ * + tracking off, standing send window. Intended writes only in shadow.
+ * Never status.
  */
 
-import {
-  CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS,
-  MIN_TIME_BTW_EMAILS,
-} from "../canon/constants.js";
+import { MIN_TIME_BTW_EMAILS } from "../canon/constants.js";
 import { isCallerFollowUpCampaign } from "./poc.js";
 import type { SequenceSample, SlimCampaign } from "../types.js";
 
@@ -76,8 +74,54 @@ function sameDays(have: readonly number[] | null | undefined, want: readonly num
   return a === b;
 }
 
+export function isTestCampaign(campaign: { name?: string | null }): boolean {
+  const name = String(campaign.name ?? "").trim();
+  if (!name) return false;
+  return /(?:^|[\s|:/_-])test(?:[\s|:/_-]|$)/i.test(name);
+}
+
+export function isShellOrWordHuntCampaign(campaign: {
+  name?: string | null;
+}): boolean {
+  const name = String(campaign.name ?? "").trim();
+  if (!name) return false;
+  return (
+    /^canary shell:/i.test(name) ||
+    /pod control shell/i.test(name) ||
+    /word hunt/i.test(name)
+  );
+}
+
+export function sendCanonSkipsStatus(status: unknown): boolean {
+  return String(status ?? "").trim().toUpperCase() === "STOPPED";
+}
+
+/** D306 — standing window. Skip Gabe, shells, tests, STOPPED. */
+export function campaignHasSendWindowRule(campaign: {
+  id?: number | null;
+  name?: string | null;
+  status?: string | null;
+}): boolean {
+  if (sendCanonSkipsStatus(campaign.status)) return false;
+  if (isCallerFollowUpCampaign(campaign)) return false;
+  if (isShellOrWordHuntCampaign(campaign)) return false;
+  if (isTestCampaign(campaign)) return false;
+  return true;
+}
+
+/** D304 gap applies everywhere except STOPPED and CALLER FOLLOW-UP. */
+export function campaignHasSendGapRule(campaign: {
+  id?: number | null;
+  name?: string | null;
+  status?: string | null;
+}): boolean {
+  if (sendCanonSkipsStatus(campaign.status)) return false;
+  if (isCallerFollowUpCampaign(campaign)) return false;
+  return true;
+}
+
 export function sendWindowViolation(campaign: SlimCampaign): string | null {
-  if (isCallerFollowUpCampaign(campaign)) return null;
+  if (!campaignHasSendWindowRule(campaign)) return null;
   const want = STANDING_SEND_WINDOW;
   const reasons: string[] = [];
   if (campaign.timezone != null && campaign.timezone !== "" && campaign.timezone !== want.timezone) {
@@ -100,8 +144,7 @@ export function sendWindowViolation(campaign: SlimCampaign): string | null {
   }
   if (
     campaign.minTimeBtwnEmails != null &&
-    campaign.minTimeBtwnEmails !== want.minTimeBtwEmails &&
-    campaign.minTimeBtwnEmails !== CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS
+    campaign.minTimeBtwnEmails !== want.minTimeBtwEmails
   ) {
     reasons.push(`gap ${campaign.minTimeBtwnEmails} want ${want.minTimeBtwEmails}`);
   }
@@ -128,27 +171,70 @@ export function plainTextSettingsPayload(): Record<string, unknown> {
 }
 
 /**
- * D304 — LOCKED: every non-STOPPED campaign has ESP matching ON and a
- * 10-minute gap. Caller follow-ups included (D304 supersedes D242's 3m gap).
+ * D304 / D306 — LOCKED send canon. ESP matching ON on every
+ * non-STOPPED campaign. 10-minute gap except CALLER FOLLOW-UP
+ * (D306 restores D242's 3m). Window-eligible campaigns also
+ * converge to the standing Mon–Thu 08:00–19:00 ET window.
  * Settings / schedule intents only; never status.
  */
 export interface SendCanonLockDrift {
   espOff: boolean;
   gapOff: boolean;
+  windowOff: boolean;
+}
+
+function windowDoesNotMatchStanding(campaign: SlimCampaign): boolean {
+  const want = STANDING_SEND_WINDOW;
+  if (campaign.timezone != null && campaign.timezone !== "" && campaign.timezone !== want.timezone) {
+    return true;
+  }
+  if (
+    campaign.daysOfTheWeek != null &&
+    campaign.daysOfTheWeek.length > 0 &&
+    !sameDays(campaign.daysOfTheWeek, want.daysOfTheWeek)
+  ) {
+    return true;
+  }
+  if (campaign.startHour != null && campaign.startHour !== "" && normHour(campaign.startHour) !== want.startHour) {
+    return true;
+  }
+  if (campaign.endHour != null && campaign.endHour !== "" && normHour(campaign.endHour) !== want.endHour) {
+    return true;
+  }
+  if (
+    campaign.maxLeadsPerDay != null &&
+    campaign.maxLeadsPerDay > 0 &&
+    campaign.maxLeadsPerDay !== want.maxLeadsPerDay
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export function sendCanonLockDrift(campaign: SlimCampaign): SendCanonLockDrift | null {
-  if (String(campaign.status ?? "").trim().toUpperCase() === "STOPPED") return null;
+  if (sendCanonSkipsStatus(campaign.status)) return null;
   const espOff = campaign.enableAiEspMatching != null && campaign.enableAiEspMatching !== true;
   const gapOff =
+    campaignHasSendGapRule(campaign) &&
     campaign.minTimeBtwnEmails != null &&
     campaign.minTimeBtwnEmails !== MIN_TIME_BTW_EMAILS;
-  if (!espOff && !gapOff) return null;
-  return { espOff, gapOff };
+  const windowOff =
+    campaignHasSendWindowRule(campaign) && windowDoesNotMatchStanding(campaign);
+  if (!espOff && !gapOff && !windowOff) return null;
+  return { espOff, gapOff, windowOff };
 }
 
-/** Schedule body that keeps the campaign's own window and only sets the gap. */
+/**
+ * D306: window-eligible campaigns get the standing body (custom
+ * windows overwritten). Shells / tests echo their window and only
+ * set the 10m gap. Gabe / STOPPED return null.
+ */
 export function sendCanonLockSchedulePayload(campaign: SlimCampaign): Record<string, unknown> | null {
+  if (sendCanonSkipsStatus(campaign.status)) return null;
+  if (isCallerFollowUpCampaign(campaign)) return null;
+  if (campaignHasSendWindowRule(campaign)) {
+    return standingSchedulePayload();
+  }
   if (!campaign.timezone || !campaign.daysOfTheWeek?.length || !campaign.startHour || !campaign.endHour) {
     return null;
   }

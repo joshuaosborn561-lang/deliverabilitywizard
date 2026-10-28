@@ -7,9 +7,14 @@
  *
  * D306: live campaigns also converge the send window to Monday–Thursday
  * 08:00–19:00 America/New_York with `max_leads_per_day` 10000. Custom
- * windows are overwritten. Skips CALLER FOLLOW-UP (they keep Mon–Fri
- * 07:00–20:00 Chicago with a 3-minute gap), shells / canaries
- * (`isAnyShellCampaign`), word-hunt, test campaigns, and STOPPED.
+ * windows are overwritten. Skips every cold-call campaign — any name
+ * containing `Calls |` (Gabe Calls, Cayden Calls, any future caller)
+ * as well as D242 CALLER FOLLOW-UP detection — and every Booking
+ * Follow Up campaign (windows left untouched). Also skips shells /
+ * canaries (`isAnyShellCampaign`), word-hunt, test campaigns, and
+ * STOPPED. Everything else is enforced (SG Nurture, Referral Hosts,
+ * SG Subs 1019 included). Calls | / D242 keep their 3-minute gap;
+ * Booking Follow Up still takes the D304 10-minute gap.
  *
  * Settings / schedule only, never status:
  * - ESP matching is written with POST /campaigns/{id}/settings.
@@ -64,14 +69,34 @@ export function isTestCampaign(campaign: {
   return /(?:^|[\s|:/_-])test(?:[\s|:/_-]|$)/i.test(name);
 }
 
-/** D304 gap applies everywhere except STOPPED and CALLER FOLLOW-UP. */
+/**
+ * D306 (Josh, 2026-10-27 8:08pm CT): any cold-call campaign.
+ * Name contains `Calls |` (Gabe, Cayden, future callers) plus the
+ * D242 CALLER FOLLOW-UP detection (config ids / `Gabe Calls |`).
+ */
+export function isCallsCampaign(campaign: {
+  id?: number | null;
+  name?: string | null;
+}): boolean {
+  if (isCallerFollowUpCampaign(campaign)) return true;
+  return String(campaign.name ?? "").includes("Calls |");
+}
+
+/** D306: Booking Follow Up campaigns keep their own send window. */
+export function isBookingFollowUpCampaign(campaign: {
+  name?: string | null;
+}): boolean {
+  return String(campaign.name ?? "").includes("Booking Follow Up");
+}
+
+/** D304 gap applies everywhere except STOPPED and Calls | / D242. */
 export function campaignHasSendGapRule(campaign: {
   id?: number | null;
   name?: string | null;
   status?: string | null;
 }): boolean {
   if (sendCanonSkipsStatus(campaign.status)) return false;
-  if (isCallerFollowUpCampaign(campaign)) return false;
+  if (isCallsCampaign(campaign)) return false;
   return true;
 }
 
@@ -81,7 +106,8 @@ export function campaignHasSendWindowRule(campaign: {
   status?: string | null;
 }): boolean {
   if (sendCanonSkipsStatus(campaign.status)) return false;
-  if (isCallerFollowUpCampaign(campaign)) return false;
+  if (isCallsCampaign(campaign)) return false;
+  if (isBookingFollowUpCampaign(campaign)) return false;
   if (isAnyShellCampaign(campaign)) return false;
   if (
     isWordHuntShellCampaign({

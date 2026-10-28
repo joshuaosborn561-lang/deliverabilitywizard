@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  campaignHasSendGapRule,
   campaignHasSendWindowRule,
   convergeSendCanon,
+  isBookingFollowUpCampaign,
+  isCallsCampaign,
   isTestCampaign,
   sendCanonDrift,
   sendCanonScheduleBody,
@@ -214,6 +217,168 @@ describe("D306 send-window converge", () => {
       campaignHasSendWindowRule({ id: 7, name: "Goliath Education", status: "ACTIVE" }),
       true,
     );
+  });
+
+  it("skips every Calls | campaign and every Booking Follow Up; enforces the rest", () => {
+    assert.equal(isCallsCampaign({ id: 4236756, name: "Cayden Calls | SalesGlider" }), true);
+    assert.equal(isCallsCampaign({ id: 99, name: "Ada Calls | Acme" }), true);
+    assert.equal(isCallsCampaign({ id: 4085158, name: "Gabe Lopez Follow-up" }), true);
+    assert.equal(isCallsCampaign({ id: 1, name: "SalesGlider Nurture" }), false);
+    assert.equal(isBookingFollowUpCampaign({ name: "Booking Follow Up - SalesGlider" }), true);
+    assert.equal(isBookingFollowUpCampaign({ name: "SG Subs BizDev AirPods/Tickets 1019" }), false);
+
+    assert.equal(
+      campaignHasSendWindowRule({ id: 4236756, name: "Cayden Calls | SalesGlider", status: "PAUSED" }),
+      false,
+    );
+    assert.equal(
+      campaignHasSendWindowRule({ id: 99, name: "Ada Calls | Acme", status: "ACTIVE" }),
+      false,
+    );
+    assert.equal(
+      campaignHasSendWindowRule({ id: 4085158, name: "Gabe Lopez Follow-up", status: "ACTIVE" }),
+      false,
+    );
+    assert.equal(
+      campaignHasSendWindowRule({
+        id: 20,
+        name: "Booking Follow Up - SalesGlider",
+        status: "COMPLETED",
+      }),
+      false,
+    );
+    assert.equal(
+      campaignHasSendWindowRule({ id: 21, name: "SalesGlider Nurture", status: "ACTIVE" }),
+      true,
+    );
+    assert.equal(
+      campaignHasSendWindowRule({ id: 22, name: "SG Referral Hosts 1015 – PE", status: "ACTIVE" }),
+      true,
+    );
+    assert.equal(
+      campaignHasSendWindowRule({
+        id: 23,
+        name: "SG Subs BizDev AirPods/Tickets 1019",
+        status: "ACTIVE",
+      }),
+      true,
+    );
+
+    assert.equal(
+      campaignHasSendGapRule({ id: 4236756, name: "Cayden Calls | SalesGlider", status: "PAUSED" }),
+      false,
+    );
+    assert.equal(
+      campaignHasSendGapRule({
+        id: 20,
+        name: "Booking Follow Up - SalesGlider",
+        status: "COMPLETED",
+      }),
+      true,
+    );
+  });
+
+  it("does not write a schedule for Cayden Calls | even when the window is Chicago Friday", async () => {
+    const w = writer();
+    const out = await convergeSendCanon(
+      {
+        id: 4236756,
+        name: "Cayden Calls | SalesGlider",
+        status: "PAUSED",
+        enable_ai_esp_matching: true,
+        min_time_btwn_emails: 3,
+        scheduler_cron_value: {
+          tz: "America/Chicago",
+          days: [1, 2, 3, 4, 5],
+          startHour: "07:00",
+          endHour: "20:00",
+        },
+        max_leads_per_day: 10000,
+      },
+      w,
+      { dryRun: false },
+    );
+    assert.equal(out, null);
+    assert.equal(w.calls.length, 0);
+  });
+
+  it("Booking Follow Up keeps its window; only a drifted 10m gap is written", async () => {
+    const clean = writer();
+    const cleanOut = await convergeSendCanon(
+      {
+        id: 20,
+        name: "Booking Follow Up - SalesGlider",
+        status: "COMPLETED",
+        enable_ai_esp_matching: true,
+        min_time_btwn_emails: 10,
+        scheduler_cron_value: {
+          tz: "America/New_York",
+          days: [1, 2, 3, 4, 5],
+          startHour: "08:00",
+          endHour: "19:00",
+        },
+        max_leads_per_day: 100,
+      },
+      clean,
+      { dryRun: false },
+    );
+    assert.equal(cleanOut, null);
+    assert.equal(clean.calls.length, 0);
+
+    const w = writer();
+    const out = await convergeSendCanon(
+      {
+        id: 21,
+        name: "Booking Follow Up - SalesGlider",
+        status: "COMPLETED",
+        enable_ai_esp_matching: true,
+        min_time_btwn_emails: 20,
+        scheduler_cron_value: {
+          tz: "America/New_York",
+          days: [1, 2, 3, 4, 5],
+          startHour: "08:00",
+          endHour: "19:00",
+        },
+        max_leads_per_day: 100,
+      },
+      w,
+      { dryRun: false },
+    );
+    assert.deepEqual(out?.fixed, ["gap"]);
+    assert.equal(w.calls.length, 1);
+    assert.deepEqual(w.calls[0]![2], {
+      timezone: "America/New_York",
+      days_of_the_week: [1, 2, 3, 4, 5],
+      start_hour: "08:00",
+      end_hour: "19:00",
+      min_time_btw_emails: 10,
+      max_new_leads_per_day: 100,
+    });
+  });
+
+  it("overwrites SG Nurture / Referral Hosts / SG Subs 1019 custom windows", async () => {
+    for (const name of [
+      "SalesGlider Nurture",
+      "SG Referral Hosts 1015 – PE",
+      "SG Subs BizDev AirPods/Tickets 1019",
+    ]) {
+      const w = writer();
+      const out = await convergeSendCanon(
+        {
+          id: 30,
+          name,
+          status: "ACTIVE",
+          enable_ai_esp_matching: true,
+          min_time_btwn_emails: 10,
+          scheduler_cron_value: chicago,
+          max_leads_per_day: 10000,
+        },
+        w,
+        { dryRun: false },
+      );
+      assert.deepEqual(out?.fixed, ["window"], name);
+      assert.deepEqual(w.calls[0]![2], standingSendWindowBody());
+    }
   });
 
   it("does not write a schedule for Gabe even when the gap is 3", async () => {

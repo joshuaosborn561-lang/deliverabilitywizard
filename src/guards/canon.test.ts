@@ -19121,6 +19121,11 @@ describe("owner intent — D306 14-day warmup, breakup check, send-window conver
     assert.match(send, /standingSendWindowBody/);
     assert.doesNotMatch(send, /updateCampaignStatus|\/status/);
     assert.match(canon, /Custom windows are overwritten/);
+    assert.match(canon, /Calls \|/);
+    assert.match(canon, /Booking Follow Up/);
+    assert.match(send, /isCallsCampaign/);
+    assert.match(send, /isBookingFollowUpCampaign/);
+    assert.match(ledger, /8:08pm CT/);
     assert.match(check, /convergeSendCanon\(/);
   });
 });

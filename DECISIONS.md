@@ -296,7 +296,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D300 | Live | Freeze/restart loop after D299 (2026-10-23): objects/arrays are never native-stringified; persist and indexAccountsByCampaign yield to timers; campaign-health snapshots use a campaign Map and yield. lastOk stamps unchanged. Thresholds not widened. LOCKED section unchanged. |
 | D301 | Live | POD ESP mix matches each client's InboxKit Google/Microsoft split (±max(2, 10% of the POD) of round(POD × Microsoft share)); 1/3 floor is fallback only when InboxKit has no row. SMTP smtp.gmail.com and type:google are Gmail; type:m365 / type:azure are Microsoft. min-40 / campaign top-up pick generics toward that split. Finding text shows the client's target. Parlay ~54%, EMCOR ~60%, Peterson ~35%. LOCKED section unchanged. |
 | D304 | Live — LOCKED; caller-follow-up 10m gap restored to 3 by D306 | Every Smartlead campaign: enable_ai_esp_matching ON and min_time_btw_emails 10. Campaign-check (hourly/all) flags and fixes drift on every non-STOPPED campaign: ESP via POST /settings, gap via POST /schedule. Never status. D306 restores D242's 3m gap on caller follow-ups and overwrites custom send windows. |
-| D306 | Live — LOCKED | Warmup is 14 days for every seat (named and generic). Breakup-step CHECK ONLY (`missing_breakup_step` if no seq_number 3 or step 3 delay is not 2). Send-window converge Mon–Thu 08:00–19:00 America/New_York; custom windows overwritten; skip Gabe / shells / tests / STOPPED; never status. Josh: "Take [21] down to fourteen days. So that everything gets fourteen." |
+| D306 | Live — LOCKED | Warmup is 14 days for every seat (named and generic). Breakup-step CHECK ONLY (`missing_breakup_step` if no seq_number 3 or step 3 delay is not 2). Send-window converge Mon–Thu 08:00–19:00 America/New_York; custom windows overwritten; skip Calls | / D242 / Booking Follow Up / shells / tests / STOPPED; never status. Josh: "Take [21] down to fourteen days. So that everything gets fourteen." |
 | D307 | Live | Tests that persist age-pruned ledgers (placement scores, copy suspects) stamp fixture times relative to now so D257's 14-day placement-score retention cannot drop a living row. Production prune windows and isolation sidecar persist are unchanged. LOCKED section unchanged. |
 | D308 | Live | Drain mode (A0): `POST /drain?action=on` skips every NEW cron tick, post-pass retry and manual `/run` while in-flight work finishes; `/health` reports `drain`, `activeJobs`, `idleNow` and `safeToDeploy` (drain on AND nothing running). Auto-expires (30m default, 120m max). Changes no campaigns, mailboxes, settings or WRITE_ENABLED. LOCKED section unchanged. |
 | D309 | Live | Copy-canary idempotent: one live "Canary copy" SmartDelivery test per campaign. Single-flight per campaign, a 3h create cooldown (also after a failed, maybe-landed create), stored test kept when the list hits the 5,000-test page cap, and each attach pass STOPS (never deletes) extra living canaries for a campaign, keeping the one with readings. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
@@ -11179,18 +11179,31 @@ Three canon changes in one call:
    America/New_York with `max_leads_per_day` 10000. Custom
    windows are overwritten (D182's "no schedule-window
    converge" / "custom windows left alone" are retired).
-   Skip CALLER FOLLOW-UP (they keep Mon–Fri 07:00–20:00
-   Chicago with a 3-minute gap — D306 restores D242's gap
-   after D304), shells and canaries (`isAnyShellCampaign`),
-   test campaigns, and STOPPED. Never call the status
+   Skip every cold-call campaign — any name containing
+   `Calls |` (Gabe Calls, Cayden Calls, any future caller)
+   as well as the D242 CALLER FOLLOW-UP detection (they
+   keep Mon–Fri 07:00–20:00 Chicago with a 3-minute gap —
+   D306 restores D242's gap after D304) — and every
+   Booking Follow Up campaign (window left untouched; D304
+   10m gap still applies). Also skip shells and canaries
+   (`isAnyShellCampaign`), test campaigns, and STOPPED.
+   Everything else is enforced, including SG Nurture,
+   Referral Hosts, and SG Subs 1019. Never call the status
    endpoint. Placement rules stay unchanged. Never change
    campaign copy or campaign status.
+
+**Send-window exemptions (Josh, 2026-10-27 8:08pm CT).**
+Exempt every cold call campaign (name contains `Calls |`,
+plus D242) and every Booking Follow Up campaign. Their
+windows are left untouched.
 
 **Why.** Josh approved the three changes together on
 2026-10-27. Fourteen is the fleet-wide clock. Step 3 is
 the breakup and must be checked. Hand-set afternoon /
 Friday windows drift off the standing window unless the
-machine writes them back.
+machine writes them back. The 8:08pm CT call named the
+window exemptions so Cayden Calls and Booking Follow Up
+are not overwritten.
 
 **Supersedes / amends.** Supersedes D50 / D105 duration
 (21 → 14). Supersedes D182's no-converge clause.

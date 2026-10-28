@@ -295,6 +295,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D299 | Live — stringify batching amended by D300; 60-minute freeze quarantine stays | Freeze/restart loop 2026-10-23: state/hot stringify batches compact values so one JSON.stringify cannot pin the loop for seconds; a health-loop stage that freeze-exits 3 times is quarantined for 60 minutes so leftover resume does not restart there forever. Thresholds are not widened. LOCKED section unchanged. |
 | D300 | Live | Freeze/restart loop after D299 (2026-10-23): objects/arrays are never native-stringified; persist and indexAccountsByCampaign yield to timers; campaign-health snapshots use a campaign Map and yield. lastOk stamps unchanged. Thresholds not widened. LOCKED section unchanged. |
 | D301 | Live | POD ESP mix matches each client's InboxKit Google/Microsoft split (±max(2, 10% of the POD) of round(POD × Microsoft share)); 1/3 floor is fallback only when InboxKit has no row. SMTP smtp.gmail.com and type:google are Gmail; type:m365 / type:azure are Microsoft. min-40 / campaign top-up pick generics toward that split. Finding text shows the client's target. Parlay ~54%, EMCOR ~60%, Peterson ~35%. LOCKED section unchanged. |
+| D307 | Live | Tests that persist age-pruned ledgers (placement scores, copy suspects) stamp fixture times relative to now so D257's 14-day placement-score retention cannot drop a living row. Production prune windows and isolation sidecar persist are unchanged. LOCKED section unchanged. |
 
 ---
 
@@ -11058,5 +11059,46 @@ map + cache. `src/services/campaignTopUp.test.ts` fill order.
 `src/services/campaignCheck.test.ts` finding text.
 `src/guards/canon.test.ts` D301.
 `src/guards/lockedCanon.test.ts` LOCKED section unchanged.
+
+## D307 — Pin age-pruned ledger fixtures to now
+
+**Date.** 2026-10-28.
+
+**Decision.** Tests that persist ledgers `pruneStateLedgers` ages
+out (placement scores 14 days, copy suspects 90 days, and the
+same windows on save/load) must stamp those times relative to
+`Date.now()` — or pass an injected `now` into the prune — so a
+calendar rollover cannot fail a living-row assertion. Production
+retention windows stay exactly as D257 set them. Isolation gone-
+campaign prune and sidecar persist stay exactly as D261 / D267
+set them.
+
+**Why.** CI `check` on main went red on 2026-10-28 (run
+40695282342, `5088c5d`, the merge of #353) on exactly one of
+1702 tests: `store.isolation.test.ts` `D267: prune persists via
+the sidecar even when the full dump is stale`, assertion
+`living scores stay`. The fixture living score was
+`2026-10-13T14:00:00.000Z`. D257 drops placement scores older
+than 14 days on every `save()` / `load()`. On Oct 26 (#353's
+own run) that stamp was 13 days old and survived; on Oct 28 it
+was 15 days old and `stale.save()` deleted it before the sidecar
+prune under test ran. #353 did not touch the store. The same
+red blocks #351 (D304). `store.test.ts` already pins TERRL
+paused-day stamps for this reason.
+
+**Rejected.** Widening `STATE_RETENTION.placementScoresMs` so
+the October fixtures would last. Injecting a fake clock into
+production `pruneStateLedgers`. Skipping the D267 living-score
+assertion. Editing the LOCKED section.
+
+**Supersedes / amends.** Amends D257 / D261 / D267 test
+fixtures only. Does not reverse D257 retention, D261 gone-
+campaign prune, D267 sidecar persist, or the LOCKED text.
+
+**Guards.** `src/state/store.isolation.test.ts` D267 living
+score uses `STATE_RETENTION.placementScoresMs` relative to now.
+`src/lib/stateRetention.test.ts` already injects `now`.
+`src/guards/canon.test.ts` D307. `src/guards/lockedCanon.test.ts`
+LOCKED section unchanged.
 
 

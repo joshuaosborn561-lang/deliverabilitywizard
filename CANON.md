@@ -20,6 +20,7 @@ Changes to this section require Josh's explicit approval. PRs that alter it must
 
 - POD-40: every client POD A and POD B must each hold >=40 warm seats the client owns (TechEvo 30), counted per POD, never per campaign; borrowed seats never count; when under, rotate free warm generics in (Insight: no generics, alert Josh daily). Never narrow, skip the off-week POD, or exempt any client from the count.
 - Generics Ledger: Every generic inbox we own has exactly one row: email, ESP, warmup on/off, assigned client (blank = free pool), assigned POD (A/B), assigned_at, and covering_for (the specific branded seats of that client it stands in for, each with its 21-day warm-ready date). All generics warm continuously; any generic found not warming gets warmup turned back on the same day. A generic is assigned only to fill one client's POD to 40 (30 TechEvo), to one client and one POD, and never moves PODs. Branded is preferred: when a covered branded seat reaches 21 days warm, it goes into the POD and the generic it covered comes out the same day: unlinked, client_id cleared, POD/POC tags stripped, signature reset, back to the free pool. No generic is assigned or released outside the ledger. Insight never receives generics; every other client, including PowerGRYD, does. CornerStone-domain inboxes are never generics and never in the pool. A generic on a live campaign without a ledger row, a generic tagged to Insight, a generic not warming, or a POD under 40 with no free warm generic alerts Josh the same day.
+- ESP matching + 10m gap: every Smartlead campaign has AI ESP matching ON (enable_ai_esp_matching: true) and min_time_btw_emails = 10, always (D304). The wizard flags and fixes drift on sight with settings / schedule writes only, never a status change; STOPPED campaigns are left alone.
 
 ## Mission
 
@@ -71,8 +72,8 @@ one-client-per-sender exception. Every stage respects:
 5. Exempt from the half-client staffing floor and the 30/30 ESP
    mix check.
 6. Schedule Mon–Fri 07:00–20:00 America/Chicago,
-   `min_time_btw_emails` 3. Never converge back to Mon–Thu or the
-   10-minute canon values.
+   `min_time_btw_emails` 10 (D304 supersedes D242's 3-minute gap).
+   Never converge the Mon–Fri window back to Mon–Thu.
 7. Exempt from runway and top-up alerts.
 8. Prewarmed (`WARMUP-GATE-EXEMPT`). Warmup stays on. Placement,
    bounce, and blacklist still monitor; if one needs to be killed
@@ -303,8 +304,8 @@ Caps ramp manually (35 on Oct 12).
   Followup-style afternoon) are left alone — there is no schedule-window converge, so a hand-set afternoon campaign is
   not overwritten back to the standing window. **CALLER FOLLOW-UP
   (D242)** is Mon–Fri 07:00–20:00 America/Chicago,
-  `min_time_btw_emails` 3 — never converge that class back to
-  Mon–Thu or the 10-minute canon gap.
+  `min_time_btw_emails` 10 (D304; the 3-minute gap is superseded) —
+  never converge that class's window back to Mon–Thu.
 - **Sequence delays** (D186): step 1 stays `delay_in_days: 0`.
   Step 2 must be **2 days** on every client campaign that has
   a second email. Canary shells, pod-control shells, the

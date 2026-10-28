@@ -528,6 +528,22 @@ export class SmartleadClient {
     );
   }
 
+  /**
+   * D304 — POST /campaigns/{id}/schedule. Window + gap only; the schema has
+   * no status field (status moves only via updateCampaignStatus).
+   */
+  updateCampaignSchedule(
+    campaignId: number,
+    schedule: Record<string, unknown>,
+  ): Promise<unknown> {
+    return this.mutate(() =>
+      this.request(`campaigns/${campaignId}/schedule`, {
+        method: "POST",
+        body: schedule,
+      }),
+    );
+  }
+
   /** D77 — assign the Smartlead client tag on a campaign. */
   setCampaignClientId(campaignId: number, clientId: number): Promise<unknown> {
     return this.updateCampaignSettings(campaignId, { client_id: clientId });

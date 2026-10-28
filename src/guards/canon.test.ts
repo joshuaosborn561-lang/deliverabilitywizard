@@ -14122,7 +14122,7 @@ describe("owner intent — D242 CALLER FOLLOW-UP campaign class", () => {
     assert.equal(CALLER_FOLLOWUP_NAME_PREFIX_DEFAULT, "Gabe Calls |");
     assert.equal(CALLER_FOLLOWUP_SENDER_TAG_DEFAULT, "GABE-VM-RESERVED");
     assert.equal(CALLER_FOLLOWUP_TIMEZONE, "America/Chicago");
-    assert.equal(CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS, 3);
+    assert.equal(CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS, 10); // D304 supersedes the 3m gap
     assert.equal(
       isCallerFollowUpCampaign({ id: 4085160, name: "Gabe Calls | Deep Roots" }),
       true,
@@ -14162,7 +14162,7 @@ describe("owner intent — D242 CALLER FOLLOW-UP campaign class", () => {
     );
     assert.equal(
       callerFollowUpSkipsCanonMinGap({ id: 4085160, name: "Gabe Calls | Deep Roots" }),
-      true,
+      false, // D304 — caller follow-ups get the 10m gap
     );
     assert.equal(
       callerFollowUpSkipsRunwayAndTopUpAlerts({ id: 4085160, name: "Gabe Calls | Deep Roots" }),
@@ -18827,3 +18827,20 @@ describe("owner intent — D307 pin age-pruned ledger fixtures", () => {
   });
 });
 
+
+describe("owner intent — D304 LOCKED ESP matching ON + 10m gap on every campaign", () => {
+  it("D304: canon, locked mirror, and the settings-only converge stay wired", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const canon = await read("../../CANON.md");
+    const locked = await read("../../docs/LOCKED-CANON.md");
+    const lib = await read("../lib/campaignSendCanon.ts");
+    const check = await read("../services/campaignCheck.ts");
+    for (const doc of [canon, locked]) {
+      assert.match(doc, /enable_ai_esp_matching: true\) and min_time_btw_emails = 10/, "D304 rule missing from a LOCKED copy.");
+    }
+    assert.match(check, /convergeSendCanon\(/, "campaign-check no longer converges D304 drift.");
+    assert.doesNotMatch(lib, /updateCampaignStatus|\/status/, "D304 converge must never touch campaign status.");
+    assert.match(lib, /=== "STOPPED"/, "D304 must leave STOPPED campaigns alone.");
+  });
+});

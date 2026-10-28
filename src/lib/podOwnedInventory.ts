@@ -185,8 +185,8 @@ function warmupConfigOf(
   >,
 ) {
   return {
-    campaignMinWarmupDays: config.campaignMinWarmupDays ?? 21,
-    freshInboxWarmupDays: config.freshInboxWarmupDays ?? 21,
+    campaignMinWarmupDays: config.campaignMinWarmupDays ?? 14,
+    freshInboxWarmupDays: config.freshInboxWarmupDays ?? 14,
     prewarmedDomains: config.prewarmedDomains,
     extraGenericMailboxes: config.extraGenericMailboxes,
   };

@@ -204,8 +204,8 @@ describe("D232 Azure staffable weight", () => {
         extraGenericMailboxes: [],
         extraGenericDomains: ["getintroduced.info"],
         prewarmedDomains: [],
-        campaignMinWarmupDays: 21,
-        freshInboxWarmupDays: 21,
+        campaignMinWarmupDays: 14,
+        freshInboxWarmupDays: 14,
       },
       state: {
         isCopyCanary: () => false,

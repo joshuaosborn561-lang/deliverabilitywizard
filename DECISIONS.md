@@ -22,7 +22,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 
 | Decision | Status |
 |---|---|
-| D1 | Live (the import clock) — duration superseded by D50 (21 days); start is the later of purchase and Smartlead import/warmup (D243) |
+| D1 | Live (the import clock) — duration superseded by D50 then D306 (14 days); start is the later of purchase and Smartlead import/warmup (D243) |
 | D2 | Live |
 | D3 | Live — qualified by D26/D27 |
 | D4 | Live — retire / cover-buy Slack taps also Cayden (D190) |
@@ -68,7 +68,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D47 | Live |
 | D48 | Live (rig unarmed until `ISOLATION_DOMAIN` is set) |
 | D49 | Live |
-| D50 | Live |
+| D50 | Live — duration superseded by D306 (14 days) |
 | D51 | Live (kill-only) — warmup-gate-off clause superseded by D105 |
 | D52 | Live |
 | D53 | Live |
@@ -196,10 +196,10 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D179 | Live | A known-retired domain never opens a fresh actionable Retire ask or a second replacement buy when old / recurrent 5.1.8 evidence reappears; confirm is a fail-safe no-op |
 | D180 | Live | Merge tags / custom fields cannot silently send blank — campaign-check samples sequences vs lead `custom_fields` (multi-offset, ~80% fill) and cheap sent-body holes; `merge_tag_blank` is a core CANON finding and Slack miss; never auto-edits live copy or remaps leads |
 | D181 | Live — Cayden Retire/Buy CTA and strike Slack silence added by D190 | Goliath / Smartlead client 548611 burned domains follow the normal Retire ask — D174 never-retire / never-burn / cover-only convert is reversed |
-| D182 | Live | Standing send window is Monday–Thursday 08:00–19:00 America/New_York — no Friday; gap 10 and max_leads 10000 unchanged; custom afternoon windows are not overwritten |
+| D182 | Live — no-converge clause superseded by D306 | Standing send window is Monday–Thursday 08:00–19:00 America/New_York — no Friday; gap 10 and max_leads 10000 unchanged; custom windows are now overwritten (D306) |
 | D183 | Live | Outlook / Microsoft Smartlead senders converge to 15 campaign emails/day; Gmail/SMTP stay at MESSAGE_PER_DAY=30 |
 | D184 | Superseded by D192 — exclusive-blank Insight staff inside 345263 is obsolete; never revive | Insight campaigns staff only seats not on ACTIVE SalesGlider; exclusive Insight may be empty-signed; NEVER blank ACTIVE SG staff; QA flags shared staff or SalesGlider-in-sig; no salesglider* fleet-empty |
-| D186 | Live | Client campaign sequence step 2 waits 2 days (`seq_delay_details.delay_in_days = 2`); step 1 stays 0; shells / 1-step skipped; campaign-check flags `step2_delay` and auto-fixes via `sequencesForWrite`; step 3+ not converged |
+| D186 | Live — step-3 "don't touch" superseded for check purposes by D306 | Client campaign sequence step 2 waits 2 days (`seq_delay_details.delay_in_days = 2`); step 1 stays 0; shells / 1-step skipped; campaign-check flags `step2_delay` and auto-fixes via `sequencesForWrite`; D306 flags step 3 (check only, never writes) |
 | D187 | Live | Ops Placement lists up to 80 ACTIVE live tests (was 40) |
 | D189 | Superseded by D229 — Insight rests like any named client; off-week unlinks (D228 on-week-only campaigns) | Client-rest does not unlink or bench mailboxes off Insight campaigns (client 345263); D184 exclusive staff survives the A/B fortnight |
 | D190 | Live | Burned-domain Slack pages once per strike; Cayden (or Josh) taps Retire / cover Buy; leftover D174 protected copy is healed and silent |
@@ -232,7 +232,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D224 | Live | Every hold is evidence-per-seat from a fixed reason list; no pattern / substring / client holds; no 5/10/25% numeric caps; store reason+evidence; expire when the reason clears or at 30 days; rejected seats in one #deliverability note |
 | D225 | Live — surplus is per THAT POD; a needed off-week assignment with no campaign links is not surplus (D228); return order and untagged-pool strip governed by D230; PowerGRYD skip retired by D237 | Weekday surplus generic return on min40-topup and generic-cleanup: unlink, clear `client_id`, reset signature; never drop a POD below 40 staffable; skip active POC-engagement seats and 24h TERRL substitutes so `generic_idle` does not page on legitimate state |
 | D226 | Live | Monday InboxKit sweep must not post findings to #deliverability. Handoff per client (lapsed/cancelled/inactive-but-connected + upcoming cancellations with dates) via state / /health. After cleanup, Slack only `Found X inboxes that had lapsed; they're deleted from Smartlead and InboxKit.` when X > 0 |
-| D227 | Live | `WARMUP-GATE-EXEMPT` counts as 21+ days warm for isStaffableSender, generic-pool named count, min40-topup, and surplus return. tidalstackco.com Azure/Entra seats Josh tagged that way are warm now (do not wait 21 days from the 9/29 Smartlead import). Azure cap stays 2 campaign + 5 warmup |
+| D227 | Live — duration now 14+ (D306); exempt still skips the clock | `WARMUP-GATE-EXEMPT` counts as warmed for isStaffableSender, generic-pool named count, min40-topup, and surplus return. tidalstackco.com Azure/Entra seats Josh tagged that way are warm now (do not wait the InboxKit clock from the 9/29 Smartlead import). Azure cap stays 2 campaign + 5 warmup |
 | D228 | Live — one-client / one-POD attach and named-warm return lock is D230 | Generics top up EACH POD (A and B) to 40 staffable per client (inventory 40/40, not only the on-week POD). Campaigns link only the on-week POD. Off-week POD keeps assigned generics (`client_id`, POD tag, signature) with no campaign links. Surplus is generics beyond 40 staffable in THAT POD. Off-week named leftovers unlink from on-week campaigns without peeling on-week below 40 |
 | D229 | Live | D189 Insight rest-sticky is retired: Insight off-week seats unlink; fan-out will not re-spread off-week POD-B onto Insight. D193 POC-only / "named clients never receive generics" is retired: assigned 40/40 generics stay on every named client; leftover D134 tap is still not a rotating-pool dump. D184/D192 Insight ≠ SalesGlider mix stays |
 | D230 | Live — sole assign/release path and `released_at` history locked by D231 | Governing generic rule: one shared pool in a table; a generic attaches to ONE client and ONE POD (A or B, whichever is under 40) and never rotates PODs; stays until branded named seats fill that POD back to 40, then returns to the untagged pool; while tagged no other client may use it; never pre-split across clients. min40 takes only untagged pool or same client+POD. Named-warm swap returns one generic per newly-warm named seat, oldest/worst first, never below 40; surplus beyond 40 also returns |
@@ -244,7 +244,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D236 | Live | POC engagement: reuse `pocClientNamePatterns` (default `goliath,deep roots`). Name-list matches except Goliath 548611 get 60 seats, no PODs, survive DRAFTED/ACTIVE, exempt from rotation, min40 fills to 60 with no Allow ask, `POC` tag reserves the seat, signature is `<from_name>\n{full brand}`. Release only when marked done (`/run?mode=end-poc`). Deep Roots 597783 is the first; never staff Gabe post-call 4074266. |
 | D237 | Live — D256 confirms PowerGRYD stays a full named client, not POC | PowerGRYD 592842 is a full named client. Leave-alone / dedicated-generic / rotation-skip / idle-exempt / min40 auto-allow special-cases are deleted. Not the D236 POC mode. Campaigns may PAUSE when done. |
 | D238 | Live | Canary fleet is hard-locked: identify by copyCanary fleet membership + Canary signature backstop; exclude from every attach/staff/top-up/generic-pool/POC path; never set client_id/POD/GENERIC; Canon pages `canary_on_live` / `canary_warmup_on` |
-| D239 | Live | generic_idle named staffable count matches CANON: 21-day gate, exclude GABE-VM-RESERVED and canary |
+| D239 | Live — duration now 14-day (D306) | generic_idle named staffable count matches CANON: 14-day gate, exclude GABE-VM-RESERVED and canary |
 | D240 | Live | Canary fleet swap: living fleet is size 10, adopted by CANARY tag and/or CANARY_FLEET_EMAILS; contaminated 6-seat getcrosslaunchco.info / crosslaunchcoget.info fleet is released and is no longer a D238 canary; empty replacement fleet is one fleet-level notice |
 | D241 | Live — write exemption folded into D242 CALLER FOLLOW-UP class | GABE-VM-RESERVED seats are exempt from every mutating stage (never unlink / link / retag / rewrite); min40 POC fill skips campaigns named Gabe and campaigns whose linked seats are GABE-VM-RESERVED, not just 4074266 |
 | D242 | Live — attach tightened by D244; stray peel / top-up exempt hardened by D264 | CALLER FOLLOW-UP campaign class: config-driven ids or `Gabe Calls |` prefix plus CALLER_FOLLOWUP sender tag (GABE-VM-RESERVED); empty signature; no rename; exclusive attach; rest/clock/floor/ESP/schedule/runway exempt; Slack before kill; never START/PAUSE; owned gabe@ attach when warm; bridge off by Nov 3 |
@@ -295,7 +295,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D299 | Live — stringify batching amended by D300; 60-minute freeze quarantine stays | Freeze/restart loop 2026-10-23: state/hot stringify batches compact values so one JSON.stringify cannot pin the loop for seconds; a health-loop stage that freeze-exits 3 times is quarantined for 60 minutes so leftover resume does not restart there forever. Thresholds are not widened. LOCKED section unchanged. |
 | D300 | Live | Freeze/restart loop after D299 (2026-10-23): objects/arrays are never native-stringified; persist and indexAccountsByCampaign yield to timers; campaign-health snapshots use a campaign Map and yield. lastOk stamps unchanged. Thresholds not widened. LOCKED section unchanged. |
 | D301 | Live | POD ESP mix matches each client's InboxKit Google/Microsoft split (±max(2, 10% of the POD) of round(POD × Microsoft share)); 1/3 floor is fallback only when InboxKit has no row. SMTP smtp.gmail.com and type:google are Gmail; type:m365 / type:azure are Microsoft. min-40 / campaign top-up pick generics toward that split. Finding text shows the client's target. Parlay ~54%, EMCOR ~60%, Peterson ~35%. LOCKED section unchanged. |
-| D304 | Live — LOCKED | Every Smartlead campaign: enable_ai_esp_matching ON and min_time_btw_emails 10. Campaign-check (hourly/all) flags and fixes drift on every non-STOPPED campaign: ESP via POST /settings, gap via POST /schedule echoing the current window. Never status. Supersedes D242's 3m caller follow-up gap (now 10). |
+| D304 | Live — LOCKED; caller-follow-up 10m gap restored to 3 by D306 | Every Smartlead campaign: enable_ai_esp_matching ON and min_time_btw_emails 10. Campaign-check (hourly/all) flags and fixes drift on every non-STOPPED campaign: ESP via POST /settings, gap via POST /schedule. Never status. D306 restores D242's 3m gap on caller follow-ups and overwrites custom send windows. |
+| D306 | Live — LOCKED | Warmup is 14 days for every seat (named and generic). Breakup-step CHECK ONLY (`missing_breakup_step` if no seq_number 3 or step 3 delay is not 2). Send-window converge Mon–Thu 08:00–19:00 America/New_York; custom windows overwritten; skip Gabe / shells / tests / STOPPED; never status. Josh: "Take [21] down to fourteen days. So that everything gets fourteen." |
 | D307 | Live | Tests that persist age-pruned ledgers (placement scores, copy suspects) stamp fixture times relative to now so D257's 14-day placement-score retention cannot drop a living row. Production prune windows and isolation sidecar persist are unchanged. LOCKED section unchanged. |
 | D308 | Live | Drain mode (A0): `POST /drain?action=on` skips every NEW cron tick, post-pass retry and manual `/run` while in-flight work finishes; `/health` reports `drain`, `activeJobs`, `idleNow` and `safeToDeploy` (drain on AND nothing running). Auto-expires (30m default, 120m max). Changes no campaigns, mailboxes, settings or WRITE_ENABLED. LOCKED section unchanged. |
 | D309 | Live | Copy-canary idempotent: one live "Canary copy" SmartDelivery test per campaign. Single-flight per campaign, a 3h create cooldown (also after a failed, maybe-landed create), stored test kept when the list hits the 5,000-test page cap, and each attach pass STOPS (never deletes) extra living canaries for a campaign, keeping the one with readings. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
@@ -11149,6 +11150,61 @@ D138's ACTIVE-only `/settings` gap write is left as is.
 `src/guards/canon.test.ts` D304; `src/guards/lockedCanon.test.ts`
 LOCKED text mirrored.
 
+## D306 — 14-day warmup, breakup-step check, send-window converge
+
+**Decision (Josh, 2026-10-27 7:33pm CT, in his words):** "Take
+[21] down to fourteen days. So that everything gets fourteen."
+
+Three canon changes in one call:
+
+1. **Warmup is 14 days for every seat**, named and generic.
+   `poolWarmupDays`, `campaignMinWarmupDays`, and
+   `freshInboxWarmupDays` default to 14 (env fallbacks too).
+   The LOCKED Generics Ledger warm-ready clock is 14 days.
+   WARMUP-GATE-EXEMPT still counts as warm now. The
+   reporting-only-14 / live-gate-21 split is retired.
+
+2. **Breakup-step CHECK ONLY.** Campaign-check flags
+   `missing_breakup_step` when a client campaign has no
+   `seq_number` 3, or step 3's `delay_in_days` is not 2
+   (step 3 should land on day 4). Pages Slack once per
+   campaign per incident. Never writes sequences. Reuses
+   `campaignHasStep2DelayRule` (shells / canaries / word-hunt)
+   and also skips Gabe caller follow-ups and 1-step tests.
+   D306 supersedes D186's "don't touch step 3+" for check
+   purposes only.
+
+3. **Send-window converge.** Live campaigns POST
+   `/campaigns/{id}/schedule` to Monday–Thursday 08:00–19:00
+   America/New_York with `max_leads_per_day` 10000. Custom
+   windows are overwritten (D182's "no schedule-window
+   converge" / "custom windows left alone" are retired).
+   Skip CALLER FOLLOW-UP (they keep Mon–Fri 07:00–20:00
+   Chicago with a 3-minute gap — D306 restores D242's gap
+   after D304), shells and canaries (`isAnyShellCampaign`),
+   test campaigns, and STOPPED. Never call the status
+   endpoint. Placement rules stay unchanged. Never change
+   campaign copy or campaign status.
+
+**Why.** Josh approved the three changes together on
+2026-10-27. Fourteen is the fleet-wide clock. Step 3 is
+the breakup and must be checked. Hand-set afternoon /
+Friday windows drift off the standing window unless the
+machine writes them back.
+
+**Supersedes / amends.** Supersedes D50 / D105 duration
+(21 → 14). Supersedes D182's no-converge clause.
+Supersedes D186's "don't touch step 3+" for check
+purposes. Restores D242's 3-minute caller-follow-up gap
+(amends D304 for that class). Does not reverse D1's
+import clock, D40 / never-START, D304 ESP matching ON,
+or placement rules. Changes the LOCKED Generics Ledger
+21-day warm-ready text to 14.
+
+**Guards.** `src/lib/breakupStep.test.ts`;
+`src/lib/campaignSendCanon.test.ts` D306;
+`src/guards/canon.test.ts` D306;
+`src/guards/lockedCanon.test.ts` LOCKED text mirrored.
 
 ## D308 — Drain mode and `safeToDeploy`
 

@@ -154,7 +154,7 @@ describe("ops HTTP boundary", () => {
       };
       assert.equal(dashboardBody.fleet.sendingMailboxes, 1);
       assert.equal(dashboardBody.policy.clientRest, true);
-      assert.equal(dashboardBody.policy.freshInboxWarmupDays, 21);
+      assert.equal(dashboardBody.policy.freshInboxWarmupDays, 14);
       assert.match(dashboardBody.campaignSetupPrompt, /2 weeks on \/ 2 weeks off/);
       assert.equal(typeof dashboardBody.restRollover.daysUntil, "number");
       assert.ok(

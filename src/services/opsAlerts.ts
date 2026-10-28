@@ -188,6 +188,7 @@ export async function alertCanonMisses(input: {
 
   await pageFirstOpenCanonFindings(input, result);
   await pageMergeTagMisses(input, result);
+  await pageBreakupMisses(input, result);
   return result;
 }
 
@@ -206,6 +207,8 @@ const FINDING_LABEL: Record<string, string> = {
   missing_canary: "no canary",
   inbox_missing_known_good: "inbox missing known-good test",
   merge_tag_blank: "merge tags sending blank",
+  missing_breakup_step: "breakup step missing or not 2 days",
+  send_window: "send window off the Mon–Thu 8am–7pm ET canon",
   generic_idle: "generic assigned but not needed for POD 40",
   generic_multi_client: "generic assigned to more than one client",
   generic_outside_ledger: "generic on a live campaign without a ledger row",
@@ -243,9 +246,15 @@ async function pageFirstOpenCanonFindings(
   if (input.dryRun) return;
 
   for (const row of open) {
-    const otherFails = row.fails.filter((kind) => kind !== "merge_tag_blank");
+    const otherFails = row.fails.filter(
+      (kind) => kind !== "merge_tag_blank" && kind !== "missing_breakup_step",
+    );
     if (otherFails.length === 0 && row.fails.includes("merge_tag_blank")) {
       // D180 — dedicated merge-tag page carries fill rates / sample.
+      continue;
+    }
+    if (otherFails.length === 0 && row.fails.includes("missing_breakup_step")) {
+      // D306 — dedicated breakup page, once per campaign per incident.
       continue;
     }
     const key = `findings:${row.campaignId}`;
@@ -334,6 +343,74 @@ async function pageMergeTagMisses(
     } catch (error) {
       console.warn(
         `[canon-miss] merge-tag page failed for #${row.campaignId}`,
+        error,
+      );
+    }
+  }
+}
+
+/**
+ * D306 — breakup-step miss pages once per campaign per incident.
+ * Check only; never writes sequences. Recovery clears the stamp.
+ */
+export function breakupMissText(input: {
+  campaignId: number;
+  name: string;
+  detail: string;
+}): string {
+  return [
+    `:rotating_light: CANON miss — breakup step missing or not 2 days`,
+    `• \`${input.name} #${input.campaignId}\` — ${input.detail}`,
+    "Check only — do not write sequences. Step 3 should wait 2 days so it lands on day 4.",
+    "Investigate in-thread. The checklist keeps remediating; this page is the first alert.",
+  ].join("\n");
+}
+
+async function pageBreakupMisses(
+  input: {
+    store: StateStore;
+    slack: Pick<SlackClient, "send">;
+    dryRun?: boolean;
+  },
+  result: { alerted: string[]; recovered: number[] },
+): Promise<void> {
+  const open = input.store
+    .listCampaignChecks()
+    .map((record) => {
+      const detail = (record.findings ?? [])
+        .filter((finding) => finding.startsWith("missing_breakup_step"))
+        .map((finding) => finding.replace(/^missing_breakup_step:\s*/, ""))
+        .join(" · ");
+      return detail
+        ? { campaignId: record.campaignId, name: record.name, detail }
+        : null;
+    })
+    .filter((row): row is { campaignId: number; name: string; detail: string } =>
+      row != null,
+    );
+  const openIds = new Set(open.map((row) => row.campaignId));
+
+  for (const record of input.store.listCampaignChecks()) {
+    const key = `breakup:${record.campaignId}`;
+    if (openIds.has(record.campaignId)) continue;
+    if (!input.store.getCanonMissStamp(key)) continue;
+    if (input.dryRun) continue;
+    input.store.clearCanonMissStamp(key);
+    result.recovered.push(record.campaignId);
+  }
+
+  if (input.dryRun) return;
+
+  for (const row of open) {
+    const key = `breakup:${row.campaignId}`;
+    if (input.store.getCanonMissStamp(key) === "open") continue;
+    try {
+      await input.slack.send(breakupMissText(row), undefined, "ops_alert");
+      input.store.setCanonMissStamp(key, "open");
+      result.alerted.push(`${row.campaignId}:missing_breakup_step`);
+    } catch (error) {
+      console.warn(
+        `[canon-miss] breakup page failed for #${row.campaignId}`,
         error,
       );
     }

@@ -33,7 +33,7 @@ export interface WarmupGateRemoval {
 }
 
 export interface WarmupGateResult {
-  /** D139 — the warmup days this gate enforced (config, 21). */
+  /** D139 — the warmup days this gate enforced (config, 14). */
   owedDays: number;
   dryRun: boolean;
   campaignsScanned: number;
@@ -68,7 +68,7 @@ export function isPrewarmedGeneric(
 
 /**
  * Keep ACTIVE campaigns from sending on mailboxes that have not served the
- * 21-day clock (MIN_CAMPAIGN_WARMUP_DAYS / freshInboxWarmupDays, D50/D105).
+ * 14-day clock (MIN_CAMPAIGN_WARMUP_DAYS / freshInboxWarmupDays, D50/D105/D306).
  *
  * Age is the later of the InboxKit import stamp and Smartlead
  * created_at / warmup start (D1/D50/D243). HOLD-UNTIL tags are
@@ -187,7 +187,7 @@ export class WarmupGateService {
         }
 
         // D128 — a leftover HOLD-UNTIL tag is not a pull. Pulls are
-        // kill-only (D51) plus this 21-day clock (D105); the hold system
+        // kill-only (D51) plus this 14-day clock (D105/D306); the hold system
         // was wiped (D59) and its tags are inert residue.
 
         // Pre-warmed generics are already warm; Smartlead's warmup start date
@@ -276,7 +276,7 @@ export class WarmupGateService {
             }
           }
 
-          // D207 — under-warmed (warmDays < 21) may come off below 40.
+          // D207 — under-warmed (warmDays < 14) may come off below 40.
           await this.smartlead.removeEmailAccountsFromCampaign(campaign.id, [
             removal.accountId,
           ]);
@@ -441,8 +441,8 @@ export function isWarmupGateExempt(tags: string[]): boolean {
 }
 
 /**
- * D227 — a seat counts as 21+ days warm when Josh tagged it
- * WARMUP-GATE-EXEMPT, or when a readable clock is already ≥21.
+ * D227 / D306 — a seat counts as 14+ days warm when Josh tagged it
+ * WARMUP-GATE-EXEMPT, or when a readable clock is already ≥14.
  * Missing clocks stay undecided here; callers that fail-closed
  * (owesWarmup) still treat unknown as owing unless exempt.
  */
@@ -451,7 +451,7 @@ export function countsAsWarmed21(
   daysWarmed: number | null | undefined,
 ): boolean {
   if (isWarmupGateExempt(tags)) return true;
-  return typeof daysWarmed === "number" && Number.isFinite(daysWarmed) && daysWarmed >= 21;
+  return typeof daysWarmed === "number" && Number.isFinite(daysWarmed) && daysWarmed >= 14;
 }
 
 /** Return HOLD-UNTIL date if the hold has not expired yet (end of that UTC day). */
@@ -485,8 +485,8 @@ export function warmupStartedAt(
 }
 
 /**
- * D41 / D50 — fresh InboxKit inboxes owe 21 days. Pre-warmed fleets stay
- * on campaignMinWarmupDays (also 21) but the gate keeps them anyway.
+ * D41 / D50 / D306 — fresh InboxKit inboxes owe 14 days. Pre-warmed fleets stay
+ * on campaignMinWarmupDays (also 14) but the gate keeps them anyway.
  */
 export function owedWarmupDays(
   prewarmed: boolean,

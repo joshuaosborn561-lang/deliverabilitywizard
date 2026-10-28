@@ -259,7 +259,7 @@ export function detachWouldBreakOnWeekMin(
 export type StaffableFloorDetachOpts = {
   /**
    * D207 — these seats may still come off an ACTIVE campaign at/under 40:
-   * cross-client, HOLD/RETIRE-tagged, under-warmed (warmDays < 21).
+   * cross-client, HOLD/RETIRE-tagged, under-warmed (warmDays < 14).
    * Disconnected / SMTP-fail is already handled by accountIsPeelStaffable.
    */
   exempt?: boolean;

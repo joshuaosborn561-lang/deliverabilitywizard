@@ -11,7 +11,7 @@ describe("campaignSetupPrompt", () => {
     assert.match(prompt, /Split that client's \*\*named\*\* inboxes into a \*\*static\*\* even A\/B/);
     assert.match(prompt, /30% Google/);
     assert.match(prompt, /14 days of live send/);
-    assert.match(prompt, /21 days/);
+    assert.match(prompt, /14 days/);
     assert.match(prompt, /bounce loop \(D90\)/);
     assert.match(prompt, /more than 10 new bounces in 10 minutes/);
     assert.doesNotMatch(prompt, /D80|20% until 500|after 100 sends at 20%/);

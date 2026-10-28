@@ -2316,7 +2316,7 @@ describe("Min40TopUpService (D205)", () => {
       is_imap_success: true,
       tags: [{ tag_name: "POD-A" }],
       campaign_ids: [],
-      created_at: "2026-10-10T00:00:00.000Z",
+      created_at: "2026-10-16T00:00:00.000Z",
     };
     const warmingB = {
       id: 51,
@@ -2328,7 +2328,7 @@ describe("Min40TopUpService (D205)", () => {
       is_imap_success: true,
       tags: [{ tag_name: "POD-B" }],
       campaign_ids: [],
-      created_at: "2026-10-10T00:00:00.000Z",
+      created_at: "2026-10-16T00:00:00.000Z",
     };
     const service = new Min40TopUpService(
       loadConfig({ DRY_RUN: "false" }),

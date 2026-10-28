@@ -639,7 +639,7 @@ describe("D221 syncGenericSeatsFromInventory", () => {
     );
   });
 
-  it("D238/D239: canary, GABE-VM-RESERVED, and under-21 named seats are not named staffable", async () => {
+  it("D238/D239: canary, GABE-VM-RESERVED, and under-14 named seats are not named staffable", async () => {
     const result = await syncGenericSeatsFromInventory({
       existing: [],
       accounts: [
@@ -676,7 +676,6 @@ describe("D221 syncGenericSeatsFromInventory", () => {
           is_smtp_success: true,
           is_imap_success: true,
           // owesWarmup reads the wall clock, not the injected `now`.
-          // A fixed 2026-10-01 stamp aged past 21 days on 2026-10-22.
           created_at: new Date(Date.now() - 3 * 86_400_000).toISOString(),
         },
         {
@@ -696,8 +695,8 @@ describe("D221 syncGenericSeatsFromInventory", () => {
         extraGenericMailboxes: [],
         extraGenericDomains: ["crosslaunchco.com", "newcanary.test"],
         prewarmedDomains: ["crosslaunchco.com"],
-        campaignMinWarmupDays: 21,
-        freshInboxWarmupDays: 21,
+        campaignMinWarmupDays: 14,
+        freshInboxWarmupDays: 14,
       },
       state,
       now: new Date("2026-10-05T15:00:00.000Z"),
@@ -710,7 +709,7 @@ describe("D221 syncGenericSeatsFromInventory", () => {
     assert.equal(
       result.namedStaffableByClientPod.get(clientPodKey(521881, "A")),
       1,
-      "only the 21-day warm named seat counts",
+      "only the 14-day warm named seat counts",
     );
   });
 

@@ -540,8 +540,8 @@ export async function syncGenericSeatsFromInventory(
         account as SmartleadAccountWithCampaigns,
         email,
         {
-          campaignMinWarmupDays: input.config.campaignMinWarmupDays ?? 21,
-          freshInboxWarmupDays: input.config.freshInboxWarmupDays ?? 21,
+          campaignMinWarmupDays: input.config.campaignMinWarmupDays ?? 14,
+          freshInboxWarmupDays: input.config.freshInboxWarmupDays ?? 14,
           prewarmedDomains: input.config.prewarmedDomains,
           extraGenericMailboxes: input.config.extraGenericMailboxes,
         },
@@ -565,7 +565,7 @@ export async function syncGenericSeatsFromInventory(
               email,
               input.state,
             ),
-            input.config.campaignMinWarmupDays ?? 21,
+            input.config.campaignMinWarmupDays ?? 14,
             now,
           ),
         });

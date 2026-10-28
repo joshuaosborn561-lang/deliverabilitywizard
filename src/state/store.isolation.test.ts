@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { describe, it } from "node:test";
+import { STATE_RETENTION } from "../lib/stateRetention.js";
 import { StateStore } from "./store.js";
+
+/** D307 — age-pruned ledger fixtures must sit inside STATE_RETENTION, not a calendar date. */
+function withinRetention(maxAgeMs: number, fraction = 0.2): string {
+  return new Date(Date.now() - Math.floor(maxAgeMs * fraction)).toISOString();
+}
 
 describe("isolation state", () => {
   it("reloads pod controls, mailbox tags, and suppressed terms", async () => {
@@ -26,7 +32,7 @@ describe("isolation state", () => {
     state.markCopySuspect({
       campaignId: 7,
       campaignName: "Acme",
-      at: "2026-08-23T00:00:00.000Z",
+      at: withinRetention(STATE_RETENTION.copySuspectsMs, 0.1),
     });
     await state.save();
 
@@ -61,13 +67,15 @@ describe("isolation state", () => {
     const path = `/tmp/dw-iso-prune-${process.pid}-${Date.now()}.json`;
     const state = new StateStore(path);
     await state.load();
+    const goneAt = withinRetention(STATE_RETENTION.placementScoresMs, 0.4);
+    const livingAt = withinRetention(STATE_RETENTION.placementScoresMs, 0.15);
     state.recordPlacementScore({
       campaignId: 3739316,
       campaignName: "Cold Call Followup",
       testId: "547425",
       source: "canary-copy",
       inboxPercent: 0,
-      at: "2026-10-08T00:00:00.000Z",
+      at: goneAt,
     });
     state.recordPlacementScore({
       campaignId: 3847794,
@@ -75,12 +83,12 @@ describe("isolation state", () => {
       testId: "544718",
       source: "canary-copy",
       inboxPercent: 0,
-      at: "2026-10-13T14:00:00.000Z",
+      at: livingAt,
     });
     state.markCopySuspect({
       campaignId: 3739316,
       campaignName: "Cold Call Followup",
-      at: "2026-10-08T00:00:00.000Z",
+      at: goneAt,
     });
     state.markCopySuspect({
       campaignId: 3763805,
@@ -122,13 +130,15 @@ describe("isolation state", () => {
     const path = `/tmp/dw-iso-prune-hot-${process.pid}-${Date.now()}.json`;
     const stale = new StateStore(path);
     await stale.load();
+    const goneAt = withinRetention(STATE_RETENTION.placementScoresMs, 0.4);
+    const livingAt = withinRetention(STATE_RETENTION.placementScoresMs, 0.15);
     stale.recordPlacementScore({
       campaignId: 3739316,
       campaignName: "Cold Call Followup",
       testId: "547425",
       source: "canary-copy",
       inboxPercent: 0,
-      at: "2026-10-08T00:00:00.000Z",
+      at: goneAt,
     });
     stale.recordPlacementScore({
       campaignId: 3847794,
@@ -136,12 +146,12 @@ describe("isolation state", () => {
       testId: "544718",
       source: "canary-copy",
       inboxPercent: 0,
-      at: "2026-10-13T14:00:00.000Z",
+      at: livingAt,
     });
     stale.markCopySuspect({
       campaignId: 3739316,
       campaignName: "Cold Call Followup",
-      at: "2026-10-08T00:00:00.000Z",
+      at: goneAt,
     });
     stale.setCopyCanaries(3739316, ["canary@g.test"], "547425");
     await stale.save();
@@ -176,6 +186,7 @@ describe("isolation state", () => {
     const path = `/tmp/dw-iso-hot-slim-${process.pid}-${Date.now()}.json`;
     const state = new StateStore(path);
     await state.load();
+    const fatAt = withinRetention(STATE_RETENTION.placementScoresMs, 0.15);
     for (let i = 0; i < 80; i += 1) {
       state.recordPlacementScore({
         campaignId: 4000000 + i,
@@ -183,13 +194,13 @@ describe("isolation state", () => {
         testId: `t-${i}`,
         source: "canary-copy",
         inboxPercent: 0,
-        at: "2026-10-19T00:00:00.000Z",
+        at: fatAt,
         raw: "x".repeat(20_000),
       } as never);
       state.markCopySuspect({
         campaignId: 4000000 + i,
         campaignName: `Fat score ${i}`,
-        at: "2026-10-19T00:00:00.000Z",
+        at: fatAt,
       });
       state.setCopyCanaries(4000000 + i, [`canary${i}@g.test`], `t-${i}`);
     }

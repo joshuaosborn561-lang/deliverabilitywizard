@@ -18662,8 +18662,8 @@ describe("owner intent — D301 POD ESP mix matches InboxKit client split", () =
 
     assert.match(
       canon,
-      /Canon as of \*\*D301\*\*/,
-      stop("CANON is dated D301.", "CANON.md header is not D301."),
+      /Canon as of \*\*D(301|30[2-9]|3[1-9][0-9])\*\*/,
+      stop("CANON is dated D301+.", "CANON.md header is before D301."),
     );
     assert.match(
       canon,
@@ -18744,6 +18744,85 @@ describe("owner intent — D301 POD ESP mix matches InboxKit client split", () =
       canon,
       /## LOCKED — Josh-only changes/,
       stop("LOCKED heading stays (D301).", "CANON.md lost the LOCKED heading."),
+    );
+  });
+});
+
+describe("owner intent — D307 pin age-pruned ledger fixtures", () => {
+  it("D307: relative fixture stamps; production retention unchanged; LOCKED unchanged", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const locked = await readFile(
+      new URL("../../docs/LOCKED-CANON.md", import.meta.url),
+      "utf8",
+    );
+    const isolation = await readFile(
+      new URL("../state/store.isolation.test.ts", import.meta.url),
+      "utf8",
+    );
+    const retention = await readFile(
+      new URL("../lib/stateRetention.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D(307|30[8-9]|3[1-9][0-9])\*\*/,
+      stop("CANON is dated D307+.", "CANON.md header is before D307."),
+    );
+    assert.match(
+      canon,
+      /stamp those times relative to now/,
+      stop("CANON names relative fixture stamps (D307).", "CANON.md lost the D307 MUST."),
+    );
+    assert.match(
+      decisions,
+      /## D307 — /,
+      stop("The ledger records D307.", "DECISIONS.md has no D307 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D307 \|/m,
+      stop("The status index lists D307 (D127).", "DECISIONS.md status index has no D307 row."),
+    );
+    assert.match(
+      isolation,
+      /withinRetention\(STATE_RETENTION\.placementScoresMs/,
+      stop(
+        "D267 living scores sit inside placement-score retention (D307).",
+        "store.isolation.test.ts lost the relative placement-score stamps.",
+      ),
+    );
+    assert.doesNotMatch(
+      isolation,
+      /2026-10-13T14:00:00\.000Z/,
+      stop(
+        "The calendar living-score stamp is gone (D307).",
+        "store.isolation.test.ts still hard-codes 2026-10-13.",
+      ),
+    );
+    assert.match(
+      retention,
+      /placementScoresMs: 14 \* DAY/,
+      stop(
+        "Production 14-day placement-score retention stays (D307).",
+        "stateRetention.ts changed placementScoresMs.",
+      ),
+    );
+    assert.match(
+      locked,
+      /POD-40: every client POD A and POD B must each hold >=40 warm seats/,
+      stop("LOCKED POD-40 sentence unchanged (D307).", "docs/LOCKED-CANON.md LOCKED sentence drifted."),
+    );
+    assert.match(
+      canon,
+      /## LOCKED — Josh-only changes/,
+      stop("LOCKED heading stays (D307).", "CANON.md lost the LOCKED heading."),
     );
   });
 });

@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D301** (2026-10-23). One page of current truth. When a new
+Canon as of **D307** (2026-10-28). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -9,6 +9,10 @@ guard in `src/guards/meta.test.ts` enforces both).
 and every reversal, and most of it is **superseded**. Do not derive behaviour
 from it. Derive behaviour from this file; use the ledger only to understand
 *why* a rule here exists (each rule cites its decision numbers).
+
+**D307.** Tests that persist age-pruned ledgers (placement scores,
+copy suspects) stamp those times relative to now so D257 retention
+cannot drop a living fixture. Production prune windows are unchanged.
 
 ## LOCKED — Josh-only changes
 

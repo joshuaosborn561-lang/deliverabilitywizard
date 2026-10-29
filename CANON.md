@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D317** (2026-10-29). One page of current truth. When a new
+Canon as of **D318** (2026-10-29). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -9,6 +9,8 @@ guard in `src/guards/meta.test.ts` enforces both).
 and every reversal, and most of it is **superseded**. Do not derive behaviour
 from it. Derive behaviour from this file; use the ledger only to understand
 *why* a rule here exists (each rule cites its decision numbers).
+
+**D318.** The exclusive health lane cannot deadlock the Smartlead mutation queue: while health is exclusive, queued jobs ride the health lane (one job at a time); direct normal-lane calls still wait; `/health` shows `parkedBehindHealth` / `healthWaiting`. No cadence or rule change.
 
 **D317.** Health sweeps finish in budget: a cold test→campaign cache can't storm SmartDelivery (3 failed lookups in a row pause lookups 2 min, one retry per lookup, 90 s default budget); `campaign-health` and `client-rest` may run 15 min as a safety net under a 20 min hard cap on any stage; `/health` reports each stage's `lastDurationMs`. No cadence or rule change.
 

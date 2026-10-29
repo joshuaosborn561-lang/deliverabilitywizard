@@ -19,9 +19,9 @@
 
 /** 15-minute canon-sweep cadence plus grace for a long pass. */
 const HEALTH_MS = 45 * 60 * 1000;
-/** 6-hour cadence (monitor loop, full mailbox-settings converge) plus grace. */
 /** A1 (D312) — the critical sweep runs every 30 minutes; overdue after 75. */
 export const CRITICAL_SWEEP_OVERDUE_MS = 75 * 60 * 1000;
+/** 6-hour cadence (monitor loop, full mailbox-settings converge) plus grace. */
 const SIX_HOURLY_MS = (6 * 60 + 45) * 60 * 1000;
 /** 30-minute canon-ops cadence plus grace for a missed weekday tick. */
 const CANON_OPS_MS = 90 * 60 * 1000;

@@ -304,6 +304,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D317 | Live | Health-sweep budget: (1) a cold test→campaign cache (after a deploy) can no longer storm SmartDelivery — 3 failed lookups in a row open a 2-minute breaker, each lookup retries once not four times, and every `enrichCampaignIds` caller gets a 90 s default budget; (2) `campaign-health` and `client-rest` stage timeout 10m → 15m as a safety net, with a 20m hard cap on any stage; (3) campaign-health logs its top-up / fan-out / copy-canary seconds and `/health` publishes each stage's `lastDurationMs`. Builds on D315. No stage removed, no cadence change, no campaign, mailbox, setting or WRITE_ENABLED change. |
 | D318 | Live | Exclusive health lane vs the serial mutation queue: a normal-lane job at the head of the Smartlead mutation queue parked behind the exclusive health lane while the health pass (reconnect, mailbox-gap, campaign-health writes) waited on that same queue — a deadlock released only by the 6-minute job timeout, three jobs deep (limiter idle, queue depth 3, oldest wait 300s+). Queued jobs now ride the health lane while it is exclusive (one job at a time, so at most one slot); direct normal-lane calls still wait. `/health` limiter adds `parkedBehindHealth` / `healthWaiting`. No cadence, stage, campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 | D319 | Live | Report-read budget + normal-lane share: (1) SmartDelivery `spam-test/report/*` reads (providerwise, domain-blacklist, blacklist, sender-account-wise) retry once, not four times, and three failed reads in a row (429 / 5xx / timeout) pause report reads for 2 minutes — callers fail fast; a missing test (404) does not count. (2) `monitor-results` works in a 6-minute budget, rotates its test walk from where the last pass stopped (unfinished tests carry over; paused reads are never recorded as "no hits"), and runs a second worker only while the limiter has headroom (no pause, no 429 streak, under 60% of 150/min). (3) While health is exclusive the normal lane keeps one share slot (never the last free one) so the 6-hour monitor chain (lead-runout, canary-adopt, isolation-rig …) can finish; idle slots are handed to waiters when the exclusive stretch ends. No stage removed, no cadence change, no campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
+| D320 | Live | lead-runout budget: the 6-hour monitor chain's `lead-runout` walks every ACTIVE campaign serially (2-3 Smartlead reads each, normal lane) and timed out at 10m five times running (last ok 2:02am CT). Reads now retry once, the walk stops at 7 minutes and resumes where it stopped next pass (cursor in memory). No alert rule, threshold, campaign or WRITE_ENABLED change. LOCKED section unchanged. |
 
 ---
 
@@ -11334,3 +11335,20 @@ exclusive, normal-lane callers may hold one slot (never the last free one).
 
 **Guards.** `src/lib/d319Budget.test.ts`, `src/services/resultMonitor.test.ts`
 (D319), `src/guards/canon.test.ts` D319.
+
+## D320 — lead-runout finishes inside its stage budget
+
+**Decision (Josh, 2026-10-29):** the 6-hour monitor-chain stages complete on
+schedule. After D318/D319 `canary-adopt` and `isolation-rig` completed again;
+`lead-runout` was the last overdue stage (last ok 2:02am CT, five consecutive
+10-minute timeouts).
+
+**Evidence.** It reads statistics and analytics for every ACTIVE campaign one
+after another on the normal lane; those reads 429 (`GET campaigns/N/statistics`,
+`…/analytics-by-date`) and each retried four times with backoff.
+
+**Rule.** Reads retry once; the walk stops at 7 minutes (3 under the 10-minute
+stage timeout) and the next pass resumes at the first unwalked campaign.
+Alert thresholds and messages are unchanged.
+
+**Guards.** `src/services/leadRunout.test.ts` (D320), `src/guards/canon.test.ts` D320.

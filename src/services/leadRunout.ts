@@ -21,7 +21,18 @@ import {
 } from "../lib/callerFollowUp.js";
 import type { StateStore } from "../state/store.js";
 
+/**
+ * D320 — lead-runout walks every ACTIVE campaign (2-3 Smartlead reads each,
+ * normal lane). It timed out at 10m five times running while those reads
+ * 429'd (4 retries each). Now: one retry per read, a 7-minute budget, and the
+ * walk resumes where the last pass stopped.
+ */
+export const LEAD_RUNOUT_BUDGET_MS = 7 * 60 * 1000;
+export const LEAD_RUNOUT_READ_RETRIES = 1;
+
 export interface LeadRunoutResult {
+  /** D320 — campaigns left for the next pass. */
+  carriedOver?: number;
   scanned: number;
   flagged: Array<{ campaignId: number; name: string; stage: RunoutStage }>;
   skipped: string[];
@@ -33,11 +44,16 @@ export interface LeadRunoutResult {
  * Does not import leads or extend a campaign.
  */
 export class LeadRunoutService {
+  /** D320 — where the next pass resumes (in memory; a restart starts at the top). */
+  private carryCursor = 0;
+
   constructor(
     private readonly config: AppConfig,
     private readonly smartlead: SmartleadClient,
     private readonly slack: SlackClient,
     private readonly state: StateStore,
+    /** Test seam — defaults to LEAD_RUNOUT_BUDGET_MS. */
+    private readonly budgetMs: number = LEAD_RUNOUT_BUDGET_MS,
   ) {}
 
   async run(): Promise<LeadRunoutResult> {
@@ -61,13 +77,19 @@ export class LeadRunoutService {
       return result;
     }
 
-    const active = campaigns.filter(
+    const activeAll = campaigns.filter(
       (campaign) => String(campaign.status ?? "").toUpperCase() === "ACTIVE",
     );
+    const at = activeAll.length ? this.carryCursor % activeAll.length : 0;
+    const active = [...activeAll.slice(at), ...activeAll.slice(0, at)];
+    const deadline = Date.now() + this.budgetMs;
+    let walked = 0;
     const end = ymdUtc(new Date());
     const start = addUtcDays(end, -2);
 
     for (const campaign of active) {
+      if (Date.now() >= deadline) break;
+      walked += 1;
       if (
         callerFollowUpSkipsRunwayAndTopUpAlerts(
           campaign,
@@ -80,9 +102,13 @@ export class LeadRunoutService {
       result.scanned += 1;
       try {
         const [statsRaw, recent] = await Promise.all([
-          this.smartlead.getCampaignStatistics(campaign.id).catch(() => null),
           this.smartlead
-            .getCampaignAnalyticsByDate(campaign.id, start, end)
+            .getCampaignStatistics(campaign.id, {}, { retries: LEAD_RUNOUT_READ_RETRIES })
+            .catch(() => null),
+          this.smartlead
+            .getCampaignAnalyticsByDate(campaign.id, start, end, {
+              retries: LEAD_RUNOUT_READ_RETRIES,
+            })
             .catch(() => null),
         ]);
         await sleep(150);
@@ -127,6 +153,16 @@ export class LeadRunoutService {
         const message = error instanceof Error ? error.message : String(error);
         result.errors.push(`#${campaign.id}: ${message}`);
       }
+    }
+
+    result.carriedOver = activeAll.length - walked;
+    if (result.carriedOver > 0) {
+      this.carryCursor = (at + walked) % activeAll.length;
+      console.log(
+        `[lead-runout] D320 budget spent — ${result.carriedOver} of ${activeAll.length} active campaign(s) carry to the next pass`,
+      );
+    } else {
+      this.carryCursor = 0;
     }
 
     if (result.flagged.length) {

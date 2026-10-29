@@ -18988,3 +18988,15 @@ describe("owner intent — D319 report-read budget", () => {
     assert.match(decisions, /^\| D319 \|/m, "status index has no D319 row (D127)");
   });
 });
+
+describe("owner intent — D320 lead-runout budget", () => {
+  it("D320: lead-runout has a time budget and carry-over; ledger says so", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync("src/services/leadRunout.ts", "utf8");
+    const decisions = readFileSync("DECISIONS.md", "utf8");
+    assert.match(src, /LEAD_RUNOUT_BUDGET_MS/, "lead-runout budget is gone (D320)");
+    assert.match(src, /carryCursor/, "lead-runout carry-over is gone (D320)");
+    assert.match(decisions, /## D320 — /, "DECISIONS.md has no D320 entry");
+    assert.match(decisions, /^\| D320 \|/m, "status index has no D320 row (D127)");
+  });
+});

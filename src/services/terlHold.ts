@@ -44,6 +44,7 @@ import { onWeekCohort } from "../lib/restCohort.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
 import { isOutlookMailboxType } from "../lib/sendCeiling.js";
 import { insightExemptFromSenderTopUp } from "../lib/insightCampaigns.js";
+import { brandsFromClients } from "../lib/powerGrydEmptyByDesign.js";
 import {
   logCompanyFallback,
   logPlaceholderRefusal,
@@ -301,6 +302,7 @@ export class TerlHoldService {
           pool: null,
           liveFromName: pick.from_name,
           clientBrand: brand,
+          knownBrands: brandsFromClients(clients),
         });
         if (!identity) {
           logPlaceholderRefusal("terl-hold/substitute", accountEmail(pick) ?? String(pick.id), pick.from_name);

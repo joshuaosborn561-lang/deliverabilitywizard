@@ -172,4 +172,14 @@ describe("real-persona rule — company fallback", () => {
       null,
     );
   });
+  it("a name that is another client's company is not reused as a person", () => {
+    const id = resolveSendIdentity({
+      email,
+      liveFromName: "Bolder Cyber Partners",
+      clientBrand: "Emcor",
+      knownBrands: ["Bolder Cyber Partners", "Emcor"],
+    });
+    assert.equal(id?.source, "company");
+    assert.equal(id?.fromName, "Emcor");
+  });
 });

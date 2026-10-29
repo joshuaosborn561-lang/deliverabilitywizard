@@ -760,6 +760,7 @@ export class CampaignTopUpService {
           pool,
           liveFromName: accountByEmail.get(pool.email.toLowerCase())?.from_name,
           clientBrand: brand,
+          knownBrands: allClientBrands,
         });
         if (identity?.source === "company") {
           logCompanyFallback(

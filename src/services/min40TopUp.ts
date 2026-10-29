@@ -1287,6 +1287,7 @@ export class Min40TopUpService {
         pool,
         liveFromName: original.from_name,
         clientBrand: brand,
+        knownBrands: [...input.brandByClientId.values()],
       });
       if (!identity) {
         logPlaceholderRefusal("min40-topup/short-campaign", pool.email, original.from_name);
@@ -1618,6 +1619,7 @@ export class Min40TopUpService {
             pool,
             liveFromName: original.from_name,
             clientBrand: brand,
+            knownBrands: [...input.brandByClientId.values()],
           });
           if (!identity) {
             logPlaceholderRefusal("min40-topup/pod-fill", seat.email, original.from_name);

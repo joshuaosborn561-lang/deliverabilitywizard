@@ -88,6 +88,10 @@ export interface SeatPersona {
   source: "pool-row" | "live-mailbox";
 }
 
+function normalizeNameKey(value: string): string {
+  return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
 function splitName(name: string): { firstName: string; lastName: string } {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   return {
@@ -114,11 +118,22 @@ export function resolveSeatPersona(input: {
   email: string;
   pool?: { firstName?: string | null; lastName?: string | null } | null;
   liveFromName?: string | null;
+  /**
+   * Client company names. A mailbox that already sends "as the company"
+   * (from_name = "Bolder Cyber Partners") carries no persona, so that name
+   * is never reused as a person on another client.
+   */
+  knownBrands?: readonly string[];
 }): SeatPersona | null {
+  const brandKeys = new Set(
+    (input.knownBrands ?? []).map(normalizeNameKey).filter(Boolean),
+  );
+  const isBrand = (name: string) => brandKeys.has(normalizeNameKey(name));
   const poolName = `${input.pool?.firstName ?? ""} ${input.pool?.lastName ?? ""}`.trim();
-  const fromPool = personaFromName(poolName, input.email);
+  const fromPool = isBrand(poolName) ? null : personaFromName(poolName, input.email);
   if (fromPool) return { ...fromPool, source: "pool-row" };
-  const fromLive = personaFromName(input.liveFromName, input.email);
+  const live = (input.liveFromName ?? "").trim();
+  const fromLive = isBrand(live) ? null : personaFromName(live, input.email);
   if (fromLive) return { ...fromLive, source: "live-mailbox" };
   return null;
 }
@@ -155,9 +170,13 @@ export function resolveSendIdentity(input: {
   pool?: { firstName?: string | null; lastName?: string | null } | null;
   liveFromName?: string | null;
   clientBrand: string;
+  knownBrands?: readonly string[];
 }): SendIdentity | null {
   const brand = (input.clientBrand ?? "").trim();
-  const persona = resolveSeatPersona(input);
+  const persona = resolveSeatPersona({
+    ...input,
+    knownBrands: [...(input.knownBrands ?? []), brand],
+  });
   if (persona) {
     const fromName = `${persona.firstName} ${persona.lastName}`.trim();
     return {

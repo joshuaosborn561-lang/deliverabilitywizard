@@ -16,6 +16,7 @@ import {
   stripMailboxPodTags,
 } from "./genericAssign.js";
 import { existingPodTag } from "./podTagLock.js";
+import { isPlaceholderPersonName, personaFromName } from "./personaName.js";
 import type { StateStore } from "../state/store.js";
 
 export function mayStripPodTagOnGenericReturn(account: {
@@ -48,10 +49,25 @@ export async function returnGenericToUntaggedPool(input: {
   const pod =
     existingPodTag(account.tags) ?? state.getGenericSeat(email)?.assignedPod ?? null;
 
+  // D321 — release restores the persona: a free generic never keeps a
+  // blank / placeholder from_name ("Pool User") into its next assignment.
+  // Persona = the pool row (ledger / InboxKit). No persona -> leave it; the
+  // next assign sends as that client's company.
+  const poolRow = state.getPoolMailbox(email);
+  const persona = personaFromName(
+    `${poolRow?.firstName ?? ""} ${poolRow?.lastName ?? ""}`,
+    email,
+  );
+  const restoreName =
+    persona && isPlaceholderPersonName(account.from_name, email)
+      ? `${persona.firstName} ${persona.lastName}`.trim()
+      : null;
   await smartlead.updateEmailAccount(account.id, {
     client_id: null,
     signature: "",
+    ...(restoreName ? { from_name: restoreName } : {}),
   });
+  if (restoreName) account.from_name = restoreName;
   if (smartlead.ensureTag && smartlead.removeTags) {
     const tagA = await smartlead.ensureTag(
       GENERIC_POD_TAG_A,

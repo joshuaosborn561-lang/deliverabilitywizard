@@ -243,7 +243,8 @@ describe("GenericCleanupService (D205/D235)", () => {
       },
     });
     assert.deepEqual(removed, [[2, [901]]]);
-    assert.deepEqual(writes, [{ id: 901, fields: { client_id: null, signature: "" } }]);
+    // D321: release restores the pool-row persona over a blank from_name.
+    assert.deepEqual(writes, [{ id: 901, fields: { client_id: null, signature: "", from_name: "Ada Poole" } }]);
     assert.deepEqual(tags.removedTags, [[[901], [1, 2, 3]]]);
     assert.equal(result.cleared.length, 0);
     assert.equal(result.returned.length, 1);

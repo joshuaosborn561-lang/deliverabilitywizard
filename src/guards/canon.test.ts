@@ -19129,3 +19129,30 @@ describe("owner intent — D306 14-day warmup, breakup check, send-window conver
     assert.match(check, /convergeSendCanon\(/);
   });
 });
+
+describe("owner intent — D321 LOCKED every inbox has a name", () => {
+  it("D321: canon, locked mirror, sweep flags and the no-invented-name rule stay wired", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const canon = await read("../../CANON.md");
+    const locked = await read("../../docs/LOCKED-CANON.md");
+    const decisions = await read("../../DECISIONS.md");
+    const config = await read("../config.ts");
+    const sweep = await read("../services/placeholderSweep.ts");
+    for (const doc of [canon, locked]) {
+      assert.match(doc, /Every inbox has a name \(D321\)/, "D321 rule missing from a LOCKED copy.");
+      assert.match(doc, /If no name just send as the company/, "Josh's D321 quote is missing.");
+    }
+    assert.match(decisions, /## D321 — LOCKED/, "DECISIONS.md has no D321 entry");
+    assert.match(
+      config,
+      /placeholderSweepWriteEnabled: boolFromEnv\(false\)/,
+      "the sweep write must default OFF until Josh merges D321.",
+    );
+    assert.doesNotMatch(
+      sweep,
+      /removeEmailAccountsFromCampaign|updateCampaignStatus|\/status/,
+      "the D321 sweep replaces names; it never unlinks or touches status.",
+    );
+  });
+});

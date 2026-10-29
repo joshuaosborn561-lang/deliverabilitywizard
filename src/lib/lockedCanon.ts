@@ -18,6 +18,9 @@ export const LOCKED_GENERICS_LEDGER_RULE =
 export const LOCKED_ESP_MATCH_GAP_RULE =
   "ESP matching + 10m gap: every Smartlead campaign has AI ESP matching ON (enable_ai_esp_matching: true) and min_time_btw_emails = 10, always (D304). The wizard flags and fixes drift on sight with settings / schedule writes only, never a status change; STOPPED campaigns are left alone.";
 
+export const LOCKED_REAL_PERSONA_RULE =
+  "Every inbox has a name (D321): no mailbox may be linked to a live campaign, or send, with a blank or placeholder from_name or signature name (Pool User, Generic, Canary, test, one word, the email local part, or any other placeholder word). A seat sends as its persona from the Generics Ledger / InboxKit; with no persona it sends as the client company name (from_name = company, signature = company). The wizard never invents or defaults a name and never refuses an assign for a missing persona. A sweep every 10 minutes replaces any placeholder on a non-STOPPED campaign with the persona, or the company name, writing from_name and signature only (never unlink, never a status change, never copy or leads); signature checks treat a blank or placeholder name as a mismatch; releasing a generic restores its persona. Exempt: Gabe VM reserved seats, the copy-canary fleet, and Insight's Josh Osborn rule. Josh, 2026-10-29: \"Every inbox has a name. Canon that it can never have that again. If no name just send as the company. But everyone should have a name.\"";
+
 export function extractLockedCanonSection(markdown: string): string {
   const heading = `## ${LOCKED_CANON_HEADING}`;
   const start = markdown.indexOf(heading);
@@ -36,5 +39,6 @@ export function lockedCanonSectionBody(): string {
     `- ${LOCKED_POD_40_RULE}`,
     `- ${LOCKED_GENERICS_LEDGER_RULE}`,
     `- ${LOCKED_ESP_MATCH_GAP_RULE}`,
+    `- ${LOCKED_REAL_PERSONA_RULE}`,
   ].join("\n");
 }

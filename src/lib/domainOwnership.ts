@@ -54,6 +54,9 @@ export interface DomainOwnerRecord {
   updatedAt: string;
 }
 
+/** A4/D315 — de-dupes the D260 "treating as generic" warning per process. */
+const genericOwnerWarned = new Set<string>();
+
 export function planSaysGenericDomain(
   domain: string,
   config: DomainOwnerConfig,
@@ -118,9 +121,15 @@ export function resolveDomainOwner(
       const clientName = clientDisplayName(
         clientsById.get(clientId) ?? { id: clientId },
       );
-      console.warn(
-        `[domain-owner] ${host} is a generic-family / GENERIC-tagged domain assigned to client ${clientId} (${clientName}) — treating as generic (D260)`,
-      );
+      // A4/D315 — log each host/client pair once per process; this ran
+      // for every seat on every stage (~800 identical lines in 12 hours).
+      const warnKey = `${host}|${clientId}`;
+      if (!genericOwnerWarned.has(warnKey)) {
+        genericOwnerWarned.add(warnKey);
+        console.warn(
+          `[domain-owner] ${host} is a generic-family / GENERIC-tagged domain assigned to client ${clientId} (${clientName}) — treating as generic (D260)`,
+        );
+      }
     }
     return {
       domain: host,

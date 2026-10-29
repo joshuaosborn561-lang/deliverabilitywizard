@@ -18914,3 +18914,23 @@ describe("owner intent — D312 critical sweep", () => {
     assert.match(decisions, /^\| D312 \|/m, "status index has no D312 row (D127)");
   });
 });
+
+describe("owner intent — D315 A4 bloat removal", () => {
+  it("D315: enrichCampaignIds is cached and listTests is shared; ledger and canon say so", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const [sd, own, canon, decisions] = await Promise.all([
+      read("../clients/smartdelivery.ts"),
+      read("../lib/domainOwnership.ts"),
+      read("../../CANON.md"),
+      read("../../DECISIONS.md"),
+    ]);
+    assert.match(sd, /testCampaignCache/, "campaign-id cache is gone (D315)");
+    assert.match(sd, /LIST_TESTS_TTL_MS/, "shared test list is gone (D315)");
+    assert.match(sd, /invalidateTestListOnWrite/, "writes must drop the shared test list (D315)");
+    assert.match(own, /genericOwnerWarned/, "D260 log dedupe is gone (D315)");
+    assert.match(canon, /\*\*D315\.\*\*/, "CANON.md lost the D315 note");
+    assert.match(decisions, /## D315 — /, "DECISIONS.md has no D315 entry");
+    assert.match(decisions, /^\| D315 \|/m, "status index has no D315 row");
+  });
+});

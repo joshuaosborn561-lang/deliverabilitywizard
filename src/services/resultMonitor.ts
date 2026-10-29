@@ -6,6 +6,7 @@ import {
   normalizeTestList,
   parseDomainBlacklistHits,
   parseIpBlacklistHits,
+  isReportReadsPaused,
   testIdOf,
   uniqueBlacklistedDomains,
   type SmartDeliveryClient,
@@ -32,8 +33,24 @@ import type {
 } from "../types/index.js";
 import { isExcluded } from "./campaignTopUp.js";
 
+/**
+ * D319 — monitor-results works inside this budget (the stage timeout is 10m)
+ * and carries unfinished tests to the next pass instead of timing out.
+ */
+export const MONITOR_BUDGET_MS = 6 * 60 * 1000;
+
+/** Rotate `ids` so the walk resumes at `cursor` (wraps). */
+export function rotateFrom<T>(ids: T[], cursor: number): T[] {
+  if (!ids.length) return ids;
+  const at = ((cursor % ids.length) + ids.length) % ids.length;
+  return at === 0 ? ids : [...ids.slice(at), ...ids.slice(0, at)];
+}
+
 export interface MonitorResult {
+  /** Tests this pass covered (checked, or skipped as purged). */
   testsChecked: number;
+  /** D319 — tests left for the next pass (budget spent or 429 breaker open). */
+  carriedOver?: number;
   blacklistAlerts: number;
   lowDeliverabilityAlerts: number;
   errors: string[];
@@ -42,6 +59,11 @@ export interface MonitorResult {
 export class ResultMonitor {
   /** ACTIVE/PAUSED campaign book for mapping canary-copy tests to live ids. */
   private campaigns: SmartleadCampaign[] | null = null;
+  /**
+   * D319 — where the next pass resumes in the prioritized test walk. Held in
+   * memory: a restart simply starts from the top (priority tests first).
+   */
+  private carryCursor = 0;
 
   constructor(
     private readonly config: AppConfig,
@@ -49,6 +71,8 @@ export class ResultMonitor {
     private readonly smartlead: SmartleadClient,
     private readonly slack: SlackClient,
     private readonly state: StateStore,
+    /** Test seam — defaults to MONITOR_BUDGET_MS. */
+    private readonly budgetMs?: number,
   ) {}
 
   async run(): Promise<MonitorResult> {
@@ -112,9 +136,13 @@ export class ResultMonitor {
         .filter((row): row is [string, (typeof tests)[number]] => Boolean(row[0])),
     );
 
-    result.testsChecked = prioritizedIds.length;
+    const walk = rotateFrom(prioritizedIds, this.carryCursor);
+    const deadline = Date.now() + (this.budgetMs ?? MONITOR_BUDGET_MS);
+    let nextIndex = 0;
+    let stoppedEarly = false;
+    let sawPaused = false;
 
-    for (const testId of prioritizedIds) {
+    const checkOne = async (testId: string): Promise<void> => {
       const test = testById.get(testId);
       try {
         result.blacklistAlerts += await this.checkBlacklists(
@@ -127,16 +155,61 @@ export class ResultMonitor {
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        if (isReportReadsPaused(error)) {
+          // Not this test's fault — put it back for the next pass.
+          sawPaused = true;
+          throw error;
+        }
         // Tracked ids can outlive the SmartDelivery record (stopped/purged).
         // Skip quietly — not an actionable failure and not a stale endpoint.
         if (isMissingSpamTestNoise(message)) {
           console.warn(
             `[monitor] Test ${testId} no longer exists in SmartDelivery — skipping`,
           );
-          continue;
+          return;
         }
         result.errors.push(`test ${testId}: ${message}`);
       }
+    };
+
+    // D319 — bounded parallel: a second worker only while the limiter has
+    // headroom (no pause, no 429 streak, under 60% of the per-minute budget).
+    const unfinished = new Set<number>();
+    const worker = async (isSecond: boolean): Promise<void> => {
+      for (;;) {
+        if (nextIndex >= walk.length) return;
+        if (Date.now() >= deadline || this.smartDelivery.reportReadsPaused()) {
+          stoppedEarly = true;
+          return;
+        }
+        if (isSecond && this.smartDelivery.reportParallelism() < 2) {
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          continue;
+        }
+        const index = nextIndex;
+        nextIndex += 1;
+        try {
+          await checkOne(walk[index]!);
+        } catch {
+          unfinished.add(index);
+        }
+      }
+    };
+    await Promise.all([worker(false), worker(true)]);
+
+    // Carry over: everything not dispatched plus anything the breaker bounced.
+    const carried = new Set<number>(unfinished);
+    for (let i = nextIndex; i < walk.length; i += 1) carried.add(i);
+    result.carriedOver = carried.size;
+    result.testsChecked = walk.length - carried.size;
+    if (carried.size) {
+      const first = Math.min(...carried);
+      this.carryCursor = (this.carryCursor + first) % Math.max(1, prioritizedIds.length);
+      console.log(
+        `[monitor] D319 ${carried.size} of ${walk.length} test(s) carry to the next pass (${stoppedEarly ? "budget/breaker" : "bounced"}${sawPaused ? ", report reads paused" : ""})`,
+      );
+    } else {
+      this.carryCursor = 0;
     }
 
     try {
@@ -156,10 +229,17 @@ export class ResultMonitor {
     testId: string,
     testName?: string,
   ): Promise<number> {
+    // D319 — a paused (429-breaker) read is "not checked", not "no hits".
+    const keepPaused = (error: unknown): never[] => {
+      if (isReportReadsPaused(error)) throw error;
+      return [];
+    };
     const domainRaw = await this.smartDelivery
       .getDomainBlacklist(testId)
-      .catch(() => []);
-    const ipRaw = await this.smartDelivery.getIpBlacklist(testId).catch(() => []);
+      .catch(keepPaused);
+    const ipRaw = await this.smartDelivery
+      .getIpBlacklist(testId)
+      .catch(keepPaused);
 
     const hits: BlacklistedDomainHit[] = [
       ...parseDomainBlacklistHits(domainRaw),

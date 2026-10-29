@@ -302,6 +302,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D312 | Live | A1 critical sweep: placement results (`monitor-results`), `test-reconcile` and `isolation-branch` run every 30 min on their own lock and a top-priority Smartlead lane; bounce-autostop's 10-min cron also runs on that lane (never blocked by the exclusive health lane, served first, and critical writes jump the mutation queue). Amends D270 (exclusive health lane), D257 (limiter) and D247 (locks). Those stages are overdue-paged at 75 min, not 6h45m. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 | D315 | Live | A4 bloat: (1) `enrichCampaignIds` remembers each test's campaign (immutable) instead of one `GET spam-test/{id}` per test in five services every pass — those were 3,088 of 4,886 logged 429s on 10/28–29 (628 tests); (2) the unfiltered `listTests` is shared for 30 s across callers and dropped on any write; (3) the D260 "treating as generic" warning logs once per host/client per process (~800 identical lines per 12 h). No stage removed, no behavior change. |
 | D317 | Live | Health-sweep budget: (1) a cold test→campaign cache (after a deploy) can no longer storm SmartDelivery — 3 failed lookups in a row open a 2-minute breaker, each lookup retries once not four times, and every `enrichCampaignIds` caller gets a 90 s default budget; (2) `campaign-health` and `client-rest` stage timeout 10m → 15m as a safety net, with a 20m hard cap on any stage; (3) campaign-health logs its top-up / fan-out / copy-canary seconds and `/health` publishes each stage's `lastDurationMs`. Builds on D315. No stage removed, no cadence change, no campaign, mailbox, setting or WRITE_ENABLED change. |
+| D318 | Live | Exclusive health lane vs the serial mutation queue: a normal-lane job at the head of the Smartlead mutation queue parked behind the exclusive health lane while the health pass (reconnect, mailbox-gap, campaign-health writes) waited on that same queue — a deadlock released only by the 6-minute job timeout, three jobs deep (limiter idle, queue depth 3, oldest wait 300s+). Queued jobs now ride the health lane while it is exclusive (one job at a time, so at most one slot); direct normal-lane calls still wait. `/health` limiter adds `parkedBehindHealth` / `healthWaiting`. No cadence, stage, campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 
 ---
 
@@ -11276,3 +11277,32 @@ reports `lastDurationMs` per stage.
 
 **Guards.** `src/clients/smartdelivery.enrich.test.ts` (D317),
 `src/lib/stepTimeout.test.ts` (D317), `src/guards/canon.test.ts` D317.
+
+## D318 — The exclusive health lane cannot deadlock the mutation queue
+
+**Decision (Josh, 2026-10-29):** spam, placement and health passes complete on
+a guaranteed schedule. After D317 shipped, the 10:56am CT pass finished in
+minutes, then 11:15 `campaign-health` (15m) and `warmup-gate` (10m) timed out,
+the pass sat in `reconnect`, `isolation-branch` timed out twice, and three
+Smartlead writes waited 150 s+ while the limiter showed 127/150 per minute,
+no 429 streak, `exclusiveHealth: true`.
+
+**Evidence.** `/health` while stalled: limiter `inflight 0`, `waiting 0`,
+`requestsInWindow 0` (idle) but `mutationQueue depth 3, oldestWaitMs` growing
+past 300 s. `listAllEmailAccounts` and every write go through the one serial
+`MutationQueue`; a queued job inherits the *caller's* lane. A normal-lane job
+(monitor, campaign-audit, canary-adopt …) at the head of the queue called
+`limiter.acquire("normal")` while the health pass held the exclusive lane and
+parked in `backgroundWaiters` — a list `/health` did not count. The health
+pass was itself waiting for that queue. Deadlock until the 6-minute job
+timeout, then the next normal job, and so on (reconnect started 11:48 CT and
+timed out at 11:58).
+
+**Rule.** While health is exclusive, a job running inside the mutation queue
+rides the health lane (`runAsQueuedJob`). The queue runs one job at a time so
+it can take at most one of the two slots. Direct (unqueued) normal-lane calls
+are still held back as D270 says. `/health` `smartleadLimiter` reports
+`parkedBehindHealth` and `healthWaiting` so a parked caller is visible.
+
+**Guards.** `src/lib/exclusiveQueueDeadlock.test.ts` (D318),
+`src/guards/canon.test.ts` D318.

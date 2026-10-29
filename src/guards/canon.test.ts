@@ -18958,3 +18958,16 @@ describe("owner intent — D317 health-sweep budget", () => {
   });
 });
 
+describe("owner intent — D318 exclusive health lane vs mutation queue", () => {
+  it("D318: queued jobs ride the health lane while health is exclusive; ledger says so", async () => {
+    const { readFileSync } = await import("node:fs");
+    const limiter = readFileSync("src/lib/smartleadLimiter.ts", "utf8");
+    const client = readFileSync("src/clients/smartlead.ts", "utf8");
+    const decisions = readFileSync("DECISIONS.md", "utf8");
+    assert.match(limiter, /runAsQueuedJob/, "queued-job lane promotion is gone (D318)");
+    assert.match(limiter, /parkedBehindHealth/, "/health parkedBehindHealth is gone (D318)");
+    assert.match(client, /runAsQueuedJob\(fn\)/, "mutate() no longer marks queued jobs (D318)");
+    assert.match(decisions, /## D318 — /, "DECISIONS.md has no D318 entry");
+    assert.match(decisions, /^\| D318 \|/m, "status index has no D318 row (D127)");
+  });
+});

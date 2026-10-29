@@ -5,6 +5,7 @@ import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import type { MutationQueue } from "../lib/mutationQueue.js";
 import {
   SmartleadLimiter,
+  runAsQueuedJob,
   smartleadLane,
 } from "../lib/smartleadLimiter.js";
 import {
@@ -151,7 +152,9 @@ export class SmartleadClient {
 
   private mutate<T>(fn: () => Promise<T>): Promise<T> {
     return this.mutationQueue
-      ? this.mutationQueue.enqueue(fn, { critical: smartleadLane() === "critical" })
+      ? this.mutationQueue.enqueue(() => runAsQueuedJob(fn), {
+          critical: smartleadLane() === "critical",
+        })
       : fn();
   }
 

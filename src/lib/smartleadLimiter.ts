@@ -21,6 +21,18 @@ import { sleep } from "./http.js";
 export type SmartleadLane = "critical" | "health" | "normal";
 
 const laneStore = new AsyncLocalStorage<SmartleadLane>();
+const queuedJobStore = new AsyncLocalStorage<boolean>();
+
+/**
+ * D318 — run `fn` as the body of a serialised mutation-queue job. The queue
+ * runs one job at a time, so such a call can never hog both limiter slots;
+ * and because every later queued job (the health pass's own reads and writes
+ * included) waits behind it, it must NOT be parked behind the exclusive
+ * health lane, which is waiting on that very queue.
+ */
+export function runAsQueuedJob<T>(fn: () => T): T {
+  return queuedJobStore.run(true, fn);
+}
 
 export function runInSmartleadLane<T>(
   lane: SmartleadLane,
@@ -53,6 +65,10 @@ export interface SmartleadLimiterSnapshot {
   requestsInWindow: number;
   maxPerMin: number;
   exclusiveHealth: boolean;
+  /** D318 — normal-lane calls parked behind the exclusive health lane. */
+  parkedBehindHealth: number;
+  /** D318 — health-lane calls waiting for a slot. */
+  healthWaiting: number;
 }
 
 export class SmartleadLimiter {
@@ -125,10 +141,21 @@ export class SmartleadLimiter {
       requestsInWindow: this.starts.length,
       maxPerMin: this.maxPerMin,
       exclusiveHealth: this.exclusiveHealth,
+      parkedBehindHealth: this.backgroundWaiters.length,
+      healthWaiting: this.healthWaiters.length,
     };
   }
 
-  private async acquire(lane: SmartleadLane): Promise<void> {
+  private async acquire(requested: SmartleadLane): Promise<void> {
+    // D318 — a queued write/read from a normal-lane caller used to park in
+    // backgroundWaiters while the health pass (waiting on the same serial
+    // queue) held the exclusive lane: nothing could move until the 6-minute
+    // job timeout, three jobs deep. While health is exclusive, a queued job
+    // rides the health lane instead (one job at a time, so one slot at most).
+    const lane: SmartleadLane =
+      this.exclusiveHealth && requested === "normal" && queuedJobStore.getStore()
+        ? "health"
+        : requested;
     for (;;) {
       if (this.exclusiveHealth && lane !== "health" && lane !== "critical") {
         await new Promise<void>((resolve) => {

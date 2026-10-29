@@ -13,6 +13,13 @@ import {
   podRotationIdleReason,
 } from "../lib/podRotation.js";
 import { existingPodTag } from "../lib/podTagLock.js";
+import {
+  NAMED_POD_MAX_MOVES_PER_PASS,
+  planNamedPodRebalance,
+  type NamedPodSeat,
+} from "../lib/namedPodBalance.js";
+import { campaignIdsOf } from "../clients/smartlead.js";
+import { senderEspBucket } from "../lib/canonStaffable.js";
 import { weekendWriterIdleReason } from "../lib/canonOpsHours.js";
 import { isGabeVmReserved, isLockedCanarySeat } from "../lib/canaryLock.js";
 import { callerFollowUpMustSkipPodTags } from "../lib/callerFollowUp.js";
@@ -30,6 +37,8 @@ export interface PodTagResult {
   skipped?: boolean;
   reason?: string;
   refused?: number;
+  /** D316 — named seats retagged to hold POD-A/POD-B within 15%. */
+  rebalanced?: number;
 }
 
 /**
@@ -58,6 +67,110 @@ export class PodTagService {
   ) {}
 
   async run(opts: { now?: Date; joshLive?: boolean } = {}): Promise<PodTagResult> {
+    const result = await this.runFirstTag(opts);
+    if (result.skipped || !this.config.enableNamedPodRebalance) return result;
+    try {
+      const moved = await this.rebalanceNamedSeats();
+      if (moved > 0) result.rebalanced = moved;
+    } catch (error) {
+      console.warn("[pod-tags] D316 named-seat rebalance failed", error);
+    }
+    return result;
+  }
+
+  /**
+   * D316 (B3) — Josh 10/29: a client's named seats on POD-A and POD-B stay
+   * within 15% of each other; retag named seats to fix it (overrides the
+   * D234 never-retag). Only seats NOT on an ACTIVE campaign move, so
+   * nothing is unlinked from live sending; canaries, reserved, dual-tagged,
+   * POC and isolation seats never move; at most N per pass.
+   */
+  async rebalanceNamedSeats(): Promise<number> {
+    const pods = await loadPods({
+      config: this.config,
+      state: this.state,
+      book: this.book,
+    });
+    const { campaigns, accounts, clients } = await this.book.get();
+    const active = new Set(
+      campaigns
+        .filter((c) => String(c.status ?? "").toUpperCase() === "ACTIVE")
+        .map((c) => c.id),
+    );
+    const byId = new Map(accounts.map((a) => [a.id, a]));
+    const pocSkipIds = pocEngagementClientIds(
+      clients ?? [],
+      this.config.pocClientNamePatterns,
+      this.state.listEndedPocClientIds(),
+    );
+    const seats: NamedPodSeat[] = [];
+    for (const pod of pods) {
+      if ((pod.pool !== "A" && pod.pool !== "B") || pod.clientId == null) continue;
+      for (const mailbox of pod.mailboxes) {
+        const account = byId.get(mailbox.accountId);
+        if (!account) continue;
+        const email = accountEmail(account) || mailbox.email;
+        const locked =
+          (email && isLockedCanarySeat(account, email, this.state)) ||
+          callerFollowUpMustSkipPodTags(account, email) ||
+          isGabeVmReserved(account) ||
+          hasDualPodTags(account.tags) ||
+          isPodRotationSkippedClient(pod.clientId, pocSkipIds) ||
+          existingPodTag(account.tags) !== pod.pool;
+        seats.push({
+          accountId: account.id,
+          email,
+          clientId: pod.clientId,
+          pod: pod.pool,
+          esp: senderEspBucket(account),
+          onActiveCampaign: campaignIdsOf(account).some((id) => active.has(id)),
+          locked: Boolean(locked),
+        });
+      }
+    }
+    const plan = planNamedPodRebalance(seats, {
+      maxMoves: NAMED_POD_MAX_MOVES_PER_PASS,
+    });
+    for (const client of plan.clients) {
+      if (client.gap > 0.15 + 1e-9) {
+        console.log(
+          `[pod-tags] D316 client ${client.clientId} named A=${client.a} B=${client.b} gap=${(client.gap * 100).toFixed(0)}% → ${client.moves.length} retag(s)${client.remainingGap > 0.15 + 1e-9 ? `, still ${(client.remainingGap * 100).toFixed(0)}% after (busy seats stay until rested)` : ""}`,
+        );
+      }
+    }
+    if (!plan.moves.length) return 0;
+    const toA = plan.moves.filter((m) => m.to === "A");
+    const toB = plan.moves.filter((m) => m.to === "B");
+    if (this.config.dryRun) {
+      console.log(
+        `[pod-tags] D316 (dry-run: no writes) would retag ${plan.moves.map((m) => `${m.email} POD-${m.from}→POD-${m.to}`).join(", ")}`,
+      );
+      return 0;
+    }
+    const tagA = await this.smartlead.ensureTag(POD_TAG_A, "#4FC3F7");
+    const tagB = await this.smartlead.ensureTag(POD_TAG_B, "#9575CD");
+    let moved = 0;
+    for (const [group, newTag, oldTag] of [
+      [toA, tagA, tagB],
+      [toB, tagB, tagA],
+    ] as const) {
+      for (const batch of chunk(group, TAG_BATCH)) {
+        const ids = batch.map((m) => m.accountId);
+        await this.smartlead.removeTags(ids, [oldTag.id]);
+        await this.smartlead.assignTags(ids, [newTag.id]);
+        moved += ids.length;
+        await this.pause();
+      }
+    }
+    console.log(
+      `[pod-tags] D316 retagged ${moved} named seat(s) to hold POD-A/POD-B within 15%: ${plan.moves.map((m) => `${m.email} POD-${m.from}→POD-${m.to}`).join(", ")}`,
+    );
+    return moved;
+  }
+
+  private async runFirstTag(
+    opts: { now?: Date; joshLive?: boolean } = {},
+  ): Promise<PodTagResult> {
     const weekendIdle = weekendWriterIdleReason({
       now: opts.now,
       joshLive: opts.joshLive,

@@ -63,7 +63,7 @@ rotation system.
 ### Client rest (A/B per client)
 
 That client's **named** inboxes are split into a **static** even A/B
-(ESP-balanced within Outlook and within Gmail — D192/D203). Never retag
+(ESP-balanced within Outlook and within Gmail — D192/D203). Never retag (except the D316 15% A/B rebalance)
 named seats between POD-A and POD-B to staff the on-week campaign. 2 weeks
 on / 2 weeks off, New York ISO fortnights. Off-week POD is **removed from
 ACTIVE campaigns only** (D207 — PAUSED/STOPPED keep their senders)

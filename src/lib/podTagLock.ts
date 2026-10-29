@@ -4,6 +4,11 @@
  * POD tag. Dual-tagged seats stay flagged (D223); this lock does
  * not pick a side.
  *
+ * D316 — the one exception for NAMED seats: `rebalanceNamedSeats` in
+ * `PodTagService` retags idle named seats to hold POD-A/POD-B within 15%
+ * (`namedPodBalance.ts`). `mayWritePodTag` is unchanged: every other writer
+ * still refuses a flip.
+ *
  * D235 — returning a *generic* to the untagged pool may strip
  * POD-A/POD-B. Named seats never lose a POD tag this way.
  */

@@ -302,6 +302,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D312 | Live | A1 critical sweep: placement results (`monitor-results`), `test-reconcile` and `isolation-branch` run every 30 min on their own lock and a top-priority Smartlead lane; bounce-autostop's 10-min cron also runs on that lane (never blocked by the exclusive health lane, served first, and critical writes jump the mutation queue). Amends D270 (exclusive health lane), D257 (limiter) and D247 (locks). Those stages are overdue-paged at 75 min, not 6h45m. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 | D314 | Live (LOCKED PR — Josh merges) | Insight is exempt from the `esp_mix` Canon finding (Josh 10/29: "yes exempt insight it is mostly msft"). Campaigns on Insight (client 582890 / Insight campaign ids) no longer raise `esp_mix`, so they stop counting against `/health` canonFindings and the Canon score. ESP-mix still applies to every other client; seat assignment, min-40 and the Azure rules are unchanged. |
 | D315 | Live | A4 bloat: (1) `enrichCampaignIds` remembers each test's campaign (immutable) instead of one `GET spam-test/{id}` per test in five services every pass — those were 3,088 of 4,886 logged 429s on 10/28–29 (628 tests); (2) the unfiltered `listTests` is shared for 30 s across callers and dropped on any write; (3) the D260 "treating as generic" warning logs once per host/client per process (~800 identical lines per 12 h). No stage removed, no behavior change. |
+| D316 | Live (LOCKED PR — Josh merges) | Named POD-A / POD-B seats stay within 15% of each other (Josh 10/29: "retag named seats to fix it, overriding never-retag"). Amends D234/D203: `pod-tags` retags idle named seats larger → smaller (never a seat on an ACTIVE campaign, ESP kept balanced, ≤10 per pass, canary/reserved/POC/dual-tagged never move). `mayWritePodTag` still refuses every other flip. Kill switch `ENABLE_NAMED_POD_REBALANCE`. |
 | D317 | Live | Health-sweep budget: (1) a cold test→campaign cache (after a deploy) can no longer storm SmartDelivery — 3 failed lookups in a row open a 2-minute breaker, each lookup retries once not four times, and every `enrichCampaignIds` caller gets a 90 s default budget; (2) `campaign-health` and `client-rest` stage timeout 10m → 15m as a safety net, with a 20m hard cap on any stage; (3) campaign-health logs its top-up / fan-out / copy-canary seconds and `/health` publishes each stage's `lastDurationMs`. Builds on D315. No stage removed, no cadence change, no campaign, mailbox, setting or WRITE_ENABLED change. |
 | D318 | Live | Exclusive health lane vs the serial mutation queue: a normal-lane job at the head of the Smartlead mutation queue parked behind the exclusive health lane while the health pass (reconnect, mailbox-gap, campaign-health writes) waited on that same queue — a deadlock released only by the 6-minute job timeout, three jobs deep (limiter idle, queue depth 3, oldest wait 300s+). Queued jobs now ride the health lane while it is exclusive (one job at a time, so at most one slot); direct normal-lane calls still wait. `/health` limiter adds `parkedBehindHealth` / `healthWaiting`. No cadence, stage, campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 | D319 | Live | Report-read budget + normal-lane share: (1) SmartDelivery `spam-test/report/*` reads (providerwise, domain-blacklist, blacklist, sender-account-wise) retry once, not four times, and three failed reads in a row (429 / 5xx / timeout) pause report reads for 2 minutes — callers fail fast; a missing test (404) does not count. (2) `monitor-results` works in a 6-minute budget, rotates its test walk from where the last pass stopped (unfinished tests carry over; paused reads are never recorded as "no hits"), and runs a second worker only while the limiter has headroom (no pause, no 429 streak, under 60% of 150/min). (3) While health is exclusive the normal lane keeps one share slot (never the last free one) so the 6-hour monitor chain (lead-runout, canary-adopt, isolation-rig …) can finish; idle slots are handed to waiters when the exclusive stretch ends. No stage removed, no cadence change, no campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
@@ -7825,6 +7826,10 @@ only, never retag. Amends D203/D230: the lock is
 mechanical on every writer. Does not change 40/40,
 one-client / one-POD, or Azure weight.
 
+**Amended by D316 (2026-10-29).** The one exception for named seats: pod-tags
+retags idle seats larger → smaller to keep POD-A/POD-B within 15%. Everything
+else here still stands.
+
 **Guards.** `mayWritePodTag`; pod-tags refuses retag;
 stampMailboxPodTag keeps the existing tag; weekend
 writer idle except Josh-live; CANON dated D234.
@@ -11273,6 +11278,39 @@ the 15 / 30-minute cadences are untouched.
 
 **Guards.** `src/clients/smartdelivery.enrich.test.ts` (6),
 `src/guards/canon.test.ts` D315.
+
+## D316 — Named POD-A / POD-B seats stay within 15% (amends D234, D203)
+
+**Decision (Josh, 2026-10-29, relayed 6:55am CT):** "POD A and B named
+seats must stay within 15% of each other; retag named seats to fix it,
+overriding never-retag."
+
+**Rule.** Per client, `(larger − smaller) / larger` of named seats on
+POD-A vs POD-B is at most **15%**. `pod-tags` (6-hourly monitor chain,
+weekday only) plans the fewest retags larger → smaller
+(`planNamedPodRebalance`), picks the ESP the larger POD holds the most
+extra of, and writes remove-old-tag then add-new-tag. Guard rails: a seat
+on an ACTIVE campaign never moves (the 10/3 incident was `client-rest`
+unlinking flipped seats from live sending), so an on-week-heavy imbalance
+waits until the surplus POD rests; canary, GABE-VM-RESERVED, caller
+follow-up, POC, dual-tagged and isolation seats never move; at most 10
+per pass; DRY_RUN writes nothing; no cross-ESP scoring change.
+
+**Amends.** D234 (already-tagged seats immutable) and D203 / D241 text:
+the only lawful A↔B retag of a named seat is this rebalance.
+`mayWritePodTag`, `stampMailboxPodTag`, min40 and every other writer still
+refuse a flip. Generics are untouched (D230). The never-retag lines in
+CANON, the campaign-setup prompt, the settings skill, `restCohort`,
+`min40TopUp` and the Cayden skill now name the D316 exception.
+
+**Finding recorded (no code change; Josh: don't change the cross-ESP scoring).** The
+same-ESP gate never scores cross-ESP spam: on BPLTG POD B, Microsoft senders
+landed in spam on Workspace (Google) seeds 94/94 while the same-ESP score read
+healthy. Scoring is unchanged on purpose; this is the known blind spot.
+
+**Guards.** `namedPodBalance.test.ts`, `podTags.test.ts` (D316),
+`src/guards/canon.test.ts` D316.
+
 
 ## D317 — Health sweeps finish inside their budget
 

@@ -20,6 +20,8 @@ from it. Derive behaviour from this file; use the ledger only to understand
 
 **D317.** Health sweeps finish in budget: a cold test→campaign cache can't storm SmartDelivery (3 failed lookups in a row pause lookups 2 min, one retry per lookup, 90 s default budget); `campaign-health` and `client-rest` may run 15 min as a safety net under a 20 min hard cap on any stage; `/health` reports each stage's `lastDurationMs`. No cadence or rule change.
 
+**D316.** Named POD-A / POD-B seats stay within 15% of each other; pod-tags retags idle named seats to fix it (amends D234 never-retag). Known gap, unchanged on purpose: the same-ESP gate never scores cross-ESP spam (BPLTG POD B, Microsoft senders in spam on Workspace seeds 94/94).
+
 **D315.** A4: test→campaign lookups are cached, the shared test list is reused for 30 s, and the D260 log line prints once per host — fewer 429s, shorter passes; no cadence or rule change.
 
 **D312.** Critical sweep: placement results, test-reconcile and isolation run every 30 minutes on their own lock and the top-priority Smartlead lane; paged overdue at 75 minutes.
@@ -216,8 +218,9 @@ Caps ramp manually (35 on Oct 12).
   bounce. In the same campaign and on-week POD, temporarily link
   **one** extra warm (21+ days) generic from that **same client's**
   generics, signature and sender name set for the client, so the
-  POD runs at **41 linked / 40 sending**. Never retag named seats.
-  Never move seats between PODs. Never borrow another client's
+  POD runs at **41 linked / 40 sending**. Never retag named seats to
+  staff a campaign; the only A↔B retag is the D316 15% rebalance.
+  Never move seats between PODs for any other reason. Never borrow another client's
   generic. Record the temp substitution (stopped seat, substitute,
   campaign, client, stop time). When the 24 hours are up, restore
   the stopped seat to its type cap and unlink the substitute so
@@ -572,10 +575,15 @@ Caps ramp manually (35 on Oct 12).
   **static** even A/B (D43/D203) that is **ESP-balanced ~50/50 within Outlook and within Gmail**
   per non-generic client (D192) — not an alphabetical-only half.
   Never retag or move named seats between POD-A and POD-B to staff
-  the on-week campaign (D203/D234). **D234:** a named already-tagged
-  POD-A or POD-B seat is immutable — only an untagged seat may
-  receive a first POD tag. No job (pod-tags, min40, rest, rotation,
-  ESP-balance) may change A to B or B to A. Weekend writers
+  the on-week campaign (D203/D234). **D234 / D316:** a named
+  already-tagged POD-A or POD-B seat is immutable — only an untagged
+  seat may receive a first POD tag — **with one lawful exception
+  (D316, Josh 10/29): a client's named seats on POD-A and POD-B must
+  stay within 15% of each other** (gap ÷ the larger POD), and pod-tags
+  retags idle named seats larger → smaller to fix it (never a seat on an
+  ACTIVE campaign; ESP balance kept; ≤10 per pass; canaries, reserved,
+  POC and dual-tagged seats never move). No other job (min40, rest,
+  rotation, ESP-balance) may change A to B or B to A. Weekend writers
   (pod-tags, client-rest) idle Sat/Sun except Josh-live `/run`.
   **D235:** a generic carries a client and POD tag only while
   staffed. Returning it to the untagged pool (surplus, named-warm
@@ -583,7 +591,7 @@ Caps ramp manually (35 on Oct 12).
   with `client_id` and signature and records `released_at`. The
   D234 lock still allows that strip, and still allows a first POD
   tag on an untagged pool generic being assigned. Named seats stay
-  immutable. Generics are not part of that named cut.
+  immutable except the D316 15% rebalance. Generics are not part of that named cut.
   On top of the D192 cut, each POD keeps the D203/D301 mix: match
   that client's InboxKit Microsoft share (±max(2, 10% of the POD));
   fall back to ~1/3 only when InboxKit has no row.
@@ -617,7 +625,7 @@ Caps ramp manually (35 on Oct 12).
   `#deliverability` on weekdays; the wizard does not pick a side.
   The split is visible in Smartlead as POD-A/POD-B mailbox tags,
   first-tagged 6-hourly on untagged named seats only (D135/D234) —
-  decoration for humans; never a retag. **CALLER FOLLOW-UP
+  decoration for humans; retagged only by the D316 15% rebalance. **CALLER FOLLOW-UP
   reserved seats never receive a POD tag** (D244); pod-tags
   strips POD-A/POD-B that already landed on them.
   Assigned generics also carry a POD so allocation can top A and B

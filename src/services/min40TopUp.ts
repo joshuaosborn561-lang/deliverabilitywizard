@@ -202,7 +202,7 @@ function campaignIsActive(campaign: { status?: string | null } | undefined): boo
  * alerted (Josh-only seats). PowerGRYD 592842 takes generics
  * like any named client. D283 still refuses Onboarding-freed
  * seats that would flip back to PowerGRYD ownership.
- * Never retag named seats. Never retag a generic across PODs (D230).
+ * Never retag named seats here (D316's 15% rebalance lives in pod-tags). Never retag a generic across PODs (D230).
  * Never START/PAUSE. Never CornerStone or HOLD-UNTIL/RETIRE.
  * D268 — no Allow-generics Slack card and no auto-allow list.
  * Never add generics past the floor. Never add them when owned

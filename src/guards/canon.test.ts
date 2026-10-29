@@ -19037,3 +19037,26 @@ describe("owner intent — D314 Insight is exempt from esp_mix", () => {
     assert.match(decisions, /^\| D314 \|/m, "status index has no D314 row");
   });
 });
+
+describe("owner intent — D316 named POD balance 15%", () => {
+  it("D316: the 15% rebalance exists, only pod-tags may retag, and canon names the exception", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const [bal, tags, lock, canon, decisions, prompt] = await Promise.all([
+      read("../lib/namedPodBalance.ts"),
+      read("../services/podTags.ts"),
+      read("../lib/podTagLock.ts"),
+      read("../../CANON.md"),
+      read("../../DECISIONS.md"),
+      read("../ops/campaignSetupPrompt.ts"),
+    ]);
+    assert.match(bal, /NAMED_POD_MAX_GAP = 0\.15/, "15% cap changed (D316)");
+    assert.match(tags, /rebalanceNamedSeats/, "pod-tags lost the D316 rebalance");
+    assert.match(tags, /onActiveCampaign/, "rebalance must never move a seat on an ACTIVE campaign (D316/D234)");
+    assert.match(lock, /export function mayWritePodTag/, "mayWritePodTag must stay: every other writer still refuses a flip");
+    assert.match(canon, /D316, Josh 10\/29\): a client's named seats on POD-A and POD-B must\s+stay within 15%/, "CANON.md lost the D316 rule");
+    assert.match(decisions, /## D316 — /, "DECISIONS.md has no D316 entry");
+    assert.match(decisions, /^\| D316 \|/m, "status index has no D316 row");
+    assert.match(prompt, /D316 rebalance/, "campaign-setup prompt still says never retag with no exception");
+  });
+});

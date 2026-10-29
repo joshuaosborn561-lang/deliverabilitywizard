@@ -50,20 +50,20 @@ describe("owner intent", () => {
     );
   });
 
-  it("D1/D50: pool warmup is 21 days from InboxKit import", () => {
+  it("D1/D50: pool warmup is 14 days from InboxKit import", () => {
     assert.equal(
       defaults.poolWarmupDays,
-      21,
+      14,
       stop(
-        "A mailbox owes 21 days from InboxKit import before going live (D1 clock, D50 duration).",
+        "A mailbox owes 14 days from InboxKit import before going live (D1 clock, D50 duration).",
         `Pool warmup is now ${defaults.poolWarmupDays} days.`,
       ),
     );
     assert.equal(
       defaults.campaignMinWarmupDays,
-      21,
+      14,
       stop(
-        "21 days is the warmed-vs-unwarmed clock (D50). D51 stopped the gate from pulling.",
+        "14 days is the warmed-vs-unwarmed clock (D50). D51 stopped the gate from pulling.",
         `Campaign min warmup is now ${defaults.campaignMinWarmupDays} days.`,
       ),
     );
@@ -515,28 +515,28 @@ describe("owner intent — D41 beanstalk rotation", () => {
     );
   });
 
-  it("D41/D50: fresh, pool, and campaign-min warmup are all 21 days", () => {
+  it("D41/D50: fresh, pool, and campaign-min warmup are all 14 days", () => {
     assert.equal(
       defaults.freshInboxWarmupDays,
-      21,
+      14,
       stop(
-        "Fresh InboxKit inboxes owe 21 days before a live campaign (D41).",
+        "Fresh InboxKit inboxes owe 14 days before a live campaign (D41).",
         `Fresh warmup is now ${defaults.freshInboxWarmupDays} days.`,
       ),
     );
     assert.equal(
       defaults.poolWarmupDays,
-      21,
+      14,
       stop(
-        "Pool warmup is 21 days from InboxKit import (D50).",
+        "Pool warmup is 14 days from InboxKit import (D50).",
         `Pool warmup is now ${defaults.poolWarmupDays} days.`,
       ),
     );
     assert.equal(
       defaults.campaignMinWarmupDays,
-      21,
+      14,
       stop(
-        "MIN_CAMPAIGN_WARMUP_DAYS is 21 (D50). Fresh boxes use the same clock.",
+        "MIN_CAMPAIGN_WARMUP_DAYS is 14 (D50). Fresh boxes use the same clock.",
         `Campaign min warmup is now ${defaults.campaignMinWarmupDays} days.`,
       ),
     );
@@ -953,28 +953,28 @@ describe("owner intent — D49 isolation autonomy", () => {
 });
 
 describe("owner intent — D50 live-send warmup", () => {
-  it("D50: live-send warmup is 21 days; generic rest stays 14", () => {
+  it("D50: live-send warmup is 14 days; generic rest stays 14", () => {
     assert.equal(
       defaults.poolWarmupDays,
-      21,
+      14,
       stop(
-        "Pool mailboxes owe 21 days from InboxKit import (D50).",
+        "Pool mailboxes owe 14 days from InboxKit import (D50).",
         `Pool warmup is now ${defaults.poolWarmupDays} days.`,
       ),
     );
     assert.equal(
       defaults.campaignMinWarmupDays,
-      21,
+      14,
       stop(
-        "21 days is the warmed-vs-unwarmed clock (D50).",
+        "14 days is the warmed-vs-unwarmed clock (D50).",
         `Campaign min warmup is now ${defaults.campaignMinWarmupDays} days.`,
       ),
     );
     assert.equal(
       defaults.freshInboxWarmupDays,
-      21,
+      14,
       stop(
-        "Fresh InboxKit inboxes still owe 21 days (D41/D50).",
+        "Fresh InboxKit inboxes still owe 14 days (D41/D50).",
         `Fresh warmup is now ${defaults.freshInboxWarmupDays} days.`,
       ),
     );
@@ -3665,20 +3665,20 @@ describe("owner intent — D103 sequence writes keep only writable fields", () =
 });
 
 describe("owner intent — D105 warmup gate is on", () => {
-  it("D105: 21-day warmup gate defaults on; canaries stay a separate fleet", () => {
+  it("D105: 14-day warmup gate defaults on; canaries stay a separate fleet", () => {
     assert.equal(
       defaults.enableWarmupGate,
       true,
       stop(
-        "The 21-day warmup gate is on for live senders (D105).",
+        "The 14-day warmup gate is on for live senders (D105).",
         "ENABLE_WARMUP_GATE now defaults off.",
       ),
     );
     assert.equal(
       defaults.campaignMinWarmupDays,
-      21,
+      14,
       stop(
-        "Live send owes 21 days from InboxKit (D50/D105).",
+        "Live send owes 14 days from InboxKit (D50/D105).",
         `Campaign min warmup is now ${defaults.campaignMinWarmupDays}.`,
       ),
     );
@@ -12691,8 +12691,8 @@ describe("owner intent — D227 WARMUP-GATE-EXEMPT counts as 21+ warm", () => {
     );
     assert.match(
       gate,
-      /export function countsAsWarmed21/,
-      stop("countsAsWarmed21 is the 21+ grant (D227).", "warmupGate.ts lost countsAsWarmed21."),
+      /export function countsAsWarmed/,
+      stop("countsAsWarmed is the 21+ grant (D227).", "warmupGate.ts lost countsAsWarmed."),
     );
     assert.match(
       min40,
@@ -13830,7 +13830,7 @@ describe("owner intent — D238 canary hard lock + D239 named staffable count", 
     assert.match(
       sync,
       /owesWarmup/,
-      stop("Named staffable applies the 21-day gate (D239).", "genericPoolCanon.ts lost owesWarmup."),
+      stop("Named staffable applies the 14-day gate (D239).", "genericPoolCanon.ts lost owesWarmup."),
     );
   });
 });
@@ -14374,7 +14374,7 @@ describe("owner intent — D244 CALLER FOLLOW-UP attach is bridge / own-campaign
     );
     assert.match(
       helper,
-      /owned gabe@ still owes 21-day warmup/,
+      /owned gabe@ still owes 14-day warmup/,
       stop("Owned-seat warmup is checked before the reserved tag (D244).", "callerFollowUpMayAttach lost the owned-first order."),
     );
     assert.doesNotMatch(

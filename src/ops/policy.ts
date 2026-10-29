@@ -63,7 +63,7 @@ export function classifyOpsMessage(
     return {
       type: "denied",
       reason:
-        "Safety gates cannot be bypassed from the operations console: the 21-day warmup gate and spend approval are owner decisions (D50/D105, D4).",
+        "Safety gates cannot be bypassed from the operations console: the 14-day warmup gate and spend approval are owner decisions (D50/D105, D4).",
     };
   }
 

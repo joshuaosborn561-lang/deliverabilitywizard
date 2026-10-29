@@ -46,7 +46,7 @@ export interface StaffableOptions {
  * "staffable" while SMTP/IMAP were fine). Measure/remediation owns spammy
  * removal; until a placement rate is known, connected membership staffs.
  *
- * D227 — `WARMUP-GATE-EXEMPT` counts as 21+ days warm. InboxKit-prewarmed
+ * D227 — `WARMUP-GATE-EXEMPT` counts as 14+ days warm. InboxKit-prewarmed
  * Azure seats tagged that way staff even when Smartlead still reports
  * warmup-blocked or a 9/29 import clock.
  */

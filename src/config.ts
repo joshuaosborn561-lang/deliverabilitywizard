@@ -22,6 +22,7 @@ import {
   parseIdList,
   parseNamePatterns,
 } from "./lib/holdPolicy.js";
+import { DEFAULT_WARMUP_DAYS } from "./lib/warmupDays.js";
 
 const boolFromEnv = (fallback: boolean) =>
   z
@@ -402,11 +403,11 @@ const ConfigSchema = z.object({
   /**
    * Days from InboxKit import before a generic is free for live send / swaps.
    * Clock is `warmedAt` at import, not Smartlead's warmup record (D1).
-   * Duration is 21 days (D50; superseded D1's 14).
+   * Duration is 14 days (D313; D50's 21 reversed by Josh 10/29).
    */
-  poolWarmupDays: z.coerce.number().int().positive().default(21),
+  poolWarmupDays: z.coerce.number().int().positive().default(DEFAULT_WARMUP_DAYS),
   /**
-   * D105 — 21-day live-send gate is on. Canary fleet and pre-warmed
+   * D105 — 14-day live-send gate (D313) is on. Canary fleet and pre-warmed
    * fleets stay exempt. Placement / bounce pulls stay off (D51).
    */
   enableWarmupGate: boolFromEnv(true),
@@ -415,13 +416,13 @@ const ConfigSchema = z.object({
    * (qa-unpause). Morning activate (D109) ignores this once.
    */
   launchInboxThreshold: z.coerce.number().min(0).max(100).default(85),
-  campaignMinWarmupDays: z.coerce.number().int().positive().default(21),
+  campaignMinWarmupDays: z.coerce.number().int().positive().default(DEFAULT_WARMUP_DAYS),
   /**
    * D41 — non-prewarmed (fresh InboxKit) inboxes owe this many days before
    * a live campaign. Pre-warmed fleets stay exempt. D50 aligned the pool
-   * and campaign-min clocks to the same 21 days.
+   * and campaign-min clocks to the same 14 days (D313).
    */
-  freshInboxWarmupDays: z.coerce.number().int().positive().default(21),
+  freshInboxWarmupDays: z.coerce.number().int().positive().default(DEFAULT_WARMUP_DAYS),
   /** Porkbun domain spend cap per client per UTC month (USD). */
   clientDomainBudgetUsd: z.coerce.number().nonnegative().default(25),
   /** New mailboxes per client per UTC month (blacklist replace). */
@@ -704,11 +705,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     prewarmedDomains:
       env.PREWARMED_DOMAINS ??
       "crosslaunchco.com,crossscaleco.com,cleartechco.com",
-    poolWarmupDays: env.POOL_WARMUP_DAYS ?? "21",
+    poolWarmupDays: env.POOL_WARMUP_DAYS ?? String(DEFAULT_WARMUP_DAYS),
     enableWarmupGate: env.ENABLE_WARMUP_GATE,
     launchInboxThreshold: env.LAUNCH_INBOX_THRESHOLD ?? "85",
-    campaignMinWarmupDays: env.MIN_CAMPAIGN_WARMUP_DAYS ?? "21",
-    freshInboxWarmupDays: env.FRESH_INBOX_WARMUP_DAYS ?? "21",
+    campaignMinWarmupDays: env.MIN_CAMPAIGN_WARMUP_DAYS ?? String(DEFAULT_WARMUP_DAYS),
+    freshInboxWarmupDays: env.FRESH_INBOX_WARMUP_DAYS ?? String(DEFAULT_WARMUP_DAYS),
     clientDomainBudgetUsd: env.CLIENT_DOMAIN_BUDGET_USD ?? "25",
     clientMailboxMonthlyCap: env.CLIENT_MAILBOX_MONTHLY_CAP ?? "25",
     warmupTotalPerDay: env.WARMUP_TOTAL_PER_DAY ?? "20",

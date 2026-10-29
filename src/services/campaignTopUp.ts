@@ -39,6 +39,11 @@ import { indexAccountsByCampaign } from "../lib/accountCampaignIndex.js";
 import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import { findReassignablePoolMailboxYielding } from "../lib/poolPick.js";
 import { buildPoolSignature } from "../lib/poolSignature.js";
+import {
+  logCompanyFallback,
+  logPlaceholderRefusal,
+  resolveSendIdentity,
+} from "../lib/personaName.js";
 import { mailboxEspSlot } from "../lib/mailboxType.js";
 import type { InboxkitClientSplitCache } from "../lib/inboxkitClientSplit.js";
 import {
@@ -749,8 +754,30 @@ export class CampaignTopUpService {
           (id) => !sameClient(campaignById.get(id), campaign),
         );
 
-        const firstName = pool.firstName || "Pool";
-        const lastName = pool.lastName || "User";
+        // Every inbox has a name (Josh 2026-10-29): persona, else the company.
+        const identity = resolveSendIdentity({
+          email: pool.email,
+          pool,
+          liveFromName: accountByEmail.get(pool.email.toLowerCase())?.from_name,
+          clientBrand: brand,
+        });
+        if (identity?.source === "company") {
+          logCompanyFallback(
+            "campaign-top-up",
+            pool.email,
+            brand,
+            accountByEmail.get(pool.email.toLowerCase())?.from_name,
+          );
+        }
+        if (!identity) {
+          logPlaceholderRefusal(
+            "campaign-top-up",
+            pool.email,
+            accountByEmail.get(pool.email.toLowerCase())?.from_name,
+          );
+          rejected.add(pool.email.toLowerCase());
+          continue;
+        }
 
         try {
           const original = accountByEmail.get(pool.email.toLowerCase());
@@ -792,12 +819,8 @@ export class CampaignTopUpService {
               await this.smartlead.updateEmailAccount(pool.smartleadAccountId, {
                 signature: insightTarget
                   ? INSIGHT_MAILBOX_SIGNATURE_BLANK
-                  : buildPoolSignature({
-                      firstName,
-                      lastName,
-                      clientBrand: brand,
-                    }),
-                from_name: `${firstName} ${lastName}`,
+                  : identity.signature,
+                from_name: identity.fromName,
                 client_id: clientId,
                 // D30/D24/D183: never leave a moved mailbox on blank gap / wrong cap.
                 time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
@@ -852,8 +875,7 @@ export class CampaignTopUpService {
                     pool.smartleadAccountId,
                     {
                       signature: original.signature ?? "",
-                      from_name:
-                        original.from_name ?? `${firstName} ${lastName}`,
+                      from_name: original.from_name ?? identity.fromName,
                       client_id: original.client_id ?? null,
                     },
                   );

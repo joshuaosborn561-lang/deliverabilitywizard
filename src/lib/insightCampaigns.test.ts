@@ -508,7 +508,7 @@ describe("D282 Insight Josh-only senders", () => {
     );
     assert.equal(
       isInsightJoshAllowedSender({
-        from_name: "Ada Pool",
+        from_name: "Ada Poole",
         from_email: "ada@getinsight.co",
         client_id: INSIGHT_CLIENT_ID,
       }),
@@ -539,7 +539,7 @@ describe("D282 Insight Josh-only senders", () => {
     );
     assert.equal(
       isInsightJoshAllowedSender({
-        from_name: "Ada Pool",
+        from_name: "Ada Poole",
         from_email: "ada@getintroduced.info",
       }),
       false,
@@ -634,7 +634,7 @@ describe("D282 Insight Josh-only senders", () => {
     });
     const generic = account([], {
       id: 9,
-      from_name: "Ada Pool",
+      from_name: "Ada Poole",
       from_email: "ada@getintroduced.info",
     });
     const josh = account([], {

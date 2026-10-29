@@ -9142,7 +9142,7 @@ describe("owner intent — D193 named clients never take GENERIC pool senders", 
       isGenericMailbox(
         {
           client_id: 521881,
-          from_name: "Ada Pool",
+          from_name: "Ada Poole",
           tags: [{ tag_name: "GENERIC" }],
         },
         "ada@appquickconnectsales.com",
@@ -10064,8 +10064,8 @@ describe("owner intent — D199 peel floor is staffable attached, not raw member
       dedicatedGenericClientId(
         {
           client_id: null,
-          from_name: "Ada Pool",
-          signature: "Ada Pool\nParlay",
+          from_name: "Ada Poole",
+          signature: "Ada Poole\nParlay",
         },
         "ada@trygetintroduced.info",
         { getPoolMailbox: () => undefined },

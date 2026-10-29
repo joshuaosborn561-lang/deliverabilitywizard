@@ -163,8 +163,8 @@ describe("D258 PowerGRYD empty-by-design", () => {
         account: {
           id: 902,
           from_email: "ada@crosslaunchco.com",
-          from_name: "Ada Pool",
-          signature: "Ada Pool\nTechEvolution",
+          from_name: "Ada Poole",
+          signature: "Ada Poole\nTechEvolution",
           client_id: 900001,
         } as SmartleadAccountWithCampaigns,
         email: "ada@crosslaunchco.com",

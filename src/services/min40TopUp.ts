@@ -71,6 +71,11 @@ import {
 } from "../lib/pocClient.js";
 import { buildPoolSignature } from "../lib/poolSignature.js";
 import {
+  logCompanyFallback,
+  logPlaceholderRefusal,
+  resolveSendIdentity,
+} from "../lib/personaName.js";
+import {
   genericEligibleForClientPod,
   genericPodTagColor,
   genericPodTagName,
@@ -1274,8 +1279,24 @@ export class Min40TopUpService {
         rejectedAny.add(pool.email.toLowerCase());
         continue;
       }
-      const firstName = pool.firstName || "Pool";
-      const lastName = pool.lastName || "User";
+      // Every inbox has a name (Josh 2026-10-29). Persona from the ledger /
+      // InboxKit pool row or the live mailbox; none -> send as the company.
+      // Never "Pool User", never an invented name.
+      const identity = resolveSendIdentity({
+        email: pool.email,
+        pool,
+        liveFromName: original.from_name,
+        clientBrand: brand,
+      });
+      if (!identity) {
+        logPlaceholderRefusal("min40-topup/short-campaign", pool.email, original.from_name);
+        rejectedPreferNonAzure.add(pool.email.toLowerCase());
+        rejectedAny.add(pool.email.toLowerCase());
+        continue;
+      }
+      if (identity.source === "company") {
+        logCompanyFallback("min40-topup/short-campaign", pool.email, brand, original.from_name);
+      }
       try {
         if (!input.dryRun) {
           await this.smartlead.addEmailAccountsToCampaign(input.campaign.id, [
@@ -1284,13 +1305,15 @@ export class Min40TopUpService {
           recordMembership(original, input.campaign.id);
           await sleep(WRITE_GAP_MS);
           const insightTarget = isInsightCampaignId(input.campaign.id);
-          const fromName = `${firstName} ${lastName}`;
+          const fromName = identity.fromName;
           await this.smartlead.updateEmailAccount(pool.smartleadAccountId, {
             signature: insightTarget
               ? INSIGHT_MAILBOX_SIGNATURE_BLANK
               : input.pocEngagement
-                ? pocSignature(fromName, brand)
-                : buildPoolSignature({ firstName, lastName, clientBrand: brand }),
+                ? identity.source === "company"
+                  ? identity.signature
+                  : pocSignature(fromName, brand)
+                : identity.signature,
             from_name: fromName,
             client_id: input.clientId,
             time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
@@ -1589,8 +1612,22 @@ export class Min40TopUpService {
           const pool =
             poolMailboxes.find((row) => row.email.toLowerCase() === key) ??
             this.state.getPoolMailbox(key);
-          const firstName = pool?.firstName || "Pool";
-          const lastName = pool?.lastName || "User";
+          // Every inbox has a name (Josh 2026-10-29): persona, else the company.
+          const identity = resolveSendIdentity({
+            email: seat.email,
+            pool,
+            liveFromName: original.from_name,
+            clientBrand: brand,
+          });
+          if (!identity) {
+            logPlaceholderRefusal("min40-topup/pod-fill", seat.email, original.from_name);
+            rejected.add(key);
+            noteReject("no-sender-name");
+            continue;
+          }
+          if (identity.source === "company") {
+            logCompanyFallback("min40-topup/pod-fill", seat.email, brand, original.from_name);
+          }
           const covering = linkCoveringFor({
             seat: {
               ...seat,
@@ -1605,12 +1642,8 @@ export class Min40TopUpService {
           try {
             if (!input.dryRun) {
               await this.smartlead.updateEmailAccount(original.id, {
-                signature: buildPoolSignature({
-                  firstName,
-                  lastName,
-                  clientBrand: brand,
-                }),
-                from_name: `${firstName} ${lastName}`,
+                signature: identity.signature,
+                from_name: identity.fromName,
                 client_id: clientId,
                 time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
               });

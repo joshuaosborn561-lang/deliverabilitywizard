@@ -84,7 +84,7 @@ describe("D258 stale PowerGRYD pool vs live TechEvo/Insight", () => {
         platform: "GOOGLE",
         smartleadAccountId: row.id,
         firstName: local,
-        lastName: "Pool",
+        lastName: "Poole",
         status: "assigned",
         assignedClientId: 592842,
         assignedClientName: "PowerGRYD",

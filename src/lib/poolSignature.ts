@@ -22,6 +22,12 @@ export function buildPoolSignature(opts: {
   return `${first} ${last}\n${brand}`;
 }
 
+/**
+ * @deprecated Invents "Alex Morgan" / "<First> Team". Copy-canary rows only
+ * (canaries never sit on client campaigns). Client-facing paths must use
+ * `personaFromName` / `resolveSeatPersona` from personaName.ts, which
+ * return null instead of a made-up name.
+ */
 export function parsePersonName(fromName?: string | null): {
   firstName: string;
   lastName: string;

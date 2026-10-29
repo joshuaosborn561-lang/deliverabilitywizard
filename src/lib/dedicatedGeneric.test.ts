@@ -230,8 +230,8 @@ describe("D199 exclusive attach + client-sig", () => {
         {
           client_id: null,
           tags: [{ tag_name: "GENERIC" }],
-          from_name: "Ada Pool",
-          signature: "Ada Pool\nTechEvolution",
+          from_name: "Ada Poole",
+          signature: "Ada Poole\nTechEvolution",
         },
         "ada@trygetintroduced.info",
         emptyState,
@@ -261,8 +261,8 @@ describe("D199 exclusive attach + client-sig", () => {
         {
           client_id: null,
           tags: [{ tag_name: "GENERIC" }],
-          from_name: "Ada Pool",
-          signature: "Ada Pool\nGoliath Cybersecurity",
+          from_name: "Ada Poole",
+          signature: "Ada Poole\nGoliath Cybersecurity",
         },
         "ada@trygetintroduced.info",
         [{ clientId: 521881, shell: false }],

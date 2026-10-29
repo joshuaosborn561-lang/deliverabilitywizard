@@ -181,7 +181,7 @@ describe("CampaignTopUpService safety", () => {
       platform: "GOOGLE",
       smartleadAccountId: 10,
       firstName: "Free",
-      lastName: "Sender",
+      lastName: "Sanders",
       status: "available",
     };
     const { state } = fakeState(pool);
@@ -243,6 +243,80 @@ describe("CampaignTopUpService safety", () => {
     assert.equal(result.unfilled[0]?.shortBy, 59);
   });
 
+  it("real-persona rule: a placeholder-named seat sends as the company, never Pool User", async () => {
+    const pool: PoolMailboxRecord = {
+      email: "free@pool.info",
+      domain: "pool.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 10,
+      firstName: "Pool",
+      lastName: "User",
+      status: "available",
+    };
+    const { state } = fakeState(pool);
+    let addCalls = 0;
+    let updateCalls = 0;
+    let lastFields: Record<string, unknown> | undefined;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 2, name: "Deep Roots Thin", status: "ACTIVE", client_id: 597783 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 10,
+          from_email: pool.email,
+          created_at: "2026-06-01T00:00:00Z",
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [],
+        },
+        ...Array.from({ length: 49 }, (_, index) => ({
+          id: 200 + index,
+          from_email: `dead-${index}@x.com`,
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 2,
+          type: "GMAIL",
+          is_smtp_success: false,
+          is_imap_success: false,
+          campaign_ids: [2],
+        })),
+        ...Array.from({ length: 51 }, (_, index) => ({
+          id: 400 + index,
+          from_email: `live-${index}@goliath.com`,
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 2,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [],
+        })),
+      ],
+      listClients: async () => [{ id: 597783, name: "Deep Roots", logo: "Deep Roots" }],
+      addEmailAccountsToCampaign: async () => {
+        addCalls += 1;
+      },
+      removeEmailAccountsFromCampaign: async () => undefined,
+      updateEmailAccount: async (_id: number, fields: Record<string, unknown>) => {
+        updateCalls += 1;
+        lastFields = fields;
+      },
+    } as unknown as SmartleadClient;
+    const service = new CampaignTopUpService(
+      loadConfig({ MIN_CAMPAIGN_SENDERS: "50" }),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+
+    const result = await service.run();
+    assert.equal(addCalls, 1, "the assign is not refused");
+    assert.equal(result.assigned.length, 1);
+    assert.ok(updateCalls >= 1);
+    assert.equal(lastFields?.from_name, "Deep Roots");
+    assert.equal(lastFields?.signature, "Deep Roots");
+  });
+
   it("rolls back donor and target membership before retrying a failed move", async () => {
     const pool: PoolMailboxRecord = {
       email: "move@pool.info",
@@ -250,7 +324,7 @@ describe("CampaignTopUpService safety", () => {
       platform: "GOOGLE",
       smartleadAccountId: 10,
       firstName: "Move",
-      lastName: "Sender",
+      lastName: "Sanders",
       status: "assigned",
       assignedClientId: 1,
     };
@@ -335,7 +409,7 @@ describe("CampaignTopUpService safety", () => {
       platform: "GOOGLE",
       smartleadAccountId: 10,
       firstName: "Spare",
-      lastName: "Sender",
+      lastName: "Sanders",
       status: "assigned",
     };
     const { state } = fakeState(pool);
@@ -469,7 +543,7 @@ describe("CampaignTopUpService safety", () => {
       platform: "GOOGLE",
       smartleadAccountId: 10,
       firstName: "Ada",
-      lastName: "Pool",
+      lastName: "Poole",
       status: "available",
     };
     const { state } = fakeState(pool);
@@ -553,7 +627,7 @@ describe("CampaignTopUpService safety", () => {
       platform: "GOOGLE",
       smartleadAccountId: 10,
       firstName: "Spare",
-      lastName: "Sender",
+      lastName: "Sanders",
       status: "assigned",
     };
     const { state } = fakeState(pool);
@@ -614,7 +688,7 @@ describe("CampaignTopUpService safety", () => {
       platform: "GOOGLE",
       smartleadAccountId: 10,
       firstName: "Ada",
-      lastName: "Pool",
+      lastName: "Poole",
       status: "assigned",
       assignedClientId: 9,
     };
@@ -680,7 +754,7 @@ describe("CampaignTopUpService safety", () => {
       platform: "GOOGLE",
       smartleadAccountId: 10,
       firstName: "Ada",
-      lastName: "Pool",
+      lastName: "Poole",
       status: "assigned",
     };
     const { state } = fakeState(pool);
@@ -693,8 +767,8 @@ describe("CampaignTopUpService safety", () => {
         {
           id: 10,
           from_email: pool.email,
-          from_name: "Ada Pool",
-          signature: "Ada Pool\nParlay",
+          from_name: "Ada Poole",
+          signature: "Ada Poole\nParlay",
           created_at: "2026-06-01T00:00:00Z",
           type: "GMAIL",
           is_smtp_success: true,
@@ -747,7 +821,7 @@ describe("CampaignTopUpService safety", () => {
       platform: "GOOGLE",
       smartleadAccountId: 10,
       firstName: "Spare",
-      lastName: "Sender",
+      lastName: "Sanders",
       status: "assigned",
     };
     const { state } = fakeState(pool);
@@ -902,7 +976,7 @@ describe("CampaignTopUpService safety", () => {
       platform: "GOOGLE",
       smartleadAccountId: 11,
       firstName: "Ada",
-      lastName: "Pool",
+      lastName: "Poole",
       status: "assigned",
       assignedClientId: 521881,
     };
@@ -927,8 +1001,8 @@ describe("CampaignTopUpService safety", () => {
         {
           id: 11,
           from_email: pool.email,
-          from_name: "Ada Pool",
-          signature: "Ada Pool\nTechEvolution",
+          from_name: "Ada Poole",
+          signature: "Ada Poole\nTechEvolution",
           created_at: "2026-06-01T00:00:00Z",
           type: "GMAIL",
           is_smtp_success: true,
@@ -995,7 +1069,7 @@ describe("CampaignTopUpService safety", () => {
       platform: "GOOGLE",
       smartleadAccountId: 11,
       firstName: "Ada",
-      lastName: "Pool",
+      lastName: "Poole",
       status: "assigned",
       assignedClientId: 542838,
     };
@@ -1005,7 +1079,7 @@ describe("CampaignTopUpService safety", () => {
       platform: "GOOGLE",
       smartleadAccountId: 12,
       firstName: "Zoe",
-      lastName: "Pool",
+      lastName: "Poole",
       status: "assigned",
       assignedClientId: 542838,
     };
@@ -1022,8 +1096,8 @@ describe("CampaignTopUpService safety", () => {
         {
           id: 11,
           from_email: keep.email,
-          from_name: "Ada Pool",
-          signature: "Ada Pool\nBolder Cyber Partners",
+          from_name: "Ada Poole",
+          signature: "Ada Poole\nBolder Cyber Partners",
           created_at: "2026-06-01T00:00:00Z",
           type: "GMAIL",
           is_smtp_success: true,
@@ -1035,8 +1109,8 @@ describe("CampaignTopUpService safety", () => {
         {
           id: 12,
           from_email: cross.email,
-          from_name: "Zoe Pool",
-          signature: "Zoe Pool\nBolder Cyber Partners",
+          from_name: "Zoe Poole",
+          signature: "Zoe Poole\nBolder Cyber Partners",
           created_at: "2026-06-01T00:00:00Z",
           type: "GMAIL",
           is_smtp_success: true,

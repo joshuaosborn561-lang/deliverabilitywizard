@@ -46,7 +46,7 @@ describe("D258 realignStalePoolAssignment", () => {
       platform: "GOOGLE",
       smartleadAccountId: 12,
       firstName: "Ada",
-      lastName: "Pool",
+      lastName: "Poole",
       status: "assigned",
       assignedClientId: 77,
       warmedAt: "2026-01-01T00:00:00Z",

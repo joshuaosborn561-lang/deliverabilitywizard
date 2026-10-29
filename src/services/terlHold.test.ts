@@ -47,7 +47,7 @@ function inventory(opts: {
       id: 20,
       type: "GMAIL",
       from_email: "casey@getintroduced.co",
-      from_name: "Casey Pool",
+      from_name: "Casey Poole",
       client_id: 345263,
       campaign_ids: [],
       message_per_day: 30,
@@ -63,7 +63,7 @@ function inventory(opts: {
       id: 30,
       type: "GMAIL",
       from_email: "other@getintroduced.co",
-      from_name: "Other Pool",
+      from_name: "Other Poole",
       client_id: 999001,
       campaign_ids: [],
       message_per_day: 30,
@@ -94,7 +94,7 @@ function inventory(opts: {
       id: 21,
       type: "GMAIL",
       from_email: "young@getintroduced.co",
-      from_name: "Young Pool",
+      from_name: "Young Poole",
       client_id: 345263,
       campaign_ids: [],
       message_per_day: 30,
@@ -168,8 +168,8 @@ describe("TerlHoldService substitution (D219)", () => {
     assert.deepEqual(tagWrites, []);
     const subUpdate = updates.find((row) => row.id === 20);
     assert.ok(subUpdate);
-    assert.equal(subUpdate!.fields.signature, "Casey Pool\nSalesGlider");
-    assert.equal(subUpdate!.fields.from_name, "Casey Pool");
+    assert.equal(subUpdate!.fields.signature, "Casey Poole\nSalesGlider");
+    assert.equal(subUpdate!.fields.from_name, "Casey Poole");
     assert.equal(subUpdate!.fields.client_id, 345263);
     assert.equal(subUpdate!.fields.max_email_per_day, 30);
     assert.equal(

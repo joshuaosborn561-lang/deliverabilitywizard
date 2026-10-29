@@ -300,6 +300,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D308 | Live | Drain mode (A0): `POST /drain?action=on` skips every NEW cron tick, post-pass retry and manual `/run` while in-flight work finishes; `/health` reports `drain`, `activeJobs`, `idleNow` and `safeToDeploy` (drain on AND nothing running). Auto-expires (30m default, 120m max). Changes no campaigns, mailboxes, settings or WRITE_ENABLED. LOCKED section unchanged. |
 | D309 | Live | Copy-canary idempotent: one live "Canary copy" SmartDelivery test per campaign. Single-flight per campaign, a 3h create cooldown (also after a failed, maybe-landed create), stored test kept when the list hits the 5,000-test page cap, and each attach pass STOPS (never deletes) extra living canaries for a campaign, keeping the one with readings. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 | D312 | Live | A1 critical sweep: placement results (`monitor-results`), `test-reconcile` and `isolation-branch` run every 30 min on their own lock and a top-priority Smartlead lane; bounce-autostop's 10-min cron also runs on that lane (never blocked by the exclusive health lane, served first, and critical writes jump the mutation queue). Amends D270 (exclusive health lane), D257 (limiter) and D247 (locks). Those stages are overdue-paged at 75 min, not 6h45m. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
+| D315 | Live | A4 bloat: (1) `enrichCampaignIds` remembers each test's campaign (immutable) instead of one `GET spam-test/{id}` per test in five services every pass — those were 3,088 of 4,886 logged 429s on 10/28–29 (628 tests); (2) the unfiltered `listTests` is shared for 30 s across callers and dropped on any write; (3) the D260 "treating as generic" warning logs once per host/client per process (~800 identical lines per 12 h). No stage removed, no behavior change. |
+| D317 | Live | Health-sweep budget: (1) a cold test→campaign cache (after a deploy) can no longer storm SmartDelivery — 3 failed lookups in a row open a 2-minute breaker, each lookup retries once not four times, and every `enrichCampaignIds` caller gets a 90 s default budget; (2) `campaign-health` and `client-rest` stage timeout 10m → 15m as a safety net, with a 20m hard cap on any stage; (3) campaign-health logs its top-up / fan-out / copy-canary seconds and `/health` publishes each stage's `lastDurationMs`. Builds on D315. No stage removed, no cadence change, no campaign, mailbox, setting or WRITE_ENABLED change. |
 
 ---
 
@@ -11224,3 +11226,53 @@ stages). Does not change POD-40, the Generics Ledger, any LOCKED rule, or
 
 **Guards.** `src/lib/criticalLane.test.ts`; `src/guards/canon.test.ts` D312.
 
+
+## D315 — A4 bloat removal: stop re-asking SmartDelivery the same questions
+
+**Decision (Josh, 2026-10-29):** "look for any bloat that is slowing down
+v1 and get rid of it" — nothing outside the wizard code.
+
+**Evidence (logs 10/28 23:00Z → 10/29 12:30Z).** 4,886 Smartlead 429 lines;
+3,088 were `GET spam-test/{id}` across 628 distinct tests — the N+1 in
+`enrichCampaignIds`, run by campaign-check, scanner, reconciler,
+placement-audit and campaign-audit on every pass. Each 429 backs the shared
+limiter off, so every other stage waits too. Health-pass stage times
+(10/29 CT): campaign-health ~10 min, isolation-branch 5–17, client-rest 7,
+mailbox-gap 6.5, campaign-check-first 5.5, qa-unpause 4.5, reconnect 4.
+
+**Rule.** A test's `campaign_id` never changes, so `SmartDeliveryClient`
+caches it (permanent when found, 30 min when the test has none, never on a
+failed lookup; concurrent callers share one request). The default
+`listTests({})` is shared for 30 s and cleared by any non-report write.
+Callers receive their own row copies. The D260 domain-owner warning logs
+once per host and client per process. Smartlead account/campaign reads and
+the 15 / 30-minute cadences are untouched.
+
+**Guards.** `src/clients/smartdelivery.enrich.test.ts` (6),
+`src/guards/canon.test.ts` D315.
+
+## D317 — Health sweeps finish inside their budget
+
+**Decision (Josh, 2026-10-29):** health sweeps run on a guaranteed
+schedule. Deliverability reported `campaign-health` with no completed pass
+since 8:07am CT (timeout after 10m; the 9:30am pass also over) and
+`client-rest` timing out once.
+
+**Evidence (prod logs 10/29, CT).** Health passes took 39.6 and 46.7 minutes
+against a 15 minute cadence. While `campaign-health` ran, the log showed
+only `GET spam-test/{id}` 429s — five 429s per lookup, ~17 s each, held in
+the SmartDelivery limiter's two slots — so the stage's own SmartDelivery
+reads (copy-canary `listTests`) queued behind them until the 10 minute
+timeout. The lookups are D315's N+1.
+
+**Rule.** D315 removes the N+1. D317 keeps a cold cache from recreating it:
+after three failed lookups in a row `SmartDeliveryClient` stops looking up for
+two minutes (rows come back un-enriched; the cache keeps filling on later
+passes), a lookup retries once, and a caller that passes no deadline gets a
+90 s one. `campaign-health` and `client-rest` may run 15 minutes (safety net,
+not the fix); no stage may exceed the 20 minute cap. Campaign-health logs
+`[health] D317 timings top-up=… fan-out=… copy-canary=…` and `/health`
+reports `lastDurationMs` per stage.
+
+**Guards.** `src/clients/smartdelivery.enrich.test.ts` (D317),
+`src/lib/stepTimeout.test.ts` (D317), `src/guards/canon.test.ts` D317.

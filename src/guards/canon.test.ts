@@ -18914,3 +18914,47 @@ describe("owner intent — D312 critical sweep", () => {
     assert.match(decisions, /^\| D312 \|/m, "status index has no D312 row (D127)");
   });
 });
+
+describe("owner intent — D315 A4 bloat removal", () => {
+  it("D315: enrichCampaignIds is cached and listTests is shared; ledger and canon say so", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const [sd, own, canon, decisions] = await Promise.all([
+      read("../clients/smartdelivery.ts"),
+      read("../lib/domainOwnership.ts"),
+      read("../../CANON.md"),
+      read("../../DECISIONS.md"),
+    ]);
+    assert.match(sd, /testCampaignCache/, "campaign-id cache is gone (D315)");
+    assert.match(sd, /LIST_TESTS_TTL_MS/, "shared test list is gone (D315)");
+    assert.match(sd, /invalidateTestListOnWrite/, "writes must drop the shared test list (D315)");
+    assert.match(own, /genericOwnerWarned/, "D260 log dedupe is gone (D315)");
+    assert.match(canon, /\*\*D315\.\*\*/, "CANON.md lost the D315 note");
+    assert.match(decisions, /## D315 — /, "DECISIONS.md has no D315 entry");
+    assert.match(decisions, /^\| D315 \|/m, "status index has no D315 row");
+  });
+});
+
+describe("owner intent — D317 health-sweep budget", () => {
+  it("D317: breaker, 15m safety-net timeouts under a hard cap, timings and lastDurationMs; ledger says so", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const [sd, step, health, windows, decisions] = await Promise.all([
+      read("../clients/smartdelivery.ts"),
+      read("../lib/stepTimeout.ts"),
+      read("../services/campaignHealth.ts"),
+      read("../lib/stageWindows.ts"),
+      read("../../DECISIONS.md"),
+    ]);
+    assert.match(sd, /ENRICH_BREAKER_FAILURES/, "lookup breaker is gone (D317)");
+    assert.match(sd, /ENRICH_DEFAULT_BUDGET_MS/, "default enrich budget is gone (D317)");
+    assert.match(step, /STEP_TIMEOUT_CAP_MS/, "stage timeout hard cap is gone (D317)");
+    assert.match(step, /"campaign-health": 15 \* 60 \* 1000/, "campaign-health budget (D317)");
+    assert.match(step, /"client-rest": 15 \* 60 \* 1000/, "client-rest budget (D317)");
+    assert.match(health, /D317 timings/, "campaign-health timings log is gone (D317)");
+    assert.match(windows, /lastDurationMs/, "/health lastDurationMs is gone (D317)");
+    assert.match(decisions, /## D317 — /, "DECISIONS.md has no D317 entry");
+    assert.match(decisions, /^\| D317 \|/m, "status index has no D317 row (D127)");
+  });
+});
+

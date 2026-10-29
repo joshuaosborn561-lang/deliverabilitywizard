@@ -10,16 +10,33 @@
 
 export const DEFAULT_STEP_TIMEOUT_MS = 10 * 60 * 1000;
 
+/**
+ * D317 — hard ceiling for any single stage. A stage may be given more than
+ * the 10-minute default, never more than this, so one wedged stage cannot
+ * hold the 15-minute staffing loop for the rest of the hour.
+ */
+export const STEP_TIMEOUT_CAP_MS = 20 * 60 * 1000;
+
 export const STEP_TIMEOUT_MS: Record<string, number> = {
   inventory: 5 * 60 * 1000,
   "campaign-check-first": 20 * 60 * 1000,
   "scan-backfill": 20 * 60 * 1000,
   /** D293 — a 514×1690 fill with Smartlead writes runs past 10m. */
   "min40-topup": 20 * 60 * 1000,
+  /**
+   * D317 — safety net, not the fix. Sweeps are made fast by D315/D317
+   * (no lookup storm); these two walk the whole board with Smartlead
+   * writes and timed out at 10m while Smartlead was 429ing.
+   */
+  "campaign-health": 15 * 60 * 1000,
+  "client-rest": 15 * 60 * 1000,
 };
 
 export function stepTimeoutMs(name: string): number {
-  return STEP_TIMEOUT_MS[name] ?? DEFAULT_STEP_TIMEOUT_MS;
+  return Math.min(
+    STEP_TIMEOUT_MS[name] ?? DEFAULT_STEP_TIMEOUT_MS,
+    STEP_TIMEOUT_CAP_MS,
+  );
 }
 
 /** `timeout after 10m` — minutes, matching the D247 error contract. */

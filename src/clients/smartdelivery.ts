@@ -101,8 +101,47 @@ export interface CreateAutomatedPlacementInput
   provider_ids: number[];
 }
 
+/** A4/D315 — a test's campaign never changes; "no campaign" is rechecked after this. */
+export const TEST_CAMPAIGN_NEGATIVE_TTL_MS = 30 * 60 * 1000;
+export const TEST_CAMPAIGN_CACHE_MAX = 20_000;
+/** Five services each re-listed ~650 tests (7 pages) every pass; share one list briefly. */
+export const LIST_TESTS_TTL_MS = 30 * 1000;
+/**
+ * D317 — a cold cache (after a deploy) must not turn into a lookup storm.
+ * Three lookups in a row that fail (429 / timeout) open a breaker: no more
+ * `GET spam-test/{id}` for the cooldown, callers get the rows un-enriched,
+ * and the cache keeps filling on later passes. Each lookup also retries once,
+ * not four times (a 429'd lookup used to hold a limiter slot ~17 s).
+ */
+export const ENRICH_BREAKER_FAILURES = 3;
+export const ENRICH_BREAKER_COOLDOWN_MS = 2 * 60 * 1000;
+export const ENRICH_LOOKUP_RETRIES = 1;
+/** D317 — a caller that passes no deadline still gets a bounded pass. */
+export const ENRICH_DEFAULT_BUDGET_MS = 90 * 1000;
+
 export class SmartDeliveryClient {
   private readonly limiter?: SmartleadLimiter;
+  /**
+   * A4/D315 — test id → campaign id. `enrichCampaignIds` ran one
+   * `GET spam-test/{id}` per test in each of five services every pass
+   * (3,088 of 4,886 logged 429s on 10/28–29 were this, 628 distinct tests).
+   * A test's campaign is immutable, so remember it.
+   */
+  private readonly testCampaignCache = new Map<
+    string,
+    { campaignId: string | number | null; at: number }
+  >();
+  private readonly testCampaignInflight = new Map<
+    string,
+    Promise<string | number | null | undefined>
+  >();
+  readonly enrichStats = { hits: 0, fetched: 0, failed: 0, shortCircuited: 0 };
+  /** D317 — consecutive failed lookups, and when the breaker closes again. */
+  private enrichFailStreak = 0;
+  private enrichBreakerUntil = 0;
+  /** A4/D315 — the unfiltered full list, shared for LIST_TESTS_TTL_MS across services. */
+  private listTestsCache: { at: number; rows: SpamTestSummary[] } | null = null;
+  private listTestsInflight: Promise<SpamTestSummary[]> | null = null;
 
   constructor(
     private readonly apiKey: string,
@@ -116,6 +155,9 @@ export class SmartDeliveryClient {
     path: string,
     options: RequestOptions = {},
   ): Promise<T> {
+    // A4/D315 — any write (create / stop / delete / schedule) drops the
+    // shared test list so the next reader sees the change at once.
+    this.invalidateTestListOnWrite(options.method ?? "GET", path);
     const go = () =>
       apiRequest<T>(BASE_URL, this.apiKey, path, {
         ...options,
@@ -173,6 +215,29 @@ export class SmartDeliveryClient {
     body: Record<string, unknown> = {},
     request: Pick<RequestOptions, "retries" | "timeoutMs"> = {},
   ): Promise<SpamTestSummary[]> {
+    if (Object.keys(body).length > 0) return this.listTestsUncached(body, request);
+    const hit = this.listTestsCache;
+    if (hit && Date.now() - hit.at < LIST_TESTS_TTL_MS) {
+      return hit.rows.map((row) => ({ ...row }));
+    }
+    if (!this.listTestsInflight) {
+      this.listTestsInflight = this.listTestsUncached({}, request)
+        .then((rows) => {
+          this.listTestsCache = { at: Date.now(), rows };
+          return rows;
+        })
+        .finally(() => {
+          this.listTestsInflight = null;
+        });
+    }
+    const rows = await this.listTestsInflight;
+    return rows.map((row) => ({ ...row }));
+  }
+
+  private async listTestsUncached(
+    body: Record<string, unknown> = {},
+    request: Pick<RequestOptions, "retries" | "timeoutMs"> = {},
+  ): Promise<SpamTestSummary[]> {
     if (body.limit !== undefined || body.offset !== undefined) {
       return this.request("spam-test/report",
         { method: "POST", body, ...request },
@@ -204,12 +269,13 @@ export class SmartDeliveryClient {
     opts: { signal?: AbortSignal; deadlineMs?: number } = {},
   ): Promise<SpamTestSummary[]> {
     const out: SpamTestSummary[] = [];
+    const deadlineMs = opts.deadlineMs ?? Date.now() + ENRICH_DEFAULT_BUDGET_MS;
     for (const test of tests) {
       if (opts.signal?.aborted) {
         out.push(test);
         continue;
       }
-      if (opts.deadlineMs != null && Date.now() >= opts.deadlineMs) {
+      if (Date.now() >= deadlineMs) {
         out.push(test);
         continue;
       }
@@ -222,19 +288,76 @@ export class SmartDeliveryClient {
         out.push(test);
         continue;
       }
-      try {
-        const details = await this.getTestDetails(id);
-        const cid = details.campaign_id;
-        out.push(
-          cid === undefined || cid === null
-            ? test
-            : { ...test, campaign_id: cid as string | number },
-        );
-      } catch {
-        out.push(test);
-      }
+      const cid = await this.campaignIdForTest(String(id));
+      out.push(
+        cid === undefined || cid === null
+          ? test
+          : { ...test, campaign_id: cid },
+      );
     }
     return out;
+  }
+
+  private invalidateTestListOnWrite(method: string, path: string): void {
+    if (method !== "GET" && !path.startsWith("spam-test/report")) {
+      this.listTestsCache = null;
+    }
+  }
+
+  /** Cached, single-flight campaign id for a test; undefined when the lookup failed. */
+  private async campaignIdForTest(
+    id: string,
+  ): Promise<string | number | null | undefined> {
+    const cached = this.testCampaignCache.get(id);
+    if (cached) {
+      if (
+        cached.campaignId !== null ||
+        Date.now() - cached.at < TEST_CAMPAIGN_NEGATIVE_TTL_MS
+      ) {
+        this.enrichStats.hits += 1;
+        return cached.campaignId;
+      }
+      this.testCampaignCache.delete(id);
+    }
+    const pending = this.testCampaignInflight.get(id);
+    if (pending) return pending;
+    // D317 — breaker open: no network, the cache fills on a later pass.
+    if (Date.now() < this.enrichBreakerUntil) {
+      this.enrichStats.shortCircuited += 1;
+      return undefined;
+    }
+    const run = (async () => {
+      try {
+        const details = await this.getTestDetails(id, {
+          retries: ENRICH_LOOKUP_RETRIES,
+        });
+        const raw = details.campaign_id;
+        const campaignId =
+          raw === undefined || raw === null ? null : (raw as string | number);
+        if (this.testCampaignCache.size >= TEST_CAMPAIGN_CACHE_MAX) {
+          this.testCampaignCache.clear();
+        }
+        this.testCampaignCache.set(id, { campaignId, at: Date.now() });
+        this.enrichStats.fetched += 1;
+        this.enrichFailStreak = 0;
+        return campaignId;
+      } catch {
+        this.enrichStats.failed += 1;
+        this.enrichFailStreak += 1;
+        if (this.enrichFailStreak >= ENRICH_BREAKER_FAILURES) {
+          this.enrichBreakerUntil = Date.now() + ENRICH_BREAKER_COOLDOWN_MS;
+          this.enrichFailStreak = 0;
+          console.warn(
+            `[smartdelivery] D317 test→campaign lookups failing (${ENRICH_BREAKER_FAILURES} in a row) — pausing lookups ${ENRICH_BREAKER_COOLDOWN_MS / 1000}s; cached ids keep serving`,
+          );
+        }
+        return undefined;
+      } finally {
+        this.testCampaignInflight.delete(id);
+      }
+    })();
+    this.testCampaignInflight.set(id, run);
+    return run;
   }
 
   getTestDetails(

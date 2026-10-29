@@ -447,6 +447,14 @@ const ConfigSchema = z.object({
   canonOpsHourStart: z.coerce.number().int().min(0).max(23).default(CANON_OPS_HOUR_START_DEFAULT),
   canonOpsHourEnd: z.coerce.number().int().min(1).max(24).default(CANON_OPS_HOUR_END_DEFAULT),
   enableHoldEnforcement: boolFromEnv(true),
+  /**
+   * D321 — placeholder-name sweep. The cron only registers when
+   * ENABLE_PLACEHOLDER_SWEEP is on; the from_name/signature WRITE is a
+   * second flag. Both default OFF until Josh merges the D321 canon PR.
+   */
+  enablePlaceholderSweep: boolFromEnv(false),
+  cronPlaceholderSweep: z.string().default("*/10 * * * 1-5"),
+  placeholderSweepWriteEnabled: boolFromEnv(false),
   enableMin40TopUp: boolFromEnv(true),
   enablePowerGrydWatch: boolFromEnv(true),
   enableGenericCleanup: boolFromEnv(true),
@@ -714,6 +722,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     canonOpsHourStart: env.CANON_OPS_HOUR_START ?? String(CANON_OPS_HOUR_START_DEFAULT),
     canonOpsHourEnd: env.CANON_OPS_HOUR_END ?? String(CANON_OPS_HOUR_END_DEFAULT),
     enableHoldEnforcement: env.ENABLE_HOLD_ENFORCEMENT,
+    enablePlaceholderSweep: env.ENABLE_PLACEHOLDER_SWEEP,
+    cronPlaceholderSweep: env.CRON_PLACEHOLDER_SWEEP ?? "*/10 * * * 1-5",
+    placeholderSweepWriteEnabled: env.PLACEHOLDER_SWEEP_WRITE_ENABLED,
     enableMin40TopUp: env.ENABLE_MIN40_TOP_UP,
     enablePowerGrydWatch: env.ENABLE_POWERGRYD_WATCH,
     enableGenericCleanup: env.ENABLE_GENERIC_CLEANUP,

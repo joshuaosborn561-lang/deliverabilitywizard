@@ -70,6 +70,10 @@ import { DnsAuditService } from "./services/dnsAudit.js";
 import { CampaignAuditService } from "./services/campaignAudit.js";
 import { CampaignCheckService } from "./services/campaignCheck.js";
 import { HoldEnforcementService } from "./services/holdEnforcement.js";
+import {
+  PlaceholderSweepService,
+  type PlaceholderSweepResult,
+} from "./services/placeholderSweep.js";
 import { Min40TopUpService } from "./services/min40TopUp.js";
 import { PowerGrydWatchService } from "./services/powerGrydWatch.js";
 import { GenericCleanupService } from "./services/genericCleanup.js";
@@ -1504,6 +1508,35 @@ async function main(): Promise<void> {
     return run;
   };
 
+  // D321 — placeholder-name sweep: reads the shared account book (no extra
+  // fleet fetch) and replaces a blank/placeholder sender name with the persona
+  // or the company. The cron only registers with ENABLE_PLACEHOLDER_SWEEP;
+  // the write is behind PLACEHOLDER_SWEEP_WRITE_ENABLED. Both default OFF.
+  const placeholderSweep = new PlaceholderSweepService(
+    config,
+    smartlead,
+    state,
+    slack,
+  );
+  let placeholderSweepInFlight = false;
+  let lastPlaceholderSweep:
+    | (Omit<PlaceholderSweepResult, "rows"> & { at: string })
+    | null = null;
+  const runPlaceholderSweep = async () => {
+    if (placeholderSweepInFlight) {
+      return { skipped: true as const, reason: "already-running" };
+    }
+    placeholderSweepInFlight = true;
+    try {
+      const inventory = await inventoryBook.get();
+      const { rows: _rows, ...summary } = await placeholderSweep.run({ inventory });
+      lastPlaceholderSweep = { ...summary, at: new Date().toISOString() };
+      return summary;
+    } finally {
+      placeholderSweepInFlight = false;
+    }
+  };
+
   const runBounceAutostop = async () => {
     assertRuntimeSecrets(config);
     if (!config.enableCampaignBounceAutostop) {
@@ -1997,6 +2030,15 @@ async function main(): Promise<void> {
     },
     { timezone: config.canonOpsTimezone },
   );
+
+  if (config.enablePlaceholderSweep) {
+    scheduleJob("placeholder-sweep", config.cronPlaceholderSweep, () => {
+      return runPlaceholderSweep().catch((error) => {
+        console.error("[placeholder-sweep] Unhandled cron error", error);
+        feedBugRemediator("placeholder-sweep-cron", error);
+      });
+    });
+  }
 
   if (config.enableCampaignBounceAutostop) {
     scheduleJob("bounce-autostop", config.cronBounceAutostop, () => {
@@ -3177,6 +3219,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       cronCanonOps: config.cronCanonOps,
       canonOpsTimezone: config.canonOpsTimezone,
       enableHoldEnforcement: config.enableHoldEnforcement,
+      enablePlaceholderSweep: config.enablePlaceholderSweep,
+      placeholderSweepWriteEnabled: config.placeholderSweepWriteEnabled,
+      placeholderSweep: lastPlaceholderSweep,
       enableMin40TopUp: config.enableMin40TopUp,
       enablePowerGrydWatch: config.enablePowerGrydWatch,
       enableGenericCleanup: config.enableGenericCleanup,

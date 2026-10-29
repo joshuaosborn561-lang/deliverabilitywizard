@@ -10,6 +10,11 @@ describe("A1 critical lane — limiter", () => {
   it("a critical call is not blocked by the exclusive health lane; a normal call is", async () => {
     const limiter = new SmartleadLimiter(2, 0, 50, 0);
     limiter.setExclusiveHealth(true);
+    // D319 — one slot is the normal lane's share; take the other with a health call.
+    let releaseHealth!: () => void;
+    const healthHold = new Promise<void>((r) => (releaseHealth = r));
+    const healthCall = limiter.schedule(async () => healthHold, { lane: "health" });
+    await tick(5);
     let normalRan = false;
     const normal = limiter.schedule(async () => {
       normalRan = true;
@@ -18,7 +23,8 @@ describe("A1 critical lane — limiter", () => {
     assert.equal(critical, "ok");
     await tick(30);
     assert.equal(normalRan, false, "normal lane still waits behind exclusive health");
-    limiter.setExclusiveHealth(false);
+    releaseHealth();
+    await healthCall;
     await normal;
     assert.equal(normalRan, true);
   });

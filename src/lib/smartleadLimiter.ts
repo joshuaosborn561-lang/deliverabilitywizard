@@ -46,6 +46,13 @@ export function smartleadLane(): SmartleadLane {
 }
 
 export const SMARTLEAD_CONCURRENCY = 2;
+/**
+ * D319 — while the health pass holds the exclusive lane, direct normal-lane
+ * callers (the 6-hour monitor chain: lead-runout, canary-adopt, isolation-rig,
+ * campaign-audit …) may use this many slots, never the last free one. Health
+ * passes now run back to back, so "parked until health ends" meant "never".
+ */
+export const SMARTLEAD_NORMAL_SHARE_SLOTS = 1;
 export const SMARTLEAD_MIN_GAP_MS = 150;
 export const SMARTLEAD_MAX_BACKOFF_MS = 30_000;
 /**
@@ -82,6 +89,7 @@ export class SmartleadLimiter {
   private lastStartAt = 0;
   private streak = 0;
   private starts: number[] = [];
+  private normalShareInflight = 0;
 
   constructor(
     private readonly concurrency = SMARTLEAD_CONCURRENCY,
@@ -96,13 +104,22 @@ export class SmartleadLimiter {
     if (on) return;
     const pending = this.backgroundWaiters.splice(0);
     for (const wake of pending) wake();
+    // D319 — slots left idle by an exclusive stretch must not strand waiters
+    // that queued before it began (they were only woken by a later release).
+    while (this.inflight < this.concurrency) {
+      const next =
+        this.criticalWaiters.shift() ?? this.healthWaiters.shift() ?? this.waiters.shift();
+      if (!next) break;
+      this.inflight += 1;
+      next();
+    }
   }
 
   async schedule<T>(
     fn: () => Promise<T>,
     opts: { lane?: SmartleadLane } = {},
   ): Promise<T> {
-    await this.acquire(opts.lane ?? "normal");
+    const shared = await this.acquire(opts.lane ?? "normal");
     try {
       await this.waitPause();
       await this.waitRateWindow();
@@ -114,7 +131,7 @@ export class SmartleadLimiter {
       this.noteSuccess();
       return value;
     } finally {
-      this.release();
+      this.release(shared);
     }
   }
 
@@ -146,7 +163,8 @@ export class SmartleadLimiter {
     };
   }
 
-  private async acquire(requested: SmartleadLane): Promise<void> {
+  /** Resolves true when the slot is one of the normal-lane share slots (D319). */
+  private async acquire(requested: SmartleadLane): Promise<boolean> {
     // D318 — a queued write/read from a normal-lane caller used to park in
     // backgroundWaiters while the health pass (waiting on the same serial
     // queue) held the exclusive lane: nothing could move until the 6-minute
@@ -158,6 +176,14 @@ export class SmartleadLimiter {
         : requested;
     for (;;) {
       if (this.exclusiveHealth && lane !== "health" && lane !== "critical") {
+        if (
+          this.normalShareInflight < SMARTLEAD_NORMAL_SHARE_SLOTS &&
+          this.inflight < this.concurrency - 1
+        ) {
+          this.inflight += 1;
+          this.normalShareInflight += 1;
+          return true;
+        }
         await new Promise<void>((resolve) => {
           this.backgroundWaiters.push(resolve);
         });
@@ -165,18 +191,19 @@ export class SmartleadLimiter {
       }
       if (this.inflight < this.concurrency) {
         this.inflight += 1;
-        return;
+        return false;
       }
       await new Promise<void>((resolve) => {
         if (lane === "critical") this.criticalWaiters.push(resolve);
         else if (lane === "health") this.healthWaiters.push(resolve);
         else this.waiters.push(resolve);
       });
-      return;
+      return false;
     }
   }
 
-  private release(): void {
+  private release(shared = false): void {
+    if (shared) this.normalShareInflight = Math.max(0, this.normalShareInflight - 1);
     const critical = this.criticalWaiters.shift();
     if (critical) {
       critical();
@@ -189,6 +216,8 @@ export class SmartleadLimiter {
         return;
       }
       this.inflight = Math.max(0, this.inflight - 1);
+      // D319 — a freed slot may now fit a parked normal-lane caller's share.
+      this.backgroundWaiters.shift()?.();
       return;
     }
     const next = this.healthWaiters.shift() ?? this.waiters.shift();

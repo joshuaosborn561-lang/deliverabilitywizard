@@ -33,6 +33,8 @@ function fakeSmartDelivery(opts: {
     getDomainBlacklist: async () => [],
     getIpBlacklist: async () => [],
     getMailboxSummary: async () => [],
+    reportReadsPaused: () => false,
+    reportParallelism: () => 1,
   } as unknown as SmartDeliveryClient;
 }
 
@@ -291,6 +293,8 @@ describe("ResultMonitor queues isolation from ugly same-ESP (D158)", () => {
       getDomainBlacklist: async () => [],
       getIpBlacklist: async () => [],
       getMailboxSummary: async () => [],
+      reportReadsPaused: () => false,
+      reportParallelism: () => 1,
     } as unknown as SmartDeliveryClient;
 
     const monitor = new ResultMonitor(
@@ -333,6 +337,8 @@ describe("ResultMonitor queues isolation from ugly same-ESP (D158)", () => {
       },
       getIpBlacklist: async () => [],
       getMailboxSummary: async () => [],
+      reportReadsPaused: () => false,
+      reportParallelism: () => 1,
     } as unknown as SmartDeliveryClient;
 
     const monitor = new ResultMonitor(
@@ -386,6 +392,8 @@ describe("ResultMonitor queues isolation from ugly same-ESP (D158)", () => {
         },
       ],
       getMailboxSummary: async () => [],
+      reportReadsPaused: () => false,
+      reportParallelism: () => 1,
     } as unknown as SmartDeliveryClient;
 
     const monitor = new ResultMonitor(
@@ -399,5 +407,82 @@ describe("ResultMonitor queues isolation from ugly same-ESP (D158)", () => {
     assert.equal(result.blacklistAlerts, 0);
     assert.deepEqual(blacklistPages, []);
     assert.equal(result.errors.length, 0);
+  });
+});
+
+describe("ResultMonitor D319 budget and carry-over", () => {
+  function many(n: number, over: Record<string, unknown> = {}): SmartDeliveryClient {
+    return {
+      listTests: async () =>
+        Array.from({ length: n }, (_, i) => ({ id: `t${i}`, test_name: `Auto: x${i}`, campaign_id: 1 })),
+      getProviderwiseReport: async () => ({ result: [] }),
+      getSenderAccountReport: async () => [],
+      getDomainBlacklist: async () => [],
+      getIpBlacklist: async () => [],
+      getMailboxSummary: async () => [],
+      reportReadsPaused: () => false,
+      reportParallelism: () => 1,
+      ...over,
+    } as unknown as SmartDeliveryClient;
+  }
+  const smartlead = { listCampaigns: async () => [] } as unknown as SmartleadClient;
+
+  it("stops when the 429 breaker opens, carries the rest, and resumes there next pass", async () => {
+    const state = new StateStore("/tmp/d319-monitor-state-" + Date.now() + ".json");
+    await state.load();
+    let paused = false;
+    let tripped = false;
+    const seen: string[] = [];
+    const sd = many(10, {
+      reportReadsPaused: () => paused,
+      getProviderwiseReport: async (id: string) => {
+        seen.push(id);
+        if (seen.length === 4 && !tripped) {
+          tripped = true;
+          paused = true;
+        }
+        return { result: [] };
+      },
+    });
+    const monitor = new ResultMonitor(config, sd, smartlead, fakeSlack(), state);
+    const first = await monitor.run();
+    assert.equal(first.testsChecked, 4);
+    assert.equal(first.carriedOver, 6);
+    paused = false;
+    seen.length = 0;
+    const second = await monitor.run();
+    assert.equal(second.carriedOver, 0);
+    assert.equal(second.testsChecked, 10);
+    assert.equal(seen[0], "t4", "next pass did not resume where the last stopped");
+  });
+
+  it("a bounced (paused) test is carried over, not recorded as an error", async () => {
+    const state = new StateStore("/tmp/d319-monitor-state-b-" + Date.now() + ".json");
+    await state.load();
+    const { ReportReadsPausedError } = await import("../clients/smartdelivery.js");
+    const sd = many(3, {
+      getProviderwiseReport: async (id: string) => {
+        if (id === "t1") throw new ReportReadsPausedError(Date.now() + 60_000);
+        return { result: [] };
+      },
+    });
+    const monitor = new ResultMonitor(config, sd, smartlead, fakeSlack(), state);
+    const out = await monitor.run();
+    assert.equal(out.carriedOver, 1);
+    assert.equal(out.errors.filter((e) => e.startsWith("test ")).length, 0);
+  });
+
+  it("an exhausted time budget carries the unstarted tests", async () => {
+    const state = new StateStore("/tmp/d319-monitor-state-c-" + Date.now() + ".json");
+    await state.load();
+    const sd = many(5, {
+      getProviderwiseReport: async () => {
+        await new Promise((r) => setTimeout(r, 15));
+        return { result: [] };
+      },
+    });
+    const monitor = new ResultMonitor(config, sd, smartlead, fakeSlack(), state, 20);
+    const out = await monitor.run();
+    assert.ok((out.carriedOver ?? 0) > 0 && (out.carriedOver ?? 0) < 5);
   });
 });

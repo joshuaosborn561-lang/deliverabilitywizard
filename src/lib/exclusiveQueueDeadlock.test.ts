@@ -48,6 +48,11 @@ describe("D318 exclusive health lane vs the mutation queue", () => {
   it("a normal-lane call that is NOT a queued job still waits behind exclusive health", async () => {
     const limiter = new SmartleadLimiter(2, 0, 50, 0);
     limiter.setExclusiveHealth(true);
+    // D319 — the normal lane has one share slot; keep the last slot for health.
+    let releaseHealth!: () => void;
+    const hold = new Promise<void>((r) => (releaseHealth = r));
+    const healthCall = limiter.schedule(async () => hold, { lane: "health" });
+    await tick(5);
     let ran = false;
     const normal = limiter.schedule(async () => {
       ran = true;
@@ -55,7 +60,8 @@ describe("D318 exclusive health lane vs the mutation queue", () => {
     await tick(30);
     assert.equal(ran, false);
     assert.equal(limiter.snapshot().parkedBehindHealth, 1);
-    limiter.setExclusiveHealth(false);
+    releaseHealth();
+    await healthCall;
     await normal;
     assert.equal(ran, true);
   });

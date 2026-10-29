@@ -303,6 +303,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D315 | Live | A4 bloat: (1) `enrichCampaignIds` remembers each test's campaign (immutable) instead of one `GET spam-test/{id}` per test in five services every pass — those were 3,088 of 4,886 logged 429s on 10/28–29 (628 tests); (2) the unfiltered `listTests` is shared for 30 s across callers and dropped on any write; (3) the D260 "treating as generic" warning logs once per host/client per process (~800 identical lines per 12 h). No stage removed, no behavior change. |
 | D317 | Live | Health-sweep budget: (1) a cold test→campaign cache (after a deploy) can no longer storm SmartDelivery — 3 failed lookups in a row open a 2-minute breaker, each lookup retries once not four times, and every `enrichCampaignIds` caller gets a 90 s default budget; (2) `campaign-health` and `client-rest` stage timeout 10m → 15m as a safety net, with a 20m hard cap on any stage; (3) campaign-health logs its top-up / fan-out / copy-canary seconds and `/health` publishes each stage's `lastDurationMs`. Builds on D315. No stage removed, no cadence change, no campaign, mailbox, setting or WRITE_ENABLED change. |
 | D318 | Live | Exclusive health lane vs the serial mutation queue: a normal-lane job at the head of the Smartlead mutation queue parked behind the exclusive health lane while the health pass (reconnect, mailbox-gap, campaign-health writes) waited on that same queue — a deadlock released only by the 6-minute job timeout, three jobs deep (limiter idle, queue depth 3, oldest wait 300s+). Queued jobs now ride the health lane while it is exclusive (one job at a time, so at most one slot); direct normal-lane calls still wait. `/health` limiter adds `parkedBehindHealth` / `healthWaiting`. No cadence, stage, campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
+| D319 | Live | Report-read budget + normal-lane share: (1) SmartDelivery `spam-test/report/*` reads (providerwise, domain-blacklist, blacklist, sender-account-wise) retry once, not four times, and three failed reads in a row (429 / 5xx / timeout) pause report reads for 2 minutes — callers fail fast; a missing test (404) does not count. (2) `monitor-results` works in a 6-minute budget, rotates its test walk from where the last pass stopped (unfinished tests carry over; paused reads are never recorded as "no hits"), and runs a second worker only while the limiter has headroom (no pause, no 429 streak, under 60% of 150/min). (3) While health is exclusive the normal lane keeps one share slot (never the last free one) so the 6-hour monitor chain (lead-runout, canary-adopt, isolation-rig …) can finish; idle slots are handed to waiters when the exclusive stretch ends. No stage removed, no cadence change, no campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 
 ---
 
@@ -11306,3 +11307,30 @@ are still held back as D270 says. `/health` `smartleadLimiter` reports
 
 **Guards.** `src/lib/exclusiveQueueDeadlock.test.ts` (D318),
 `src/guards/canon.test.ts` D318.
+
+## D319 — Report reads on a budget; the normal lane is not starved
+
+**Decision (Josh, 2026-10-29):** spam, placement and health passes complete on
+a guaranteed schedule. After D318 the health pass ran in 27 min instead of 57,
+but `monitor-results` still timed out at 10m (second pass), `isolation-branch`
+timed out once, and `lead-runout`, `canary-adopt` and `isolation-rig` stayed
+overdue since about 2am CT.
+
+**Evidence.** The prod log for those stages is a wall of `HTTP 429 POST
+spam-test/report/N/providerwise` / `GET …/domain-blacklist` / `…/blacklist`
+(five 429s per read). A read retried four times held a limiter slot ~17 s and
+the monitor walks ~100 tests × 3 reads serially, so ~300 reads could never fit
+in 10 minutes. The three overdue stages are in the 6-hour monitor chain and
+call Smartlead directly on the normal lane; the health pass holds the exclusive
+lane and passes now run back to back, so those calls were parked
+(`parkedBehindHealth` 1–2 during health) until a gap that never came.
+
+**Rule.** Report reads retry once; three failures in a row open a 2-minute
+breaker. `monitor-results` stops on the breaker or at 6 minutes and carries the
+rest (cursor in memory, restart = from the top); a second worker runs only with
+limiter headroom. isolation-branch gets the same cheaper reads and keeps its
+own 7-minute budget and leftover carry-over (D262/D267). While health is
+exclusive, normal-lane callers may hold one slot (never the last free one).
+
+**Guards.** `src/lib/d319Budget.test.ts`, `src/services/resultMonitor.test.ts`
+(D319), `src/guards/canon.test.ts` D319.

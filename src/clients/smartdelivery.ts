@@ -119,8 +119,38 @@ export const ENRICH_LOOKUP_RETRIES = 1;
 /** D317 — a caller that passes no deadline still gets a bounded pass. */
 export const ENRICH_DEFAULT_BUDGET_MS = 90 * 1000;
 
+/**
+ * D319 — SmartDelivery report reads (`spam-test/report/*`) are on a budget.
+ * They are the slow tail of monitor-results and isolation-branch: one 429'd
+ * read retried four times held a limiter slot ~17 s, and a 100-test pass made
+ * ~300 of them, so both stages hit their 10-minute timeout. Now: one retry,
+ * and after three failed reads in a row (429 / 5xx / timeout) reads pause for
+ * two minutes — callers fail fast and carry the rest to the next pass.
+ */
+export const REPORT_READ_RETRIES = 1;
+export const REPORT_BREAKER_FAILURES = 3;
+export const REPORT_BREAKER_COOLDOWN_MS = 2 * 60 * 1000;
+/** D319 — bounded parallel report reads only while the limiter has headroom. */
+export const REPORT_PARALLEL_MAX = 2;
+export const REPORT_PARALLEL_WINDOW_SHARE = 0.6;
+
+export class ReportReadsPausedError extends Error {
+  constructor(untilMs: number) {
+    super(
+      `SmartDelivery report reads paused by the 429 breaker for ${Math.max(0, Math.ceil((untilMs - Date.now()) / 1000))}s (D319)`,
+    );
+    this.name = "ReportReadsPausedError";
+  }
+}
+
+export function isReportReadsPaused(error: unknown): boolean {
+  return error instanceof ReportReadsPausedError;
+}
+
 export class SmartDeliveryClient {
   private readonly limiter?: SmartleadLimiter;
+  private reportFailStreak = 0;
+  private reportBreakerUntil = 0;
   /**
    * A4/D315 — test id → campaign id. `enrichCampaignIds` ran one
    * `GET spam-test/{id}` per test in each of five services every pass
@@ -410,11 +440,65 @@ export class SmartDeliveryClient {
     return [...new Set(ids)];
   }
 
+  /** D319 — true while the report-read 429 breaker is open. */
+  reportReadsPaused(): boolean {
+    return Date.now() < this.reportBreakerUntil;
+  }
+
+  /**
+   * D319 — how many report reads may run side by side right now: 2 only while
+   * the shared limiter is not paused, has no 429 streak, is under 60% of its
+   * per-minute budget and the breaker is closed; otherwise 1.
+   */
+  reportParallelism(): number {
+    if (this.reportReadsPaused()) return 1;
+    const snap = this.limiter?.snapshot();
+    if (!snap) return 1;
+    if (snap.pausedForMs > 0 || snap.rateLimitStreak > 0) return 1;
+    if (snap.maxPerMin > 0 && snap.requestsInWindow >= snap.maxPerMin * REPORT_PARALLEL_WINDOW_SHARE) {
+      return 1;
+    }
+    if (snap.exclusiveHealth && snap.healthWaiting > 0) return 1;
+    return REPORT_PARALLEL_MAX;
+  }
+
+  private async reportRead<T>(
+    path: string,
+    options: RequestOptions = {},
+  ): Promise<T> {
+    if (this.reportReadsPaused()) {
+      throw new ReportReadsPausedError(this.reportBreakerUntil);
+    }
+    const retries = Math.min(options.retries ?? REPORT_READ_RETRIES, REPORT_READ_RETRIES);
+    try {
+      const out = await this.request<T>(path, { ...options, retries });
+      this.reportFailStreak = 0;
+      return out;
+    } catch (error) {
+      // A purged / stopped test (4xx other than 429) says nothing about load.
+      const status = error instanceof ApiError ? error.status : undefined;
+      const loadFailure = status === undefined || status === 429 || status >= 500;
+      if (loadFailure) {
+        this.reportFailStreak += 1;
+        if (this.reportFailStreak >= REPORT_BREAKER_FAILURES) {
+          this.reportBreakerUntil = Date.now() + REPORT_BREAKER_COOLDOWN_MS;
+          this.reportFailStreak = 0;
+          console.warn(
+            `[smartdelivery] D319 report reads failing (${REPORT_BREAKER_FAILURES} in a row) — pausing report reads ${REPORT_BREAKER_COOLDOWN_MS / 1000}s; unfinished tests carry to the next pass`,
+          );
+        }
+      } else {
+        this.reportFailStreak = 0;
+      }
+      throw error;
+    }
+  }
+
   getProviderwiseReport(
     spamTestId: string | number,
     request: Pick<RequestOptions, "retries" | "timeoutMs"> = {},
   ): Promise<{ status?: string; result?: ProviderwiseRow[]; overallTotalCount?: number }> {
-    return this.request(`spam-test/report/${spamTestId}/providerwise`,
+    return this.reportRead(`spam-test/report/${spamTestId}/providerwise`,
       { method: "POST", body: {}, ...request },
     );
   }
@@ -425,17 +509,17 @@ export class SmartDeliveryClient {
   }
 
   getDomainBlacklist(spamTestId: string | number): Promise<BlacklistRow[] | Record<string, unknown>> {
-    return this.request(`spam-test/report/${spamTestId}/domain-blacklist`,
+    return this.reportRead(`spam-test/report/${spamTestId}/domain-blacklist`,
     );
   }
 
   getIpBlacklist(spamTestId: string | number): Promise<BlacklistRow[] | Record<string, unknown>> {
-    return this.request(`spam-test/report/${spamTestId}/blacklist`,
+    return this.reportRead(`spam-test/report/${spamTestId}/blacklist`,
     );
   }
 
   getSenderAccountReport(spamTestId: string | number): Promise<unknown> {
-    return this.request(`spam-test/report/${spamTestId}/sender-account-wise`,
+    return this.reportRead(`spam-test/report/${spamTestId}/sender-account-wise`,
     );
   }
 

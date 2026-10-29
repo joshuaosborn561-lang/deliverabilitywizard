@@ -18971,3 +18971,20 @@ describe("owner intent — D318 exclusive health lane vs mutation queue", () => 
     assert.match(decisions, /^\| D318 \|/m, "status index has no D318 row (D127)");
   });
 });
+
+describe("owner intent — D319 report-read budget", () => {
+  it("D319: report reads retry once behind a breaker; monitor carries over; normal lane keeps a share; ledger says so", async () => {
+    const { readFileSync } = await import("node:fs");
+    const sd = readFileSync("src/clients/smartdelivery.ts", "utf8");
+    const mon = readFileSync("src/services/resultMonitor.ts", "utf8");
+    const lim = readFileSync("src/lib/smartleadLimiter.ts", "utf8");
+    const decisions = readFileSync("DECISIONS.md", "utf8");
+    assert.match(sd, /REPORT_READ_RETRIES = 1/, "report-read retry cap is gone (D319)");
+    assert.match(sd, /REPORT_BREAKER_FAILURES/, "report-read breaker is gone (D319)");
+    assert.match(mon, /MONITOR_BUDGET_MS/, "monitor-results budget is gone (D319)");
+    assert.match(mon, /carryCursor/, "monitor-results carry-over is gone (D319)");
+    assert.match(lim, /SMARTLEAD_NORMAL_SHARE_SLOTS/, "normal-lane share slot is gone (D319)");
+    assert.match(decisions, /## D319 — /, "DECISIONS.md has no D319 entry");
+    assert.match(decisions, /^\| D319 \|/m, "status index has no D319 row (D127)");
+  });
+});

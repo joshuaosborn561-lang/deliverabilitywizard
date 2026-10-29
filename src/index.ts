@@ -1,3 +1,4 @@
+import { ReplyRateWatchService } from "./services/replyRateWatch.js";
 import { CanonConvergeService } from "./services/canonConverge.js";
 import { onWeekCohort as onWeekCohortD303 } from "./lib/restCohort.js";
 import express from "express";
@@ -650,6 +651,15 @@ async function main(): Promise<void> {
   // D303 — LOCKED rest-then-burn / ESP rebalance / send-window converge.
   const canonConverge = new CanonConvergeService({ smartlead, state, slack, config });
   if (config.enableMailboxRest) isolationBranch.setRestRule(canonConverge);
+  // D311 — LOCKED reply-rate-drop trigger: alert Josh, then one placement
+  // test on that domain. Alert-only; read-only Smartlead surface.
+  const replyRateWatch = new ReplyRateWatchService({
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+    config,
+  });
   const podControls = new PodControlService(
     config,
     smartlead,
@@ -1995,7 +2005,7 @@ async function main(): Promise<void> {
     });
   }
 
-  // D303 — rests due back after 14 days; send windows to Mon–Thu 8–7 ET.
+  // D303 — rests due back after 28 days (D310); send windows to Mon–Thu 8–7 ET.
   scheduleJob("canon-converge", config.cronCanonConverge, () => {
     return (async () => {
       if (config.enableMailboxRest) {
@@ -2015,6 +2025,25 @@ async function main(): Promise<void> {
       feedBugRemediator("canon-converge-cron", error);
     });
   });
+
+  // D311 — reply-rate-drop trigger (alert Josh, then a placement test on that domain).
+  if (config.enableReplyRateDrop) {
+    scheduleJob("reply-rate-drop", config.cronReplyRateDrop, () => {
+      return (async () => {
+        const inventory = await inventoryBook.get();
+        const r = await replyRateWatch.run({
+          campaigns: inventory.campaigns,
+          accounts: inventory.accounts,
+        });
+        console.log(
+          `[d311] reply-rate-drop flagged=${r.flagged.length} alerted=${r.alerted.length} tested=${r.tested.length} skipped=${r.skipped.length} errors=${r.errors.length}`,
+        );
+      })().catch((error) => {
+        console.error("[d311] Unhandled cron error", error);
+        feedBugRemediator("reply-rate-drop-cron", error);
+      });
+    });
+  }
 
   // D205 — always schedule so disabled / after-hours ticks still
   // refresh lastOkAt. No boot kick (D122).

@@ -24,6 +24,10 @@ from it. Derive behaviour from this file; use the ledger only to understand
 
 **D312.** Critical sweep: placement results, test-reconcile and isolation run every 30 minutes on their own lock and the top-priority Smartlead lane; paged overdue at 75 minutes.
 
+**D311.** Reply-rate-drop trigger (LOCKED): a sending domain 40%+ below its client's 30-day reply baseline over 7 days (150+ sends) alerts Josh, then runs one placement test on that domain; never pulls or pauses.
+
+**D310.** Mailbox rest is 28 days (LOCKED, amends D303).
+
 **D309.** Copy-canary is idempotent: one living "Canary copy" test per campaign (single-flight, 3h create cooldown, stored test kept at the 5,000-test list cap); extras are stopped, never deleted.
 
 **D308.** Drain mode: `POST /drain?action=on|off|status` skips new cron ticks, post-pass retries and manual runs while in-flight work finishes; `/health` reports `safeToDeploy` (drain on and nothing running). Auto-expires (30m, max 120m). Deploy only when `safeToDeploy` is true.
@@ -42,7 +46,8 @@ Changes to this section require Josh's explicit approval. PRs that alter it must
 - Per-variant tests (D303): every A/B variant of every campaign gets its own placement test and its own canary-copy test, never one test per campaign.
 - ESP mix (D303): an on-week POD off the client's InboxKit Microsoft share is auto-rebalanced, not only reported, using only swaps canon already allows: warm mailboxes, the same client, generics from the Generics Ledger; every swap is 1-for-1 so POD-40 never drops.
 - Send windows (D303): every campaign sends Mon–Thu 8am–7pm America/New_York; automation converges any campaign that drifts and keeps its own send gap and daily cap.
-- Mailbox rest (D303): when isolation shows the mailbox, not the copy, is the cause (same-ESP placement under 80%), the mailbox is pulled from its POD and campaigns, keeps warmup on, and rests 14 days; a free warm generic covers its seat, recorded in the Generics Ledger with client, POD and covering_for. After 14 days the mailbox goes back automatically and the generic comes out, the same way as the warm-swap. Every mailbox keeps a rest_count and rest history. It is BURNED if it reads under 80% again after going back on, or if rest_count goes over 3: pulled permanently and a retire/replace request is raised; any replacement spend needs approval. This replaces kill-only (D51/D128) for this case only.
+- Mailbox rest (D303): when isolation shows the mailbox, not the copy, is the cause (same-ESP placement under 80%), the mailbox is pulled from its POD and campaigns, keeps warmup on, and rests 28 days (4 weeks); a free warm generic covers its seat, recorded in the Generics Ledger with client, POD and covering_for, and stays until day 28. After 28 days the mailbox goes back automatically and the generic comes out, the same way as the warm-swap. Every mailbox keeps a rest_count and rest history. It is BURNED if it reads under 80% again after going back on, or if rest_count goes over 3: pulled permanently and a retire/replace request is raised; any replacement spend needs approval. This replaces kill-only (D51/D128) for this case only.
+- Reply-rate drop (D311): a sending domain is flagged when its trailing 7-day reply rate, with at least 150 sends in that window, is 40% or more below its client's baseline, the client's trailing 30-day reply rate across ACTIVE campaigns. Alert only: Josh is alerted, then one placement test runs on that domain only. It never pulls, rests, pauses or isolation-tests anything, and it sits on top of the placement gates, not in place of them.
 
 ## Mission
 
@@ -847,9 +852,10 @@ Caps ramp manually (35 on Oct 12).
 - **Rest-then-burn** (D303, LOCKED): when isolation lands INFRA and a
   mailbox's own same-ESP placement is under 80% (the mailbox, not the
   copy, is the cause), it is pulled from its POD and campaigns with
-  warmup left ON and rests 14 days. A free warm ledger generic covers the
-  seat (`covering_for` = the rested mailbox, ready date = rest end). After
-  14 days the mailbox goes back and the generic is released, warm-swap
+  warmup left ON and rests 28 days (D310; D303 first wrote 14). A free warm
+  ledger generic covers the seat (`covering_for` = the rested mailbox,
+  ready date = rest end, day 28) and stays until then. After 28 days the
+  mailbox goes back and the generic is released, warm-swap
   style. `rest_count` + history per mailbox. Under 80% again after
   returning, or `rest_count` > 3, = BURNED: pulled for good and a
   retire/replace action is opened (spend still needs approval).

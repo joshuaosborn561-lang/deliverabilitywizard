@@ -19063,3 +19063,35 @@ describe("owner intent — D303 LOCKED rest-then-burn / per-variant / converge",
     assert.match(monitor, /getMailboxSummaryPage/);
   });
 });
+
+describe("owner intent — D310 28-day rest and D311 reply-rate drop (LOCKED)", () => {
+  it("D310/D311: rest is 28 days; reply-rate drop is alert + one placement test, never a pull", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const [canon, locked, decisions, rest, watch, drop] = await Promise.all([
+      read("../../CANON.md"),
+      read("../../docs/LOCKED-CANON.md"),
+      read("../../DECISIONS.md"),
+      read("../lib/mailboxRest.ts"),
+      read("../services/replyRateWatch.ts"),
+      read("../lib/replyRateDrop.ts"),
+    ]);
+    assert.match(rest, /MAILBOX_REST_DAYS = 28;/, "mailbox rest must be 28 days (D310)");
+    for (const doc of [canon, locked]) {
+      assert.match(doc, /rests 28 days \(4 weeks\)/, "LOCKED rest text lost 28 days (D310)");
+      assert.match(doc, /Reply-rate drop \(D311\)/, "LOCKED text lost the reply-rate drop (D311)");
+      assert.doesNotMatch(doc, /rests 14 days/, "no 14-day rest text may remain (D310)");
+    }
+    assert.match(drop, /REPLY_DROP_MIN_SENDS = 150/);
+    assert.match(drop, /REPLY_DROP_THRESHOLD = 0\.4/);
+    // Alert-only: the service's Smartlead surface is the read-only metrics call.
+    assert.match(watch, /Pick<SmartleadClient, "getMailboxHealthMetrics">/, "reply-drop must stay read-only on Smartlead (D311)");
+    assert.doesNotMatch(watch, /updateCampaignStatus|removeEmailAccountsFromCampaign|upsertMailboxRest|requestIsolationAction/, "reply-drop must never pull, rest or isolate (D311)");
+    assert.match(canon, /\*\*D310\.\*\*/);
+    assert.match(canon, /\*\*D311\.\*\*/);
+    for (const n of ["D310", "D311"]) {
+      assert.match(decisions, new RegExp(`## ${n} — `), `DECISIONS.md has no ${n} entry`);
+      assert.match(decisions, new RegExp(`^\\| ${n} \\|`, "m"), `status index has no ${n} row (D127)`);
+    }
+  });
+});

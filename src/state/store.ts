@@ -267,6 +267,8 @@ export interface AppState {
   variantCopyCanaryTests?: Record<string, Record<string, string>>;
   /** D303 — mailbox rest-then-burn records (email → record). */
   mailboxRests?: Record<string, MailboxRestRecord>;
+  /** D311 — reply-rate-drop alerts (domain → last alert + placement test). */
+  replyDrops?: Record<string, ReplyDropRecord>;
   /** First time we saw a generic on a live campaign (send clock). */
   genericSendStartedAt: Record<string, string>;
   /** Generic recovery-pool mailboxes (client-agnostic) */
@@ -479,6 +481,17 @@ export interface SpendApprovalRecord {
   status: "pending" | "approved" | "denied" | "consumed";
   decidedAt?: string;
   decidedBy?: string;
+}
+
+/** D311 — one row per domain that tripped the reply-rate-drop trigger. */
+export interface ReplyDropRecord {
+  domain: string;
+  clientId: number;
+  alertedAt: string;
+  dropPercent: number;
+  rate7: number;
+  baselineRate: number;
+  testId?: string;
 }
 
 export interface HeldInboxRecord {
@@ -1161,6 +1174,15 @@ export class StateStore {
 
   listRestingInboxes(): RestingInboxRecord[] {
     return Object.values(this.state.restingInboxes);
+  }
+
+  /** D311 — reply-rate-drop alert ledger. */
+  getReplyDrop(domain: string): ReplyDropRecord | undefined {
+    return this.state.replyDrops?.[domain.trim().toLowerCase()];
+  }
+
+  setReplyDrop(record: ReplyDropRecord): void {
+    (this.state.replyDrops ??= {})[record.domain.trim().toLowerCase()] = record;
   }
 
   /** D303 — mailbox rest-then-burn ledger. */

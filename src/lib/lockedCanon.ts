@@ -27,7 +27,10 @@ export const LOCKED_SEND_WINDOW_RULE =
   "Send windows (D303): every campaign sends Mon–Thu 8am–7pm America/New_York; automation converges any campaign that drifts and keeps its own send gap and daily cap.";
 
 export const LOCKED_MAILBOX_REST_RULE =
-  "Mailbox rest (D303): when isolation shows the mailbox, not the copy, is the cause (same-ESP placement under 80%), the mailbox is pulled from its POD and campaigns, keeps warmup on, and rests 14 days; a free warm generic covers its seat, recorded in the Generics Ledger with client, POD and covering_for. After 14 days the mailbox goes back automatically and the generic comes out, the same way as the warm-swap. Every mailbox keeps a rest_count and rest history. It is BURNED if it reads under 80% again after going back on, or if rest_count goes over 3: pulled permanently and a retire/replace request is raised; any replacement spend needs approval. This replaces kill-only (D51/D128) for this case only.";
+  "Mailbox rest (D303): when isolation shows the mailbox, not the copy, is the cause (same-ESP placement under 80%), the mailbox is pulled from its POD and campaigns, keeps warmup on, and rests 28 days (4 weeks); a free warm generic covers its seat, recorded in the Generics Ledger with client, POD and covering_for, and stays until day 28. After 28 days the mailbox goes back automatically and the generic comes out, the same way as the warm-swap. Every mailbox keeps a rest_count and rest history. It is BURNED if it reads under 80% again after going back on, or if rest_count goes over 3: pulled permanently and a retire/replace request is raised; any replacement spend needs approval. This replaces kill-only (D51/D128) for this case only.";
+
+export const LOCKED_REPLY_RATE_DROP_RULE =
+  "Reply-rate drop (D311): a sending domain is flagged when its trailing 7-day reply rate, with at least 150 sends in that window, is 40% or more below its client's baseline, the client's trailing 30-day reply rate across ACTIVE campaigns. Alert only: Josh is alerted, then one placement test runs on that domain only. It never pulls, rests, pauses or isolation-tests anything, and it sits on top of the placement gates, not in place of them.";
 
 export function extractLockedCanonSection(markdown: string): string {
   const heading = `## ${LOCKED_CANON_HEADING}`;
@@ -51,5 +54,6 @@ export function lockedCanonSectionBody(): string {
     `- ${LOCKED_ESP_REBALANCE_RULE}`,
     `- ${LOCKED_SEND_WINDOW_RULE}`,
     `- ${LOCKED_MAILBOX_REST_RULE}`,
+    `- ${LOCKED_REPLY_RATE_DROP_RULE}`,
   ].join("\n");
 }

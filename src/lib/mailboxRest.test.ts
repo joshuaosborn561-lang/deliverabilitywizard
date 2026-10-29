@@ -25,7 +25,7 @@ describe("D303 mailbox rest-then-burn", () => {
     assert.equal(mailboxIsCause({ verdict: "COPY", sameEspInbox: 10 }), false);
     assert.equal(mailboxIsCause({ verdict: "INFRA", sameEspInbox: 10, scoredSameEsp: false }), false);
   });
-  it("first reading rests 14 days with rest_count 1 and history", () => {
+  it("first reading rests 28 days with rest_count 1 and history", () => {
     const now = new Date("2026-10-26T12:00:00Z");
     const d = decideRest({ ...base, now });
     assert.equal(d.action, "rest");
@@ -33,16 +33,16 @@ describe("D303 mailbox rest-then-burn", () => {
     assert.equal(d.record.restCount, 1);
     assert.equal(d.record.history.length, 1);
     assert.equal(Date.parse(d.record.restUntil!) - now.getTime(), MAILBOX_REST_DAYS * 86400000);
-    assert.match(restAlertText(d), /resting 14 days/);
+    assert.match(restAlertText(d), /resting 28 days/);
   });
-  it("due back after 14 days, then returned", () => {
+  it("due back after 28 days, then returned", () => {
     const d = decideRest({ ...base, now: new Date("2026-10-01T00:00:00Z") });
     assert.equal(d.action, "rest");
     if (d.action !== "rest") return;
-    assert.equal(restsDueBack([d.record], new Date("2026-10-10T00:00:00Z")).length, 0);
-    const due = restsDueBack([d.record], new Date("2026-10-16T00:00:00Z"));
+    assert.equal(restsDueBack([d.record], new Date("2026-10-28T00:00:00Z")).length, 0);
+    const due = restsDueBack([d.record], new Date("2026-10-29T00:00:00Z"));
     assert.equal(due.length, 1);
-    const back = markReturned(d.record, new Date("2026-10-16T00:00:00Z"));
+    const back = markReturned(d.record, new Date("2026-10-29T00:00:00Z"));
     assert.equal(back.status, "returned");
     assert.ok(back.history[0]!.returnedAt);
   });

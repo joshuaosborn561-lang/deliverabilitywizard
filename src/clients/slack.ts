@@ -886,7 +886,7 @@ export class SlackClient {
           ? `\n_${weakSenderCount} inbox${weakSenderCount === 1 ? "" : "es"} on this test landed below ${details.remediationThreshold ?? 80}% in their own mailbox type (Gmail or Outlook). Check the daily client note for bounce/spam._`
           : undefined,
         "",
-        `Isolation will check whether the copy or the mailboxes are the cause. Mailboxes under 80% in their own ESP rest 14 days; nothing is fixed yet. This is the alert, not a domain retire ask.`,
+        `Isolation will check whether the copy or the mailboxes are the cause. Mailboxes under 80% in their own ESP rest 28 days; nothing is fixed yet. This is the alert, not a domain retire ask.`,
       ]
         .filter((x): x is string => Boolean(x))
         .join("\n"),

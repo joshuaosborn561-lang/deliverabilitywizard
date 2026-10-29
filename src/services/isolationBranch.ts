@@ -462,7 +462,7 @@ export class IsolationBranchService {
       }
     }
 
-    // D303 — mailbox (not copy) is the cause: rest it 14 days, generic
+    // D303 — mailbox (not copy) is the cause: rest it 28 days (D310), generic
     // covers its seat; burn on repeat. Replaces kill-only (D51/D128) here.
     if (decided.verdict === "INFRA" && !opts.dryRun && this.restRule) {
       try {

@@ -3,16 +3,16 @@
  *
  * When isolation shows the MAILBOX (not the copy) is the cause — its
  * same-ESP placement reads under 80% — the mailbox is pulled from its POD
- * and campaigns, keeps warmup ON, and rests 14 days. A free warm generic
+ * and campaigns, keeps warmup ON, and rests 28 days (4 weeks, D310; D303 first wrote 14). A free warm generic
  * from the Generics Ledger covers the seat (client, POD, covering_for).
- * After 14 days it goes back automatically and the generic comes out,
+ * After 28 days it goes back automatically and the generic comes out,
  * the same way the warm-swap does. A mailbox that reads under 80% again
  * after going back on, or whose rest_count passes 3, is BURNED: pulled
  * permanently with a retire/replace request. Replacement spend needs
  * approval.
  */
 
-export const MAILBOX_REST_DAYS = 14;
+export const MAILBOX_REST_DAYS = 28;
 export const MAILBOX_REST_SAME_ESP_FLOOR = 80;
 export const MAILBOX_REST_MAX_COUNT = 3;
 
@@ -144,7 +144,7 @@ export function decideRest(input: {
   };
 }
 
-/** Rests whose 14 days are up. */
+/** Rests whose 28 days are up. */
 export function restsDueBack(
   records: MailboxRestRecord[],
   now: Date = new Date(),
@@ -195,5 +195,5 @@ export function restAlertText(
   if (decision.action === "burn") {
     return `:fire: *${r.email} is BURNED* (${r.burnReason}). Pulled for good. A retire/replace request is raised; any replacement spend needs approval.`;
   }
-  return `:zzz: *${r.email} is resting 14 days* (rest ${r.restCount} of ${MAILBOX_REST_MAX_COUNT}). Same-ESP placement read under ${MAILBOX_REST_SAME_ESP_FLOOR}%, and isolation shows the mailbox, not the copy, is the cause. Warmup stays on; a warm generic covers its seat. It goes back on ${r.restUntil?.slice(0, 10)}.`;
+  return `:zzz: *${r.email} is resting ${MAILBOX_REST_DAYS} days* (rest ${r.restCount} of ${MAILBOX_REST_MAX_COUNT}). Same-ESP placement read under ${MAILBOX_REST_SAME_ESP_FLOOR}%, and isolation shows the mailbox, not the copy, is the cause. Warmup stays on; a warm generic covers its seat. It goes back on ${r.restUntil?.slice(0, 10)}.`;
 }

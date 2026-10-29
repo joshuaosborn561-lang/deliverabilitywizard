@@ -187,7 +187,7 @@ export class CanonConvergeService {
     return withCoveringGeneric(record, generic);
   }
 
-  /** After 14 days: mailbox back on, covering generic out (warm-swap style). */
+  /** After 28 days (D310): mailbox back on, covering generic out (warm-swap style). */
   async returnDueRests(): Promise<string[]> {
     const due = restsDueBack(this.deps.state.listMailboxRests(), this.now());
     const back: string[] = [];

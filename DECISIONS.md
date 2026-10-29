@@ -294,12 +294,14 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D297 | Live | Old-wizard fix: health-pass scan-backfill honors the stage AbortSignal (and Smartlead fetches stop, no retry-as-timeout), runs after isolation-buy-resume, skips when less than ~20 minutes remain in the 45-minute health lock, and HTTP 429s log the Smartlead endpoint. LOCKED section unchanged. |
 | D299 | Live — stringify batching amended by D300; 60-minute freeze quarantine stays | Freeze/restart loop 2026-10-23: state/hot stringify batches compact values so one JSON.stringify cannot pin the loop for seconds; a health-loop stage that freeze-exits 3 times is quarantined for 60 minutes so leftover resume does not restart there forever. Thresholds are not widened. LOCKED section unchanged. |
 | D300 | Live | Freeze/restart loop after D299 (2026-10-23): objects/arrays are never native-stringified; persist and indexAccountsByCampaign yield to timers; campaign-health snapshots use a campaign Map and yield. lastOk stamps unchanged. Thresholds not widened. LOCKED section unchanged. |
-| D303 | Live | LOCKED canon change (Josh 2026-10-25): per-variant placement + canary-copy tests; mailboxes-summary paged to every mailbox; on-week POD ESP mix auto-rebalanced (1-for-1, warm, same client, ledger generics); every ACTIVE client campaign converged to Mon–Thu 8–7 ET; mailbox rest-then-burn (14-day rest, generic covers, rest_count, burn on repeat or >3) replaces kill-only for mailbox-cause INFRA. POD-40, Insight no-generics, no cross-client generics, 21-day warmup unchanged. |
+| D303 | Live | LOCKED canon change (Josh 2026-10-25): per-variant placement + canary-copy tests; mailboxes-summary paged to every mailbox; on-week POD ESP mix auto-rebalanced (1-for-1, warm, same client, ledger generics); every ACTIVE client campaign converged to Mon–Thu 8–7 ET; mailbox rest-then-burn (14-day rest, generic covers, rest_count, burn on repeat or >3) replaces kill-only for mailbox-cause INFRA. POD-40, Insight no-generics, no cross-client generics, 21-day warmup unchanged. Rest length amended to 28 days by D310. |
 | D301 | Live | POD ESP mix matches each client's InboxKit Google/Microsoft split (±max(2, 10% of the POD) of round(POD × Microsoft share)); 1/3 floor is fallback only when InboxKit has no row. SMTP smtp.gmail.com and type:google are Gmail; type:m365 / type:azure are Microsoft. min-40 / campaign top-up pick generics toward that split. Finding text shows the client's target. Parlay ~54%, EMCOR ~60%, Peterson ~35%. LOCKED section unchanged. |
 | D304 | Live — LOCKED | Every Smartlead campaign: enable_ai_esp_matching ON and min_time_btw_emails 10. Campaign-check (hourly/all) flags and fixes drift on every non-STOPPED campaign: ESP via POST /settings, gap via POST /schedule echoing the current window. Never status. Supersedes D242's 3m caller follow-up gap (now 10). |
 | D307 | Live | Tests that persist age-pruned ledgers (placement scores, copy suspects) stamp fixture times relative to now so D257's 14-day placement-score retention cannot drop a living row. Production prune windows and isolation sidecar persist are unchanged. LOCKED section unchanged. |
 | D308 | Live | Drain mode (A0): `POST /drain?action=on` skips every NEW cron tick, post-pass retry and manual `/run` while in-flight work finishes; `/health` reports `drain`, `activeJobs`, `idleNow` and `safeToDeploy` (drain on AND nothing running). Auto-expires (30m default, 120m max). Changes no campaigns, mailboxes, settings or WRITE_ENABLED. LOCKED section unchanged. |
 | D309 | Live | Copy-canary idempotent: one live "Canary copy" SmartDelivery test per campaign. Single-flight per campaign, a 3h create cooldown (also after a failed, maybe-landed create), stored test kept when the list hits the 5,000-test page cap, and each attach pass STOPS (never deletes) extra living canaries for a campaign, keeping the one with readings. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
+| D310 | Live — LOCKED (needs Josh's merge) | Amends D303: a pulled mailbox rests 28 days (4 weeks), not 14. The rest timer, the ready date of the covering generic (`covering_for` warm-ready = day 28) and the date it goes back all move to 28 days; the generic stays until day 28. The 14-day warmup for new seats is unchanged. |
+| D311 | Live — LOCKED (needs Josh's merge) | Reply-rate-drop trigger: a sending domain whose trailing 7-day reply rate (150+ sends) is 40%+ below its client's 30-day baseline across ACTIVE campaigns is flagged. Alert only: alert Josh, then one placement test on that domain; never pulls, rests, pauses or isolation-tests. Sits on top of the placement gates. |
 | D312 | Live | A1 critical sweep: placement results (`monitor-results`), `test-reconcile` and `isolation-branch` run every 30 min on their own lock and a top-priority Smartlead lane; bounce-autostop's 10-min cron also runs on that lane (never blocked by the exclusive health lane, served first, and critical writes jump the mutation queue). Amends D270 (exclusive health lane), D257 (limiter) and D247 (locks). Those stages are overdue-paged at 75 min, not 6h45m. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 | D314 | Live (LOCKED PR — Josh merges) | Insight is exempt from the `esp_mix` Canon finding (Josh 10/29: "yes exempt insight it is mostly msft"). Campaigns on Insight (client 582890 / Insight campaign ids) no longer raise `esp_mix`, so they stop counting against `/health` canonFindings and the Canon score. ESP-mix still applies to every other client; seat assignment, min-40 and the Azure rules are unchanged. |
 | D315 | Live | A4 bloat: (1) `enrichCampaignIds` remembers each test's campaign (immutable) instead of one `GET spam-test/{id}` per test in five services every pass — those were 3,088 of 4,886 logged 429s on 10/28–29 (628 tests); (2) the unfiltered `listTests` is shared for 30 s across callers and dropped on any write; (3) the D260 "treating as generic" warning logs once per host/client per process (~800 identical lines per 12 h). No stage removed, no behavior change. |
@@ -11241,6 +11243,63 @@ LOCKED section. `src/lib/sequenceVariants.test.ts`,
 `src/lib/mailboxRest.test.ts`, `src/lib/espRebalance.test.ts`,
 `src/lib/sendWindow.test.ts`, `src/services/canonConverge.test.ts`,
 `src/services/resultMonitor.mailboxSummary.test.ts`.
+
+## D310 — LOCKED: mailbox rest is 28 days (4 weeks)
+
+**Decision (Josh, 2026-10-29 6:25am CT, relayed by the parent agent):**
+change the rest period for pulled mailboxes from 14 days to 28 days
+(4 weeks). Generics standing in for a resting mailbox stay until day 28.
+The 14-day warmup for new seats is unchanged.
+
+**Rule.** Amends D303's mailbox rest-then-burn. A mailbox pulled because
+isolation shows the mailbox is the cause rests 28 days (`MAILBOX_REST_DAYS`
+= 28). The Generics Ledger `covering_for` ready date for the covering
+generic is the rest end (day 28), so the generic stays until then; after
+28 days the mailbox goes back automatically and the generic comes out.
+`rest_count`, the >3 burn, the under-80% burn and the alert text follow.
+
+**Scope.** Only the D303 mailbox rest. The D43 client A/B fortnight and the
+generic send-clock are separate rules and are unchanged. LOCKED text for
+the rest bullet is updated in `CANON.md`, `docs/LOCKED-CANON.md` and
+`src/lib/lockedCanon.ts`, so this never auto-merges (D285): **Josh merges.**
+
+**Guards.** `src/lib/mailboxRest.test.ts` (28-day timer, due-back date),
+`src/services/canonConverge.test.ts` (generic stays through day 27, goes
+back at day 28), `src/guards/canon.test.ts` D310, `lockedCanon.test.ts`.
+
+
+## D311 — LOCKED: reply-rate-drop trigger (alert, then a placement test on that domain)
+
+**Decision (Josh, 2026-10-29 6:25am CT and 6:26am CT, relayed by the
+parent agent):** a 40% reply-rate-drop rule. Josh: "for now i want the 40%
+rule to alert me, then i want it to run a test for that specific domain".
+
+**Rule.** Flag a sending domain when its trailing 7-day reply rate, with
+at least 150 sends in that window, is 40% or more below the client's
+baseline: the client's trailing 30-day reply rate across ACTIVE
+campaigns (sent and replied over the client's mailboxes on ACTIVE
+campaigns, from `analytics/mailbox/name-wise-health-metrics`). When it
+fires: (1) alert Josh in Slack (`ops_alert`), then (2) run one placement
+test on that domain's mailboxes only. No isolation test, no pull, no
+rest, no pause, no status change: the service's Smartlead surface is the
+read-only metrics call. A domain is not re-alerted for 7 days. It sits on
+top of the placement gates and does not replace them.
+
+**Mechanics.** `src/lib/replyRateDrop.ts` (threshold, sample floor),
+`src/services/replyRateWatch.ts`, cron `CRON_REPLY_RATE_DROP` (default
+`27 1,7,13,19 * * *`), kill switch `ENABLE_REPLY_RATE_DROP` (default on).
+The placement test is a one-off manual test named `Reply drop: <domain>`
+with the control sequence from the domain's mailboxes. State: the
+`replyDrops` ledger (domain, alert time, rate, baseline, test id).
+
+**Locked.** The rule is a bullet in the LOCKED section (`CANON.md`,
+`docs/LOCKED-CANON.md`, `src/lib/lockedCanon.ts`), so it never
+auto-merges (D285): **Josh merges.**
+
+**Guards.** `src/lib/replyRateDrop.test.ts` (40% threshold, 150-send
+minimum), `src/services/replyRateWatch.test.ts` (alert first then one
+domain-only test, alert-only, no re-alert, dry run),
+`src/guards/canon.test.ts` D311, `lockedCanon.test.ts`.
 
 ## D312 — Critical sweep: placement, test-reconcile and isolation on a top-priority lane
 

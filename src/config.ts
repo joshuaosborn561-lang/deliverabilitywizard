@@ -179,6 +179,9 @@ const ConfigSchema = z.object({
   enableEspRebalance: boolFromEnv(true),
   enableSendWindowConverge: boolFromEnv(true),
   cronCanonConverge: z.string().default("41 * * * *"),
+  /** D311 — LOCKED reply-rate-drop trigger: alert Josh, run one placement test on the domain. */
+  enableReplyRateDrop: boolFromEnv(true),
+  cronReplyRateDrop: z.string().default("27 1,7,13,19 * * *"),
   /**
    * D221 — there is no separate generic send-clock. POD rotation is
    * the only generic rotation. Default OFF. The leftover days knob
@@ -652,6 +655,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableEspRebalance: env.ENABLE_ESP_REBALANCE,
     enableSendWindowConverge: env.ENABLE_SEND_WINDOW_CONVERGE,
     cronCanonConverge: env.CRON_CANON_CONVERGE ?? "41 * * * *",
+    enableReplyRateDrop: env.ENABLE_REPLY_RATE_DROP,
+    cronReplyRateDrop: env.CRON_REPLY_RATE_DROP ?? "27 1,7,13,19 * * *",
     enableGenericSendRest: env.ENABLE_GENERIC_SEND_REST,
     genericSendRestDays: env.GENERIC_SEND_REST_DAYS ?? "14",
     enablePodControls: env.ENABLE_POD_CONTROLS,

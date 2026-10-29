@@ -51,6 +51,40 @@ describe("LeadRunoutService", () => {
     assert.equal(sent.length, 1);
   });
 
+  it("D320: stops at its time budget, carries the rest, resumes there, reads retry once", async () => {
+    const state = new StateStore(
+      `/tmp/lead-runout-d320-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const seen: number[] = [];
+    const retriesSeen = new Set<number | undefined>();
+    const smartlead = {
+      listCampaigns: async () =>
+        Array.from({ length: 6 }, (_, i) => ({ id: i + 1, name: `C${i + 1}`, status: "ACTIVE" })),
+      getCampaignStatistics: async (id: number, _q: unknown, opts?: { retries?: number }) => {
+        seen.push(id);
+        retriesSeen.add(opts?.retries);
+        await new Promise((r) => setTimeout(r, 40));
+        return { total_leads: 100, contacted: 1, replied: 0 };
+      },
+      getCampaignAnalyticsByDate: async () => ({ sent_count: 0 }),
+      getCampaign: async () => ({}),
+    } as unknown as SmartleadClient;
+    const service = new LeadRunoutService(
+      loadConfig({ ENABLE_LEAD_RUNOUT: "true" }),
+      smartlead,
+      { notifyLeadRunout: async () => undefined } as unknown as SlackClient,
+      state,
+      250,
+    );
+    const first = await service.run();
+    assert.ok((first.carriedOver ?? 0) > 0 && (first.carriedOver ?? 0) < 6, "budget did not carry over");
+    assert.deepEqual([...retriesSeen], [1]);
+    seen.length = 0;
+    await service.run();
+    assert.ok(seen[0]! > 1, "second pass restarted at the top instead of resuming");
+  });
+
   it("source file never imports leads", () => {
     const source = readFileSync(new URL("./leadRunout.ts", import.meta.url), "utf8");
     assert.doesNotMatch(source, /addLeads|importLeads|uploadLeads|createLead/i);

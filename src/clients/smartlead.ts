@@ -259,9 +259,13 @@ export class SmartleadClient {
     campaignId: number,
     startDate: string,
     endDate: string,
+    opts: { retries?: number } = {},
   ): Promise<SmartleadCampaignAnalytics> {
     return this.request<SmartleadCampaignAnalytics>(`campaigns/${campaignId}/analytics-by-date`,
-      { query: { start_date: startDate, end_date: endDate } },
+      {
+        query: { start_date: startDate, end_date: endDate },
+        ...(opts.retries !== undefined ? { retries: opts.retries } : {}),
+      },
     );
   }
 
@@ -507,8 +511,10 @@ export class SmartleadClient {
   getCampaignStatistics(
     campaignId: number,
     query: { limit?: number; offset?: number; email_status?: string } = {},
+    opts: { retries?: number } = {},
   ): Promise<unknown> {
     return this.request(`campaigns/${campaignId}/statistics`, {
+      ...(opts.retries !== undefined ? { retries: opts.retries } : {}),
       query: {
         limit: query.limit,
         offset: query.offset,

@@ -48,6 +48,8 @@ export interface StageHealthRow {
   consecutiveFailures: number;
   lastError: string | null;
   lastSkipReason?: string | null;
+  /** D317 — how long the last OK run took. */
+  lastDurationMs?: number | null;
 }
 
 /** Shape `/health` publishes for one stage (D84 + overdue bit, D166). */
@@ -57,6 +59,7 @@ export interface StageHealthView {
   lastError: string | null;
   overdue: boolean;
   lastSkipReason: string | null;
+  lastDurationMs: number | null;
 }
 
 /**
@@ -110,6 +113,8 @@ export function stageHealthView(
       lastError: row.consecutiveFailures > 0 ? row.lastError : null,
       overdue: overdueNames.has(name),
       lastSkipReason: row.lastSkipReason ?? null,
+      lastDurationMs:
+        typeof row.lastDurationMs === "number" ? row.lastDurationMs : null,
     };
   }
   return { stages, overdueStages: overdue };

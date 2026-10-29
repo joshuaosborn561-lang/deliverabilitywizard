@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { SmartDeliveryClient } from "./smartdelivery.js";
+import {
+  ENRICH_BREAKER_FAILURES,
+  SmartDeliveryClient,
+} from "./smartdelivery.js";
 import type { SpamTestSummary } from "./smartdelivery.js";
 
 function rows(n: number): SpamTestSummary[] {
@@ -109,5 +112,48 @@ describe("A4/D315 enrichCampaignIds cache", () => {
     inv("DELETE", "spam-test/5/stop");
     await c.listTests({});
     assert.equal(pages, 3);
+  });
+});
+
+describe("D317 cold-cache lookup breaker", () => {
+  it(`stops asking after ${ENRICH_BREAKER_FAILURES} failures in a row, serves rows un-enriched, keeps cached ids`, async () => {
+    let fail = true;
+    const { c, calls } = client(async (id) => {
+      if (fail) throw new Error("HTTP 429");
+      return { campaign_id: Number(id) };
+    });
+    const out = await c.enrichCampaignIds(rows(20));
+    assert.equal(out.length, 20, "every row still comes back");
+    assert.equal(calls.length, ENRICH_BREAKER_FAILURES, "breaker opened, no storm");
+    assert.equal(c.enrichStats.shortCircuited, 20 - ENRICH_BREAKER_FAILURES);
+    // Breaker is open: a second pass makes no network calls at all.
+    await c.enrichCampaignIds(rows(20));
+    assert.equal(calls.length, ENRICH_BREAKER_FAILURES);
+    // The cache survives: a success after the cooldown fills it.
+    fail = false;
+    (c as unknown as { enrichBreakerUntil: number }).enrichBreakerUntil = 0;
+    const ok = await c.enrichCampaignIds(rows(3));
+    assert.deepEqual(ok.map((t) => t.campaign_id), [1000, 1001, 1002]);
+  });
+
+  it("one success resets the failure streak", async () => {
+    let n = 0;
+    const { c, calls } = client(async () => {
+      n += 1;
+      if (n % 3 !== 0) throw new Error("HTTP 429");
+      return { campaign_id: 5 };
+    });
+    await c.enrichCampaignIds(rows(9));
+    assert.equal(calls.length, 9, "2 failures then a success never trips a 3-in-a-row breaker");
+  });
+
+  it("a caller with no deadline still gets a bounded pass", async () => {
+    const { c, calls } = client(async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      return { campaign_id: 1 };
+    });
+    const out = await c.enrichCampaignIds(rows(4), { deadlineMs: Date.now() - 1 });
+    assert.equal(calls.length, 0);
+    assert.equal(out.length, 4);
   });
 });

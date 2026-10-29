@@ -133,14 +133,26 @@ export class CampaignHealthService {
       return result;
     }
 
+    const timings: Record<string, number> = {};
+    const timed = async <T>(name: string, work: () => Promise<T>): Promise<T> => {
+      const began = Date.now();
+      try {
+        return await work();
+      } finally {
+        timings[name] = Date.now() - began;
+      }
+    };
+
     result.snapshots = await this.buildSnapshots(campaigns, accounts, clients);
 
     try {
-      result.topUp = await this.topUp.run({
-        dryRun,
-        inventory: inventory ?? undefined,
-        signal: opts.signal,
-      });
+      result.topUp = await timed("top-up", () =>
+        this.topUp.run({
+          dryRun,
+          inventory: inventory ?? undefined,
+          signal: opts.signal,
+        }),
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(`top-up: ${message}`);
@@ -149,10 +161,12 @@ export class CampaignHealthService {
     // D26: every mailbox for a client onto every ACTIVE campaign for that client.
     if (this.fanOut) {
       try {
-        const fan = await this.fanOut.run({
-          dryRun,
-          inventory: inventory ?? undefined,
-        });
+        const fan = await timed("fan-out", () =>
+          this.fanOut!.run({
+            dryRun,
+            inventory: inventory ?? undefined,
+          }),
+        );
         result.fanOutAttached = fan.attached.length;
         result.errors.push(...fan.errors.slice(0, 20));
       } catch (error) {
@@ -164,10 +178,12 @@ export class CampaignHealthService {
     // D55: dedicated canaries send campaign copy in placement tests, off campaigns.
     if (this.copyCanary) {
       try {
-        const canary: CopyCanaryAttachResult = await this.copyCanary.attach({
-          dryRun,
-          inventory: inventory ?? undefined,
-        });
+        const canary: CopyCanaryAttachResult = await timed("copy-canary", () =>
+          this.copyCanary!.attach({
+            dryRun,
+            inventory: inventory ?? undefined,
+          }),
+        );
         result.copyCanaryAttached = canary.attached.length;
         result.errors.push(...canary.errors.slice(0, 20));
       } catch (error) {
@@ -208,6 +224,13 @@ export class CampaignHealthService {
 
     this.state.setLastHealthAt(new Date().toISOString());
     if (!dryRun) await this.state.save();
+
+    // D317 — where the stage's minutes go, so a slow pass names its step.
+    console.log(
+      `[health] D317 timings ${Object.entries(timings)
+        .map(([name, ms]) => `${name}=${(ms / 1000).toFixed(1)}s`)
+        .join(" ")}`,
+    );
 
     const activeSnaps = result.snapshots.filter((s) => s.status === "ACTIVE");
     const atFloor = activeSnaps.filter((s) => s.needed === 0).length;

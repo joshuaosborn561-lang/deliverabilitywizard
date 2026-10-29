@@ -18934,3 +18934,27 @@ describe("owner intent — D315 A4 bloat removal", () => {
     assert.match(decisions, /^\| D315 \|/m, "status index has no D315 row");
   });
 });
+
+describe("owner intent — D317 health-sweep budget", () => {
+  it("D317: breaker, 15m safety-net timeouts under a hard cap, timings and lastDurationMs; ledger says so", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const [sd, step, health, windows, decisions] = await Promise.all([
+      read("../clients/smartdelivery.ts"),
+      read("../lib/stepTimeout.ts"),
+      read("../services/campaignHealth.ts"),
+      read("../lib/stageWindows.ts"),
+      read("../../DECISIONS.md"),
+    ]);
+    assert.match(sd, /ENRICH_BREAKER_FAILURES/, "lookup breaker is gone (D317)");
+    assert.match(sd, /ENRICH_DEFAULT_BUDGET_MS/, "default enrich budget is gone (D317)");
+    assert.match(step, /STEP_TIMEOUT_CAP_MS/, "stage timeout hard cap is gone (D317)");
+    assert.match(step, /"campaign-health": 15 \* 60 \* 1000/, "campaign-health budget (D317)");
+    assert.match(step, /"client-rest": 15 \* 60 \* 1000/, "client-rest budget (D317)");
+    assert.match(health, /D317 timings/, "campaign-health timings log is gone (D317)");
+    assert.match(windows, /lastDurationMs/, "/health lastDurationMs is gone (D317)");
+    assert.match(decisions, /## D317 — /, "DECISIONS.md has no D317 entry");
+    assert.match(decisions, /^\| D317 \|/m, "status index has no D317 row (D127)");
+  });
+});
+

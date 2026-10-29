@@ -106,6 +106,18 @@ export const TEST_CAMPAIGN_NEGATIVE_TTL_MS = 30 * 60 * 1000;
 export const TEST_CAMPAIGN_CACHE_MAX = 20_000;
 /** Five services each re-listed ~650 tests (7 pages) every pass; share one list briefly. */
 export const LIST_TESTS_TTL_MS = 30 * 1000;
+/**
+ * D317 — a cold cache (after a deploy) must not turn into a lookup storm.
+ * Three lookups in a row that fail (429 / timeout) open a breaker: no more
+ * `GET spam-test/{id}` for the cooldown, callers get the rows un-enriched,
+ * and the cache keeps filling on later passes. Each lookup also retries once,
+ * not four times (a 429'd lookup used to hold a limiter slot ~17 s).
+ */
+export const ENRICH_BREAKER_FAILURES = 3;
+export const ENRICH_BREAKER_COOLDOWN_MS = 2 * 60 * 1000;
+export const ENRICH_LOOKUP_RETRIES = 1;
+/** D317 — a caller that passes no deadline still gets a bounded pass. */
+export const ENRICH_DEFAULT_BUDGET_MS = 90 * 1000;
 
 export class SmartDeliveryClient {
   private readonly limiter?: SmartleadLimiter;
@@ -123,7 +135,10 @@ export class SmartDeliveryClient {
     string,
     Promise<string | number | null | undefined>
   >();
-  readonly enrichStats = { hits: 0, fetched: 0, failed: 0 };
+  readonly enrichStats = { hits: 0, fetched: 0, failed: 0, shortCircuited: 0 };
+  /** D317 — consecutive failed lookups, and when the breaker closes again. */
+  private enrichFailStreak = 0;
+  private enrichBreakerUntil = 0;
   /** A4/D315 — the unfiltered full list, shared for LIST_TESTS_TTL_MS across services. */
   private listTestsCache: { at: number; rows: SpamTestSummary[] } | null = null;
   private listTestsInflight: Promise<SpamTestSummary[]> | null = null;
@@ -254,12 +269,13 @@ export class SmartDeliveryClient {
     opts: { signal?: AbortSignal; deadlineMs?: number } = {},
   ): Promise<SpamTestSummary[]> {
     const out: SpamTestSummary[] = [];
+    const deadlineMs = opts.deadlineMs ?? Date.now() + ENRICH_DEFAULT_BUDGET_MS;
     for (const test of tests) {
       if (opts.signal?.aborted) {
         out.push(test);
         continue;
       }
-      if (opts.deadlineMs != null && Date.now() >= opts.deadlineMs) {
+      if (Date.now() >= deadlineMs) {
         out.push(test);
         continue;
       }
@@ -305,9 +321,16 @@ export class SmartDeliveryClient {
     }
     const pending = this.testCampaignInflight.get(id);
     if (pending) return pending;
+    // D317 — breaker open: no network, the cache fills on a later pass.
+    if (Date.now() < this.enrichBreakerUntil) {
+      this.enrichStats.shortCircuited += 1;
+      return undefined;
+    }
     const run = (async () => {
       try {
-        const details = await this.getTestDetails(id);
+        const details = await this.getTestDetails(id, {
+          retries: ENRICH_LOOKUP_RETRIES,
+        });
         const raw = details.campaign_id;
         const campaignId =
           raw === undefined || raw === null ? null : (raw as string | number);
@@ -316,9 +339,18 @@ export class SmartDeliveryClient {
         }
         this.testCampaignCache.set(id, { campaignId, at: Date.now() });
         this.enrichStats.fetched += 1;
+        this.enrichFailStreak = 0;
         return campaignId;
       } catch {
         this.enrichStats.failed += 1;
+        this.enrichFailStreak += 1;
+        if (this.enrichFailStreak >= ENRICH_BREAKER_FAILURES) {
+          this.enrichBreakerUntil = Date.now() + ENRICH_BREAKER_COOLDOWN_MS;
+          this.enrichFailStreak = 0;
+          console.warn(
+            `[smartdelivery] D317 test→campaign lookups failing (${ENRICH_BREAKER_FAILURES} in a row) — pausing lookups ${ENRICH_BREAKER_COOLDOWN_MS / 1000}s; cached ids keep serving`,
+          );
+        }
         return undefined;
       } finally {
         this.testCampaignInflight.delete(id);

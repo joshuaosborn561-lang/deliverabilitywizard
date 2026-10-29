@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   DEFAULT_STEP_TIMEOUT_MS,
+  STEP_TIMEOUT_CAP_MS,
+  STEP_TIMEOUT_MS,
   raceStep,
   stepTimeoutMs,
   timeoutAfterMessage,
@@ -42,5 +44,16 @@ describe("D247 step timeout", () => {
   it("returns the step result when it finishes inside the budget", async () => {
     const value = await raceStep(async () => "ok", 200);
     assert.equal(value, "ok");
+  });
+});
+
+describe("D317 sweep budgets", () => {
+  it("campaign-health and client-rest get 15m as a safety net; nothing exceeds the hard cap", () => {
+    assert.equal(stepTimeoutMs("campaign-health"), 15 * 60 * 1000);
+    assert.equal(stepTimeoutMs("client-rest"), 15 * 60 * 1000);
+    for (const name of Object.keys(STEP_TIMEOUT_MS)) {
+      assert.ok(stepTimeoutMs(name) <= STEP_TIMEOUT_CAP_MS, `${name} over the cap`);
+    }
+    assert.equal(STEP_TIMEOUT_CAP_MS, 20 * 60 * 1000);
   });
 });

@@ -19,6 +19,8 @@
 
 /** 15-minute canon-sweep cadence plus grace for a long pass. */
 const HEALTH_MS = 45 * 60 * 1000;
+/** A1 (D312) — the critical sweep runs every 30 minutes; overdue after 75. */
+export const CRITICAL_SWEEP_OVERDUE_MS = 75 * 60 * 1000;
 /** 6-hour cadence (monitor loop, full mailbox-settings converge) plus grace. */
 const SIX_HOURLY_MS = (6 * 60 + 45) * 60 * 1000;
 /** 30-minute canon-ops cadence plus grace for a missed weekday tick. */
@@ -146,8 +148,9 @@ export const STAGE_OVERDUE_WINDOWS_MS: Record<string, number | null> = {
   "mailbox-settings-full": SIX_HOURLY_MS,
   "scan-backfill": null, // D116 — runs only when a placement test is missing
   // Monitor loop — every 6 hours (D131).
-  "monitor-results": SIX_HOURLY_MS,
-  "test-reconcile": SIX_HOURLY_MS,
+  // A1 (D312) — placement results and test-reconcile ride the 30-minute critical sweep.
+  "monitor-results": CRITICAL_SWEEP_OVERDUE_MS,
+  "test-reconcile": CRITICAL_SWEEP_OVERDUE_MS,
   "dns-audit": SIX_HOURLY_MS,
   "campaign-audit": SIX_HOURLY_MS,
   "lead-runout": SIX_HOURLY_MS,

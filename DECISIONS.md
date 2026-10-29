@@ -299,6 +299,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D307 | Live | Tests that persist age-pruned ledgers (placement scores, copy suspects) stamp fixture times relative to now so D257's 14-day placement-score retention cannot drop a living row. Production prune windows and isolation sidecar persist are unchanged. LOCKED section unchanged. |
 | D308 | Live | Drain mode (A0): `POST /drain?action=on` skips every NEW cron tick, post-pass retry and manual `/run` while in-flight work finishes; `/health` reports `drain`, `activeJobs`, `idleNow` and `safeToDeploy` (drain on AND nothing running). Auto-expires (30m default, 120m max). Changes no campaigns, mailboxes, settings or WRITE_ENABLED. LOCKED section unchanged. |
 | D309 | Live | Copy-canary idempotent: one live "Canary copy" SmartDelivery test per campaign. Single-flight per campaign, a 3h create cooldown (also after a failed, maybe-landed create), stored test kept when the list hits the 5,000-test page cap, and each attach pass STOPS (never deletes) extra living canaries for a campaign, keeping the one with readings. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
+| D312 | Live | A1 critical sweep: placement results (`monitor-results`), `test-reconcile` and `isolation-branch` run every 30 min on their own lock and a top-priority Smartlead lane; bounce-autostop's 10-min cron also runs on that lane (never blocked by the exclusive health lane, served first, and critical writes jump the mutation queue). Amends D270 (exclusive health lane), D257 (limiter) and D247 (locks). Those stages are overdue-paged at 75 min, not 6h45m. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 
 ---
 
@@ -11188,4 +11189,38 @@ touched; the LOCKED section is unchanged.
 
 **Guards.** `src/services/copyCanaryDedupe.test.ts`;
 `src/guards/canon.test.ts` D309.
+
+
+## D312 — Critical sweep: placement, test-reconcile and isolation on a top-priority lane
+
+**Decision (Josh, 2026-10-29 5:37am CT, relayed):** "idk what the smartlead
+limit means, i just want to make sure this is sweeping often enough to
+catch a problem before it burns sends on spam/issues." A1 is approved on
+that goal and may supersede D270, D257 and D247.
+
+**Evidence.** The monitor chain (placement results, test-reconcile) was
+skipped whenever a health pass was live (D270) and every Smartlead call
+from it waited behind the exclusive health lane, so `monitor-results` last
+succeeded at 06:42Z on Oct 29 and had not run again 5+ hours later (cron
+every 6h, health passes of 22–135 minutes). `isolation-branch` ran once
+per health pass, so its interval was the pass length.
+
+**Rule.** `bounce-autostop` (every 10 min) also runs in the `critical` lane: on 10/29 its real gap was median 40 / max 147 min because the normal lane waits behind health. A new `critical-sweep` job (`CRON_CRITICAL_SWEEP`, default
+`7,37 * * * *`; kill switch `ENABLE_CRITICAL_SWEEP`) runs `monitor-results`,
+`test-reconcile` and `isolation-branch` under its own pass lock in the
+`critical` Smartlead lane. The `critical` lane is never held back by the
+exclusive health lane, is served before health and normal waiters, and its
+writes go ahead of queued normal writes in the mutation queue (a running
+job is never interrupted; queued jobs keep the enqueuer's lane). A stage
+that ran in the last 20 minutes is not repeated by the health pass or the
+6-hour monitor chain, and each of these stages runs once at a time across
+all three. `monitor-results` and `test-reconcile` are now overdue-paged
+after 75 minutes (was 6h45m), `isolation-branch` after 45.
+
+**Supersedes / amends.** D270 (the exclusive health lane stays, critical
+is exempt), D257 (priority lane), D247 (a separate lock for these
+stages). Does not change POD-40, the Generics Ledger, any LOCKED rule, or
+`WRITE_ENABLED`.
+
+**Guards.** `src/lib/criticalLane.test.ts`; `src/guards/canon.test.ts` D312.
 

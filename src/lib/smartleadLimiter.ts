@@ -11,7 +11,14 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { sleep } from "./http.js";
 
-export type SmartleadLane = "health" | "normal";
+/**
+ * A1 (D312) — "critical" is the top priority lane: placement results,
+ * test-reconcile and isolation. It is never blocked by the exclusive health
+ * lane and is served before health and normal waiters, so the sweep that
+ * catches spam/placement problems keeps its cadence while a long health
+ * pass is running.
+ */
+export type SmartleadLane = "critical" | "health" | "normal";
 
 const laneStore = new AsyncLocalStorage<SmartleadLane>();
 
@@ -40,6 +47,7 @@ export const SMARTLEAD_RATE_WINDOW_MS = 60_000;
 export interface SmartleadLimiterSnapshot {
   inflight: number;
   waiting: number;
+  criticalWaiting: number;
   rateLimitStreak: number;
   pausedForMs: number;
   requestsInWindow: number;
@@ -50,6 +58,7 @@ export interface SmartleadLimiterSnapshot {
 export class SmartleadLimiter {
   private inflight = 0;
   private waiters: Array<() => void> = [];
+  private criticalWaiters: Array<() => void> = [];
   private healthWaiters: Array<() => void> = [];
   private backgroundWaiters: Array<() => void> = [];
   private exclusiveHealth = false;
@@ -110,6 +119,7 @@ export class SmartleadLimiter {
     return {
       inflight: this.inflight,
       waiting: this.waiters.length,
+      criticalWaiting: this.criticalWaiters.length,
       rateLimitStreak: this.streak,
       pausedForMs: Math.max(0, this.pausedUntil - Date.now()),
       requestsInWindow: this.starts.length,
@@ -120,7 +130,7 @@ export class SmartleadLimiter {
 
   private async acquire(lane: SmartleadLane): Promise<void> {
     for (;;) {
-      if (this.exclusiveHealth && lane !== "health") {
+      if (this.exclusiveHealth && lane !== "health" && lane !== "critical") {
         await new Promise<void>((resolve) => {
           this.backgroundWaiters.push(resolve);
         });
@@ -131,7 +141,8 @@ export class SmartleadLimiter {
         return;
       }
       await new Promise<void>((resolve) => {
-        if (lane === "health") this.healthWaiters.push(resolve);
+        if (lane === "critical") this.criticalWaiters.push(resolve);
+        else if (lane === "health") this.healthWaiters.push(resolve);
         else this.waiters.push(resolve);
       });
       return;
@@ -139,6 +150,11 @@ export class SmartleadLimiter {
   }
 
   private release(): void {
+    const critical = this.criticalWaiters.shift();
+    if (critical) {
+      critical();
+      return;
+    }
     if (this.exclusiveHealth) {
       const health = this.healthWaiters.shift();
       if (health) {

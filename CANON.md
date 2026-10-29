@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D309** (2026-10-29). One page of current truth. When a new
+Canon as of **D312** (2026-10-29). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -9,6 +9,8 @@ guard in `src/guards/meta.test.ts` enforces both).
 and every reversal, and most of it is **superseded**. Do not derive behaviour
 from it. Derive behaviour from this file; use the ledger only to understand
 *why* a rule here exists (each rule cites its decision numbers).
+
+**D312.** Critical sweep: placement results, test-reconcile and isolation run every 30 minutes on their own lock and the top-priority Smartlead lane; paged overdue at 75 minutes.
 
 **D309.** Copy-canary is idempotent: one living "Canary copy" test per campaign (single-flight, 3h create cooldown, stored test kept at the 5,000-test list cap); extras are stopped, never deleted.
 

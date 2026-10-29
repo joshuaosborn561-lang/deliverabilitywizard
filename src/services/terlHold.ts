@@ -44,7 +44,12 @@ import { onWeekCohort } from "../lib/restCohort.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
 import { isOutlookMailboxType } from "../lib/sendCeiling.js";
 import { insightExemptFromSenderTopUp } from "../lib/insightCampaigns.js";
-import { buildPoolSignature, parsePersonName } from "../lib/poolSignature.js";
+import { brandsFromClients } from "../lib/powerGrydEmptyByDesign.js";
+import {
+  logCompanyFallback,
+  logPlaceholderRefusal,
+  resolveSendIdentity,
+} from "../lib/personaName.js";
 import {
   terlEodDigestText,
   terlHeldUntil,
@@ -290,14 +295,32 @@ export class TerlHoldService {
           continue;
         }
         const brand = brandFromClientDisplayName(clientName);
-        const { firstName, lastName } = parsePersonName(pick.from_name);
+        // Every inbox has a name (Josh 2026-10-29): the seat's own persona,
+        // else the company. parsePersonName used to invent "Alex Morgan".
+        const identity = resolveSendIdentity({
+          email: accountEmail(pick) ?? "",
+          pool: null,
+          liveFromName: pick.from_name,
+          clientBrand: brand,
+          knownBrands: brandsFromClients(clients),
+        });
+        if (!identity) {
+          logPlaceholderRefusal("terl-hold/substitute", accountEmail(pick) ?? String(pick.id), pick.from_name);
+          result.errors.push(
+            `${accountEmail(pick)}: substitute skipped — nothing real to send as`,
+          );
+          continue;
+        }
+        if (identity.source === "company") {
+          logCompanyFallback("terl-hold/substitute", accountEmail(pick) ?? String(pick.id), brand, pick.from_name);
+        }
         if (!dryRun) {
           try {
             await this.smartlead.addEmailAccountsToCampaign(campaignId, [pick.id]);
             await sleep(WRITE_GAP_MS);
             await this.smartlead.updateEmailAccount(pick.id, {
-              signature: buildPoolSignature({ firstName, lastName, clientBrand: brand }),
-              from_name: `${firstName} ${lastName}`,
+              signature: identity.signature,
+              from_name: identity.fromName,
               client_id: campaignClientId,
               max_email_per_day: mailboxMessagePerDayTarget(pick, this.config, this.state, now),
             });

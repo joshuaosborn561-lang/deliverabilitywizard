@@ -627,14 +627,14 @@ export class IsolationBuyService {
       const email = inboxkitMailboxEmail(row, domain);
       if (!email) continue;
       const prior = this.store.getPoolMailbox(email);
-      const username = (row.username || email.split("@")[0] || "").toLowerCase();
       this.store.upsertPoolMailbox({
         email,
         domain: domain.toLowerCase(),
         platform: inboxkitMailboxPlatform(row) ?? fallbackPlatform,
-        firstName:
-          prior?.firstName || row.first_name || username || "Mailbox",
-        lastName: prior?.lastName || row.last_name || "Box",
+        // Real-persona rule: InboxKit's first/last name or nothing. Never a
+        // login or a made-up filler name (assign refuses a nameless seat).
+        firstName: prior?.firstName || row.first_name || "",
+        lastName: prior?.lastName || row.last_name || "",
         status: prior?.status ?? "warming",
         warmedAt: prior?.warmedAt ?? inboxkitWarmedAt(row, now),
         ...(prior?.smartleadAccountId

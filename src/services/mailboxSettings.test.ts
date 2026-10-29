@@ -14,10 +14,10 @@ describe("MailboxSettingsService", () => {
         {
           id: 1,
           from_email: "a@pool.info",
-          from_name: "Ada Pool",
+          from_name: "Ada Poole",
           message_per_day: "30",
           minTimeToWaitInMins: 10,
-          signature: "Ada Pool\nSalesGlider",
+          signature: "Ada Poole\nSalesGlider",
           client_id: 345263,
           warmup_details: { status: "ACTIVE" },
         },

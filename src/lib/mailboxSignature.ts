@@ -8,6 +8,7 @@
  */
 
 import { findForeignBrand } from "./clientBrand.js";
+import { isCompanySenderName, isPlaceholderPersonName } from "./personaName.js";
 
 export { brandFromClientDisplayName } from "./clientBrand.js";
 
@@ -68,6 +69,13 @@ export function desiredMailboxSignature(opts: {
   const name = (opts.fromName ?? "").trim();
   if (!name) return null;
   const brand = resolveSignatureBrand(opts);
+  // Real-persona rule: never stamp "<placeholder name>\n<brand>" — that
+  // string matches from_name+brand and hid "Pool User\nEmcor" from every check.
+  // A mailbox sending as the company (from_name == brand) signs with the
+  // company name alone (Josh 2026-10-29: "just send as the company").
+  if (isPlaceholderPersonName(name)) {
+    return isCompanySenderName(name, brand) ? brand : null;
+  }
   if (!brand) return null;
   return `${name}\n${brand}`;
 }

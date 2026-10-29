@@ -126,7 +126,7 @@ describe("isClientInbox", () => {
       isPoolGenericSeat(
         {
           client_id: 521881,
-          from_name: "Ada Pool",
+          from_name: "Ada Poole",
           tags: [{ tag_name: "GENERIC" }],
         },
         "ada@trygetintroduced.info",

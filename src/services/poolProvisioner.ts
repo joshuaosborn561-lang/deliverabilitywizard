@@ -18,10 +18,8 @@ import { GENERIC_POOL_PLAN } from "../data/genericPoolPlan.js";
 import { sleep } from "../lib/http.js";
 import { MATCH_THRESHOLD, rankCandidates } from "../lib/nameMatch.js";
 import { pickUniquePersonNames } from "../lib/personNames.js";
-import {
-  parsePersonName,
-  poolEspFromSmartleadType,
-} from "../lib/poolSignature.js";
+import { personaFromName } from "../lib/personaName.js";
+import { poolEspFromSmartleadType } from "../lib/poolSignature.js";
 import type { SpendGateway } from "../lib/spendGateway.js";
 import type { StateStore, PoolProvisionPhase } from "../state/store.js";
 
@@ -609,16 +607,18 @@ export class PoolProvisioner {
             });
             continue;
           }
-          const nameParts = (account.from_name || email.split("@")[0] || "Pool User")
-            .trim()
-            .split(/\s+/);
+          // Real-persona rule: record the name Smartlead already has only
+          // when it is a real person. Never invent "Pool"/"User" or use the
+          // email local part; an empty name means "no persona" and the seat
+          // cannot be assigned to a client until one is set.
+          const persona = personaFromName(account.from_name, email);
           this.state.upsertPoolMailbox({
             email,
             domain,
             platform,
             smartleadAccountId: account.id,
-            firstName: nameParts[0] || "Pool",
-            lastName: nameParts.slice(1).join(" ") || "User",
+            firstName: persona?.firstName ?? "",
+            lastName: persona?.lastName ?? "",
             status: "warming",
             // Warmup starts when the mailbox is imported from InboxKit, not
             // whenever Smartlead first recorded a warmup row. A freshly bought
@@ -964,9 +964,12 @@ export class PoolProvisioner {
         continue;
       }
 
-      const { firstName, lastName } = parsePersonName(
-        match.from_name || email.split("@")[0],
-      );
+      // Real-persona rule: parsePersonName invented "Alex Morgan" /
+      // "<First> Team". Keep the live name only when it is a real person.
+      const { firstName, lastName } = personaFromName(match.from_name, email) ?? {
+        firstName: "",
+        lastName: "",
+      };
       // A generic on a campaign may still be reassignable — the top-up
       // decides that, because it depends on whether the source campaign
       // would drop below its floor. Register the linkage and let it judge.

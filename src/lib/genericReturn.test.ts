@@ -43,7 +43,7 @@ describe("D235 generic return to the untagged pool", () => {
       id: 9,
       from_email: "ada@getintroduced.info",
       client_id: 77,
-      signature: "Ada Pool\nTechEvo",
+      signature: "Ada Poole\nTechEvo",
       tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-A" }],
     };
     const now = new Date("2026-10-04T12:00:00.000Z");

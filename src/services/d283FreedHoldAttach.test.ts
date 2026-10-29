@@ -44,7 +44,7 @@ describe("D283 freed PowerGRYD seats + CornerStone HOLD-UNTIL attach", () => {
         platform: "GOOGLE",
         smartleadAccountId: row.id,
         firstName: local,
-        lastName: "Pool",
+        lastName: "Poole",
         status: "assigned",
         assignedClientId: 592842,
         assignedClientName: "PowerGRYD",

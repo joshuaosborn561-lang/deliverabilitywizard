@@ -43,7 +43,7 @@ function extraGeneric(input: {
     id: input.id,
     from_email: input.email,
     client_id: input.clientId,
-    signature: "Ada Pool\nTechEvolution",
+    signature: "Ada Poole\nTechEvolution",
     type: "GMAIL",
     is_smtp_success: true,
     is_imap_success: true,

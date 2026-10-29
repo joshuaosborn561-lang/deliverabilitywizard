@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { beforeEach, describe, it } from "node:test";
 import { loadConfig } from "../config.js";
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
@@ -7,6 +7,7 @@ import type { SmartleadClient } from "../clients/smartlead.js";
 import { buildIsolationAction } from "../lib/isolationActions.js";
 import { StateStore } from "../state/store.js";
 import { CopyCanaryService } from "./copyCanary.js";
+import { canaryCreateLedger } from "../lib/canaryDedupe.js";
 
 function slackStub(requested: Array<string> = []) {
   return {
@@ -81,6 +82,9 @@ function seedFleet(state: StateStore): void {
 }
 
 describe("CopyCanaryService", () => {
+  // D309 — the create ledger is process-wide; tests reuse campaign ids.
+  beforeEach(() => canaryCreateLedger.clear());
+
   it("schedules campaign-copy tests on paused shells, never live campaigns", async () => {
     const state = new StateStore(
       `/tmp/copy-canary-${process.pid}-${Date.now()}.json`,

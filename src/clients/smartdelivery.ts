@@ -27,6 +27,9 @@ const BASE_URL = "https://smartdelivery.smartlead.ai/api/v1/";
 
 /** SmartDelivery returns ~10 rows when `limit` is omitted; page in this size. */
 export const DEFAULT_TEST_LIST_LIMIT = 100;
+/** listTests walks at most this many pages; a full list this size may be truncated. */
+export const TEST_LIST_MAX_PAGES = 50;
+export const TEST_LIST_CAP = DEFAULT_TEST_LIST_LIMIT * TEST_LIST_MAX_PAGES;
 
 export interface PlacementSequenceStep {
   seq_number: number;
@@ -179,7 +182,7 @@ export class SmartDeliveryClient {
     const all: SpamTestSummary[] = [];
     let offset = 0;
     const limit = DEFAULT_TEST_LIST_LIMIT;
-    for (let page = 0; page < 50; page += 1) {
+    for (let page = 0; page < TEST_LIST_MAX_PAGES; page += 1) {
       const raw = await this.request("spam-test/report",
         { method: "POST", body: { ...body, limit, offset }, ...request },
       );

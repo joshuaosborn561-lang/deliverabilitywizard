@@ -621,6 +621,78 @@ describe("CampaignCheckService", () => {
     assert.match(String(mix?.detail ?? ""), /Parlay InboxKit 54% Microsoft/);
   });
 
+  it("D314: Insight is exempt from esp_mix — a 30 Microsoft / 10 Gmail Insight POD raises no finding", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertCampaignCheck({
+      campaignId: 4049065,
+      name: "Insight living",
+      firstSeenAt: "2026-01-01T00:00:00.000Z",
+      firstCheckAt: "2026-01-01T00:00:00.000Z",
+      firstPassedAt: "2026-01-01T00:05:00.000Z",
+      lastSweepAt: "2026-01-01T01:00:00.000Z",
+      lastKind: "hourly",
+      findings: [],
+      status: "ACTIVE",
+    });
+    const warmup = {
+      status: "ACTIVE",
+      created_at: "2026-01-01T00:00:00.000Z",
+      warmup_created_at: "2026-01-01T00:00:00.000Z",
+    };
+    const outlook = Array.from({ length: 30 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `o${i}@insight.test`,
+      from_name: `O ${i}`,
+      signature: `O ${i}\nInsight`,
+      type: "OUTLOOK",
+      client_id: 582890,
+      campaign_ids: [4049065],
+      is_smtp_success: true,
+      is_imap_success: true,
+      message_per_day: 15,
+      warmup_details: warmup,
+    }));
+    const gmail = Array.from({ length: 10 }, (_, i) => ({
+      id: 200 + i,
+      from_email: `g${i}@insight.test`,
+      from_name: `G ${i}`,
+      signature: `G ${i}\nInsight`,
+      type: "GMAIL",
+      client_id: 582890,
+      campaign_ids: [4049065],
+      is_smtp_success: true,
+      is_imap_success: true,
+      message_per_day: 30,
+      warmup_details: warmup,
+    }));
+    const sl = {
+      listCampaigns: async () => [
+        { id: 4049065, name: "Insight living", status: "ACTIVE", client_id: 582890 },
+      ],
+      listAllEmailAccounts: async () => [...outlook, ...gmail],
+      listClients: async () => [{ id: 582890, name: "Insight", logo: "Parlay" }],
+      getCampaignSequences: async () => [
+        { seq_number: 1, email_body: "<div>Hi</div><div>%signature%</div>" },
+      ],
+    } as unknown as SmartleadClient;
+    const splits = new InboxkitClientSplitCache();
+    splits.seed([{ workspace: "Insight", google: 46, microsoft: 54 }]);
+    const service = new CampaignCheckService(
+      loadConfig({}),
+      sl,
+      delivery(),
+      state,
+      bookOf(sl),
+      undefined,
+      splits,
+    );
+    const hourly = await service.run({ mode: "hourly" });
+    const row = hourly.findings.find((item) => item.campaignId === 4049065);
+    const mix = (row?.findings ?? []).find((finding) => finding.kind === "esp_mix");
+    assert.equal(mix, undefined, "Insight is mostly Microsoft by design (D314)");
+  });
+
   it("D85: a dead canary fleet is one fact, not a finding per campaign", async () => {
     const state = new StateStore(stateFile());
     await state.load();

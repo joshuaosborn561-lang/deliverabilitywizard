@@ -1996,8 +1996,8 @@ async function main(): Promise<void> {
   }
 
   // D303 — rests due back after 14 days; send windows to Mon–Thu 8–7 ET.
-  cron.schedule(config.cronCanonConverge, () => {
-    void (async () => {
+  scheduleJob("canon-converge", config.cronCanonConverge, () => {
+    return (async () => {
       if (config.enableMailboxRest) {
         const back = await canonConverge.returnDueRests();
         if (back.length) console.log(`[d303] rest over, back on: ${back.length}`);

@@ -41,8 +41,17 @@ describe("real-persona rule — placeholder detection", () => {
 
   it("flags the email local part used as the name", () => {
     assert.equal(
-      isPlaceholderPersonName("wilhelm oldfield", "wilhelmoldfield@kendrickloft.info"),
+      isPlaceholderPersonName("pool.user", "pool.user@kendrickloft.info"),
       true,
+    );
+    // Regression: a real "First Last" persona on a firstlast@ mailbox is a persona.
+    assert.equal(
+      isPlaceholderPersonName("Brett Oakley", "brettoakley@brightfieldco.info"),
+      false,
+    );
+    assert.equal(
+      isPlaceholderPersonName("Forrest Drummond", "forrest.drummond@morlandcircle.info"),
+      false,
     );
     assert.equal(
       isPlaceholderPersonName("Wilhelmina Oldfield", "wilhelmina@kendrickloft.info"),
@@ -63,6 +72,18 @@ describe("real-persona rule — placeholder detection", () => {
       firstName: "Alicia",
       lastName: "Sheridan",
     });
+  });
+
+  it("resolveSeatPersona keeps a real live name on a firstlast@ mailbox", () => {
+    assert.deepEqual(
+      resolveSeatPersona({
+        email: "brettoakley@brightfieldco.info",
+        pool: null,
+        liveFromName: "Brett Oakley",
+        knownBrands: ["Parlay Tech"],
+      }),
+      { firstName: "Brett", lastName: "Oakley", source: "live-mailbox" },
+    );
   });
 
   it("resolveSeatPersona: pool row first, live mailbox second, else null", () => {

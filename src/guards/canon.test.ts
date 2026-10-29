@@ -18844,3 +18844,31 @@ describe("owner intent — D304 LOCKED ESP matching ON + 10m gap on every campai
     assert.match(lib, /=== "STOPPED"/, "D304 must leave STOPPED campaigns alone.");
   });
 });
+
+describe("owner intent — D308 drain mode", () => {
+  it("D308: cron goes through scheduleJob; /health reports safeToDeploy; ledger and canon say so", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const [index, canon, decisions] = await Promise.all([
+      read("../index.ts"),
+      read("../../CANON.md"),
+      read("../../DECISIONS.md"),
+    ]);
+    // Every cron tick must pass the drain gate. The only raw cron.schedule is inside scheduleJob.
+    const raw = index.match(/cron\.schedule\(/g) ?? [];
+    assert.equal(
+      raw.length,
+      1,
+      stop(
+        "Every cron tick goes through scheduleJob so drain mode can stop new work (D308).",
+        `index.ts has ${raw.length} cron.schedule( calls; expected exactly the one inside scheduleJob.`,
+      ),
+    );
+    assert.match(index, /drain\.shouldSkip\(name\)/, "scheduleJob lost its drain gate");
+    assert.match(index, /safeToDeploy/, "/health lost safeToDeploy");
+    assert.match(index, /app\.post\("\/drain"/, "POST /drain is missing");
+    assert.match(canon, /\*\*D308\.\*\*/, "CANON.md lost the D308 drain note");
+    assert.match(decisions, /## D308 — /, "DECISIONS.md has no D308 entry");
+    assert.match(decisions, /^\| D308 \|/m, "status index has no D308 row (D127)");
+  });
+});

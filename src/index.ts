@@ -126,6 +126,12 @@ import { createOpsRouter } from "./ops/router.js";
 import { BugRemediator } from "./services/bugRemediator.js";
 import { MutationQueue } from "./lib/mutationQueue.js";
 import {
+  ActiveJobs,
+  DrainMode,
+  deploySafety,
+  parseDrainMinutes,
+} from "./lib/drainMode.js";
+import {
   runInSmartleadLane,
   SmartleadLimiter,
 } from "./lib/smartleadLimiter.js";
@@ -389,6 +395,9 @@ async function main(): Promise<void> {
   const canonOpsLock = new InFlightLock("canonOps", CANON_OPS_LOCK_MAX_MS);
   const monitorLock = new InFlightLock("monitor", MONITOR_LOCK_MAX_MS);
   const passContext = new AsyncLocalStorage<{ lock: InFlightLock; token: string }>();
+  /** D308 (A0) — drain mode + running cron jobs; see src/lib/drainMode.ts. */
+  const drain = new DrainMode();
+  const activeJobs = new ActiveJobs();
 
   const alertStaleLock = (lock: InFlightLock, snap: { since: string; stage: string }): void => {
     const ageMin = ((Date.now() - Date.parse(snap.since)) / 60_000).toFixed(1);
@@ -1297,10 +1306,17 @@ async function main(): Promise<void> {
         campaigns: inventory.campaigns,
       });
       await state.save();
-      void runWeekdayCatchUp().catch((error) => {
-        console.warn("[catch-up] weekday jobs after health failed", error);
-      });
-      if (pendingCanonOpsRetry) {
+      if (drain.shouldSkip("weekday-catch-up")) {
+        console.log("[drain] weekday catch-up skipped — drain mode on (D308)");
+      } else {
+        activeJobs.track(
+          "weekday-catch-up",
+          runWeekdayCatchUp().catch((error) => {
+            console.warn("[catch-up] weekday jobs after health failed", error);
+          }),
+        );
+      }
+      if (pendingCanonOpsRetry && !drain.shouldSkip("canon-ops-retry")) {
         pendingCanonOpsRetry = false;
         console.log("[canon-ops] retrying skipped tick after health pass (D267)");
         void runCanonOps({ retry: true }).catch((error) => {
@@ -1330,7 +1346,7 @@ async function main(): Promise<void> {
     // boot). A monitor cron that skipped because health was live also
     // retries here, after the exclusive limiter lane is released.
     kickMonitorResume();
-    if (pendingMonitorRetry && !monitorLock.isLive()) {
+    if (pendingMonitorRetry && !monitorLock.isLive() && !drain.shouldSkip("monitor-retry")) {
       pendingMonitorRetry = false;
       console.log("[monitor] retrying skipped tick after health pass (D270)");
       void runMonitor({ remediate: true }).catch((error) => {
@@ -1343,6 +1359,10 @@ async function main(): Promise<void> {
 
   const kickMonitorResume = (): void => {
     if (monitorLock.isLive()) return;
+    if (drain.shouldSkip("monitor-resume")) {
+      console.log("[drain] monitor resume skipped — drain mode on (D308)");
+      return;
+    }
     const leftover = staleMonitorStages(state.listStageHealth());
     if (!leftover.length) return;
     console.log(
@@ -1776,15 +1796,40 @@ async function main(): Promise<void> {
     }
   }
 
-  cron.schedule(config.cronScan, () => {
-    void runScan("cron").catch((error) => {
+  // D308 (A0) — every cron tick goes through here so drain mode can stop NEW
+  // work (an in-flight pass is never interrupted) and /health can say which
+  // cron jobs are running right now.
+  type CronCallback = () => unknown;
+  const scheduleJob = (
+    name: string,
+    expression: string,
+    fn: CronCallback,
+    options?: Parameters<typeof cron.schedule>[2],
+  ) =>
+    cron.schedule(
+      expression,
+      () => {
+        if (drain.shouldSkip(name)) {
+          console.log(`[drain] ${name} tick skipped — drain mode on (D308)`);
+          return;
+        }
+        const out = fn();
+        if (out && typeof (out as PromiseLike<unknown>).then === "function") {
+          activeJobs.track(name, out as PromiseLike<unknown>);
+        }
+      },
+      options,
+    );
+
+  scheduleJob("scan", config.cronScan, () => {
+    return runScan("cron").catch((error) => {
       console.error("[scan] Unhandled cron error", error);
       feedBugRemediator("scan-cron", error);
     });
   });
 
-  cron.schedule(config.cronMonitor, () => {
-    void runMonitor({ remediate: true }).catch((error) => {
+  scheduleJob("monitor", config.cronMonitor, () => {
+    return runMonitor({ remediate: true }).catch((error) => {
       console.error("[monitor] Unhandled cron error", error);
       feedBugRemediator("monitor-cron", error);
     });
@@ -1794,10 +1839,10 @@ async function main(): Promise<void> {
   // fixed local times. America/New_York so the times track EST/EDT.
   sendVolumeSchedules.forEach((expression, index) => {
     const endOfDay = index === sendVolumeSchedules.length - 1;
-    cron.schedule(
+    scheduleJob("client-day",
       expression,
       () => {
-        void clientDayBrief.run({ endOfDay }).catch((error) => {
+        return clientDayBrief.run({ endOfDay }).catch((error) => {
           console.error("[client-day] Unhandled cron error", error);
         });
       },
@@ -1806,10 +1851,10 @@ async function main(): Promise<void> {
   });
 
   if (config.enableDeliveryWatch) {
-    cron.schedule(
+    scheduleJob("delivery-watch",
       config.cronDeliveryWatch,
       () => {
-        void deliveryWatch.run().catch((error) => {
+        return deliveryWatch.run().catch((error) => {
           console.error("[delivery-watch] Unhandled cron error", error);
         });
       },
@@ -1818,14 +1863,14 @@ async function main(): Promise<void> {
   }
 
   if (config.enableCampaignCheck) {
-    cron.schedule(config.cronCampaignCheck, () => {
+    scheduleJob("campaign-check-hourly", config.cronCampaignCheck, () => {
       if (healthLock.isLive()) {
         console.log(
           "[campaign-check] Health pass running — skipping overlapping hourly sweep",
         );
         return;
       }
-      void inventoryBook
+      return inventoryBook
         .get()
         .then((inventory) => campaignCheck.run({ mode: "hourly", inventory }))
         .catch((error) => {
@@ -1836,8 +1881,8 @@ async function main(): Promise<void> {
   }
 
   if (config.enableCampaignHealth) {
-    cron.schedule(config.cronHealth, () => {
-      void runHealth().catch((error) => {
+    scheduleJob("health", config.cronHealth, () => {
+      return runHealth().catch((error) => {
         console.error("[health] Unhandled cron error", error);
         feedBugRemediator("health-cron", error);
       });
@@ -1850,10 +1895,10 @@ async function main(): Promise<void> {
 
   // D205 — always schedule so disabled / after-hours ticks still
   // refresh lastOkAt. No boot kick (D122).
-  cron.schedule(
+  scheduleJob("canon-ops",
     config.cronCanonOps,
     () => {
-      void runCanonOps().catch((error) => {
+      return runCanonOps().catch((error) => {
         console.error("[canon-ops] Unhandled cron error", error);
         feedBugRemediator("canon-ops-cron", error);
       });
@@ -1862,8 +1907,8 @@ async function main(): Promise<void> {
   );
 
   if (config.enableCampaignBounceAutostop) {
-    cron.schedule(config.cronBounceAutostop, () => {
-      void runBounceAutostop().catch((error) => {
+    scheduleJob("bounce-autostop", config.cronBounceAutostop, () => {
+      return runBounceAutostop().catch((error) => {
         console.error("[bounce-autostop] Unhandled cron error", error);
         feedBugRemediator("bounce-autostop-cron", error);
       });
@@ -1873,10 +1918,10 @@ async function main(): Promise<void> {
   }
 
   if (config.enableTerlEod) {
-    cron.schedule(
+    scheduleJob("terl-eod",
       config.cronTerlEod,
       () => {
-        void runTerlEod().catch((error) => {
+        return runTerlEod().catch((error) => {
           console.error("[terl-eod] Unhandled cron error", error);
           feedBugRemediator("terl-eod-cron", error);
         });
@@ -1886,10 +1931,10 @@ async function main(): Promise<void> {
   }
 
   if (config.enableSpendDigest) {
-    cron.schedule(
+    scheduleJob("spend-digest",
       config.cronSpendDigest,
       () => {
-        void runSpendDigest().catch((error) => {
+        return runSpendDigest().catch((error) => {
           console.error("[spend-digest] Unhandled cron error", error);
           feedBugRemediator("spend-digest-cron", error);
         });
@@ -1899,10 +1944,10 @@ async function main(): Promise<void> {
   }
 
   if (config.enableInboxkitLicenseSweep) {
-    cron.schedule(
+    scheduleJob("inboxkit-license",
       config.cronInboxkitLicenseSweep,
       () => {
-        void runInboxkitLicenseSweep().catch((error) => {
+        return runInboxkitLicenseSweep().catch((error) => {
           console.error("[inboxkit-license] Unhandled cron error", error);
           feedBugRemediator("inboxkit-license-cron", error);
         });
@@ -1912,8 +1957,8 @@ async function main(): Promise<void> {
   }
 
   if (config.enablePoolProvisioner) {
-    cron.schedule(config.cronPoolProvision, () => {
-      void runPoolProvision().catch((error) => {
+    scheduleJob("pool-provision", config.cronPoolProvision, () => {
+      return runPoolProvision().catch((error) => {
         console.error("[pool-provision] Unhandled cron error", error);
       });
     });
@@ -1924,10 +1969,10 @@ async function main(): Promise<void> {
 
   if (config.enableAccountReconnect) {
     // Daily full pass at 3am America/New_York (EST/EDT)
-    cron.schedule(
+    scheduleJob("reconnect-daily",
       config.cronAccountReconnect,
       () => {
-        void runReconnect().catch((error) => {
+        return runReconnect().catch((error) => {
           console.error("[reconnect] Unhandled cron error", error);
         });
       },
@@ -2922,6 +2967,44 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     return true;
   };
 
+  const runningJobNames = (): string[] => {
+    const names = [...activeJobs.names()];
+    if (healthLock.held) names.push("health-pass");
+    if (canonOpsLock.held) names.push("canon-ops-pass");
+    if (monitorLock.held) names.push("monitor-pass");
+    const flags: Array<[string, unknown]> = [
+      ["scan", scanInFlight],
+      ["monitor", monitorInFlight],
+      ["pool-provision", poolInFlight],
+      ["reconnect", reconnectInFlight],
+      ["warmup-gate", warmupGateInFlight],
+      ["test-reconcile", reconcileInFlight],
+      ["top-up", topUpInFlight],
+      ["health", healthInFlight],
+      ["bounce-autostop", bounceAutostopInFlight],
+      ["canon-ops", canonOpsInFlight],
+      ["ops-check", opsCheckInFlight],
+      ["weekday-catch-up", catchUpInFlight],
+    ];
+    for (const [name, flag] of flags) if (flag) names.push(name);
+    if (mutationQueue.depth > 0) names.push("smartlead-writes");
+    return names;
+  };
+
+  const currentDeployState = () => {
+    const snap = drain.snapshot();
+    const safety = deploySafety({
+      draining: snap.draining,
+      activeJobs: runningJobNames(),
+    });
+    return {
+      drain: snap,
+      safeToDeploy: safety.safeToDeploy,
+      idleNow: safety.idleNow,
+      activeJobs: safety.activeJobs,
+    };
+  };
+
   app.get("/health", (_req, res) => {
     const s = state.get();
     // D84 — the canon scoreboard: open findings by kind (living campaigns
@@ -3082,6 +3165,10 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         canonOps: canonOpsLock.snapshot(),
         monitor: monitorLock.snapshot(),
       },
+      // D308 (A0) — deploy safety. `safeToDeploy` is true only while drain
+      // mode is on AND nothing is running; `idleNow` is just "nothing runs
+      // this second" (a cron tick can still start unless draining).
+      ...currentDeployState(),
       mutationQueue: mutationQueue.snapshot(),
       smartleadLimiter: smartlead.limiterSnapshot(),
     });
@@ -3165,8 +3252,40 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     res.json({ approvals: state.listSpendApprovals() });
   });
 
+  // D308 (A0) — drain mode. POST /drain?action=on&minutes=30 stops NEW cron
+  // ticks and manual runs; whatever is already running finishes. /health
+  // reports `safeToDeploy` once drain is on and nothing is left running.
+  // POST /drain?action=off ends it (it also auto-expires, default 30m, max 120m).
+  // Changes no campaigns, mailboxes, settings or WRITE_ENABLED.
+  app.post("/drain", (req, res) => {
+    if (!checkRunToken(req, res)) return;
+    const action = String(req.query.action ?? req.body?.action ?? "status");
+    const reason = String(req.query.reason ?? req.body?.reason ?? "").slice(0, 200);
+    if (action === "on") {
+      const maxMs = parseDrainMinutes(req.query.minutes ?? req.body?.minutes);
+      const snap = drain.start({ maxMs, reason: reason || undefined });
+      console.log(
+        `[drain] ON until ${snap.expiresAt} (${snap.reason}) — new cron ticks are skipped; running work finishes (D308)`,
+      );
+    } else if (action === "off") {
+      drain.stop();
+      console.log("[drain] OFF — cron ticks resume (D308)");
+    } else if (action !== "status") {
+      res.status(400).json({ error: "action must be on, off or status" });
+      return;
+    }
+    res.json({ ok: true, ...currentDeployState() });
+  });
+
   app.post("/run", async (req, res) => {
     if (!checkRunToken(req, res)) return;
+    if (drain.shouldSkip("manual-run")) {
+      res.status(423).json({
+        error: "Drain mode is on (D308): no new runs start until it ends",
+        drain: drain.snapshot(),
+      });
+      return;
+    }
 
     try {
       const mode = String(req.query.mode ?? req.body?.mode ?? "scan");
@@ -3784,9 +3903,13 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     );
     if (secretsReady) {
       setTimeout(() => {
-        void runWeekdayCatchUp().catch((error) => {
-          console.warn("[catch-up] delayed weekday jobs failed", error);
-        });
+        if (drain.shouldSkip("weekday-catch-up")) return;
+        activeJobs.track(
+          "weekday-catch-up",
+          runWeekdayCatchUp().catch((error) => {
+            console.warn("[catch-up] delayed weekday jobs failed", error);
+          }),
+        );
       }, 180_000);
     }
   });

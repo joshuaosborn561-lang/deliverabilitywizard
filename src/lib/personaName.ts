@@ -73,11 +73,10 @@ export function isPlaceholderPersonName(
   if (tokens.length < 2) return true;
   if (tokens.some((t) => PLACEHOLDER_SET.has(t))) return true;
   const local = (email ?? "").split("@")[0]?.trim().toLowerCase();
-  if (local) {
-    const squashed = tokens.join("");
-    if (squashed === local.replace(/[^a-z]/g, "")) return true;
-    if (raw.toLowerCase() === local) return true;
-  }
+  // The raw login used as the name ("wilhelmina", "pool.user"). A real
+  // two-part name that happens to equal firstlast@ ("Brett Oakley" for
+  // brettoakley@) is a persona, not a placeholder.
+  if (local && raw.toLowerCase() === local) return true;
   return false;
 }
 

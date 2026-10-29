@@ -150,7 +150,9 @@ export class SmartleadClient {
   }
 
   private mutate<T>(fn: () => Promise<T>): Promise<T> {
-    return this.mutationQueue ? this.mutationQueue.enqueue(fn) : fn();
+    return this.mutationQueue
+      ? this.mutationQueue.enqueue(fn, { critical: smartleadLane() === "critical" })
+      : fn();
   }
 
   listCampaigns(

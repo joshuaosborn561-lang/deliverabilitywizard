@@ -1,3 +1,4 @@
+import { AsyncResource } from "node:async_hooks";
 import { sleep } from "./http.js";
 import { raceStep, timeoutAfterMessage } from "./stepTimeout.js";
 
@@ -17,10 +18,14 @@ export interface MutationQueueSnapshot {
  * the chain (and every later health / monitor pass behind it).
  */
 export class MutationQueue {
-  private chain: Promise<unknown> = Promise.resolve();
   private consecutiveRateLimits = 0;
-  private waiting: { enqueuedAt: number }[] = [];
+  private waiting: Array<{
+    enqueuedAt: number;
+    critical: boolean;
+    run: () => Promise<void>;
+  }> = [];
   private runningStartedAt: number | null = null;
+  private draining = false;
 
   constructor(
     private readonly minGapMs = 250,
@@ -28,34 +33,59 @@ export class MutationQueue {
     private readonly jobTimeoutMs = MUTATION_QUEUE_TIMEOUT_MS,
   ) {}
 
-  enqueue<T>(fn: () => Promise<T>): Promise<T> {
-    const item = { enqueuedAt: Date.now() };
-    this.waiting.push(item);
-    const run = this.chain.then(async () => {
-      this.waiting = this.waiting.filter((row) => row !== item);
-      this.runningStartedAt = Date.now();
-      const backoff = this.rateLimitBackoffMs();
-      if (backoff > 0) await sleep(backoff);
-      try {
-        const value = await raceStep(async () => fn(), this.jobTimeoutMs);
-        this.consecutiveRateLimits = 0;
-        return value;
-      } catch (error) {
-        if (looksLikeRateLimit(error)) {
-          this.consecutiveRateLimits += 1;
-        }
-        throw error;
-      } finally {
-        this.runningStartedAt = null;
-        if (this.minGapMs > 0) await sleep(this.minGapMs);
+  /**
+   * A1 (D312) — `critical` jobs (placement / test-reconcile / isolation
+   * writes) go ahead of every queued non-critical write, FIFO among
+   * themselves. A running job is never interrupted.
+   */
+  enqueue<T>(fn: () => Promise<T>, opts: { critical?: boolean } = {}): Promise<T> {
+    // Run the job in the enqueuer's async context (lane, pass, stall scope),
+    // not whichever caller happened to start the drain loop.
+    const job = AsyncResource.bind(fn);
+    return new Promise<T>((resolve, reject) => {
+      const item = {
+        enqueuedAt: Date.now(),
+        critical: Boolean(opts.critical),
+        run: async () => {
+          this.runningStartedAt = Date.now();
+          const backoff = this.rateLimitBackoffMs();
+          if (backoff > 0) await sleep(backoff);
+          try {
+            const value = await raceStep(async () => job(), this.jobTimeoutMs);
+            this.consecutiveRateLimits = 0;
+            resolve(value);
+          } catch (error) {
+            if (looksLikeRateLimit(error)) {
+              this.consecutiveRateLimits += 1;
+            }
+            reject(error);
+          } finally {
+            this.runningStartedAt = null;
+            if (this.minGapMs > 0) await sleep(this.minGapMs);
+          }
+        },
+      };
+      if (item.critical) {
+        const at = this.waiting.findIndex((row) => !row.critical);
+        if (at < 0) this.waiting.push(item);
+        else this.waiting.splice(at, 0, item);
+      } else {
+        this.waiting.push(item);
       }
+      void this.drain();
     });
-    // Keep the chain alive even when a job fails.
-    this.chain = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
+  }
+
+  private async drain(): Promise<void> {
+    if (this.draining) return;
+    this.draining = true;
+    try {
+      for (let next = this.waiting.shift(); next; next = this.waiting.shift()) {
+        await next.run();
+      }
+    } finally {
+      this.draining = false;
+    }
   }
 
   get depth(): number {

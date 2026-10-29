@@ -167,6 +167,9 @@ const ConfigSchema = z.object({
    */
   enableCampaignCheck: boolFromEnv(true),
   cronCampaignCheck: z.string().default("0 * * * *"),
+  /** A1 (D312) — critical sweep: placement results, test-reconcile, isolation on the top-priority lane. */
+  enableCriticalSweep: boolFromEnv(true),
+  cronCriticalSweep: z.string().default("7,37 * * * *"),
   /**
    * D43 — 2 weeks on / 2 weeks off for client inboxes, split A/B per client.
    */
@@ -637,6 +640,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableCampaignHealth: env.ENABLE_CAMPAIGN_HEALTH,
     enableCampaignCheck: env.ENABLE_CAMPAIGN_CHECK,
     cronCampaignCheck: env.CRON_CAMPAIGN_CHECK ?? "0 * * * *",
+    enableCriticalSweep: env.ENABLE_CRITICAL_SWEEP,
+    cronCriticalSweep: env.CRON_CRITICAL_SWEEP ?? "7,37 * * * *",
     enableClientRest: env.ENABLE_CLIENT_REST,
     enableGenericSendRest: env.ENABLE_GENERIC_SEND_REST,
     genericSendRestDays: env.GENERIC_SEND_REST_DAYS ?? "14",

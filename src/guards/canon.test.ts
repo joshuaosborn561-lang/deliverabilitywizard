@@ -18891,3 +18891,26 @@ describe("owner intent — D309 copy-canary idempotent", () => {
     assert.match(decisions, /^\| D309 \|/m, "status index has no D309 row (D127)");
   });
 });
+
+describe("owner intent — D312 critical sweep", () => {
+  it("D312: the sweep runs the critical stages on the critical lane; ledger and canon say so", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const [index, limiter, canon, decisions] = await Promise.all([
+      read("../index.ts"),
+      read("../lib/smartleadLimiter.ts"),
+      read("../../CANON.md"),
+      read("../../DECISIONS.md"),
+    ]);
+    assert.match(index, /runInSmartleadLane\("critical"/, "critical sweep must run in the critical lane (D312)");
+    assert.match(index, /scheduleJob\("critical-sweep"/, "critical sweep cron is missing (D312)");
+    for (const stage of ["monitor-results", "test-reconcile", "isolation-branch"]) {
+      assert.match(index, new RegExp(`exclusiveCriticalStage\\("${stage}"`), `${stage} lost its critical wrapper (D312)`);
+    }
+    assert.match(index, /runInSmartleadLane\("critical", \(\) => campaignBounceAutostop/, "bounce-autostop must run in the critical lane (D312)");
+    assert.match(limiter, /lane !== "critical"/, "critical lane must not wait on exclusive health (D312)");
+    assert.match(canon, /\*\*D312\.\*\*/, "CANON.md lost the D312 note");
+    assert.match(decisions, /## D312 — /, "DECISIONS.md has no D312 entry");
+    assert.match(decisions, /^\| D312 \|/m, "status index has no D312 row (D127)");
+  });
+});

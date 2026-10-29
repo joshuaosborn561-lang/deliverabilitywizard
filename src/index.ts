@@ -1,6 +1,7 @@
 import express from "express";
 import cron from "node-cron";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { CRITICAL_FRESH_MS, CRITICAL_SWEEP_LOCK_MAX_MS } from "./lib/criticalSweep.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertRuntimeSecrets, configIsReady, loadConfig } from "./config.js";
@@ -394,6 +395,25 @@ async function main(): Promise<void> {
   const healthLock = new InFlightLock("health", HEALTH_LOCK_MAX_MS);
   const canonOpsLock = new InFlightLock("canonOps", CANON_OPS_LOCK_MAX_MS);
   const monitorLock = new InFlightLock("monitor", MONITOR_LOCK_MAX_MS);
+  /** A1 (D312) — the critical sweep: placement results, test-reconcile, isolation. */
+  const criticalLock = new InFlightLock("critical", CRITICAL_SWEEP_LOCK_MAX_MS);
+  let criticalInFlight: Promise<unknown> | null = null;
+  /** One run of each critical stage at a time across the health pass, monitor chain and sweep. */
+  const criticalStageBusy = new Set<string>();
+  const exclusiveCriticalStage =
+    <T>(name: string, fn: (signal?: AbortSignal) => Promise<T>) =>
+    async (signal?: AbortSignal): Promise<T | { skipped: true; reason: string }> => {
+      if (criticalStageBusy.has(name)) {
+        console.log(`[critical] ${name} already running elsewhere — skipping overlap (D312)`);
+        return { skipped: true, reason: "already-running" };
+      }
+      criticalStageBusy.add(name);
+      try {
+        return await fn(signal);
+      } finally {
+        criticalStageBusy.delete(name);
+      }
+    };
   const passContext = new AsyncLocalStorage<{ lock: InFlightLock; token: string }>();
   /** D308 (A0) — drain mode + running cron jobs; see src/lib/drainMode.ts. */
   const drain = new DrainMode();
@@ -1215,8 +1235,13 @@ async function main(): Promise<void> {
       // 6-hour monitor. Live % still never rotates (D51).
       let isolationBranchResult: unknown = null;
       if (config.enableIsolationBranch) {
-        isolationBranchResult = await stage("isolation-branch", (signal) =>
-          isolationBranch.run({ signal }), { skipIfFreshMs, skipIfBeforeStage });
+        // A1 (D312) — the critical sweep also runs this; skip when it ran lately.
+        isolationBranchResult = await stage("isolation-branch",
+          exclusiveCriticalStage("isolation-branch", (signal) =>
+            isolationBranch.run({ signal }),
+          ),
+          { skipIfFreshMs: skipIfFreshMs ?? CRITICAL_FRESH_MS, skipIfBeforeStage },
+        );
       }
 
       // D173/D174 — refresh mailbox ownership and retry a replacement
@@ -1489,7 +1514,10 @@ async function main(): Promise<void> {
       return { skipped: true as const, reason: "already-running" };
     }
     bounceAutostopInFlight = (async () => {
-      return campaignBounceAutostop.run();
+      // A1/D312 — bounce bursts are a burn-sends signal: the 10-minute
+      // cron ran on the normal lane and waited behind the exclusive
+      // health lane (median gap 40 min, max 147 over 12h on 10/29).
+      return runInSmartleadLane("critical", () => campaignBounceAutostop.run());
     })().finally(() => {
       bounceAutostopInFlight = null;
     });
@@ -1594,6 +1622,53 @@ async function main(): Promise<void> {
     return opsCheckInFlight;
   };
 
+  /**
+   * A1 (D312) — critical sweep. Placement results, test-reconcile and the
+   * isolation verdicts run on their own lock and the top-priority Smartlead
+   * lane, so a long health pass can no longer starve them (before: the
+   * monitor chain was skipped while health was live, 5h+ gaps; every
+   * Smartlead call waited behind the exclusive health lane).
+   */
+  const runCriticalSweep = async (opts: { force?: boolean } = {}) => {
+    assertRuntimeSecrets(config);
+    const began = beginPass(criticalLock, criticalInFlight, "critical-sweep");
+    if (began.skipped) return { skipped: true as const, reason: "already-running" };
+    const token = began.token;
+    const skipIfFreshMs = opts.force ? undefined : CRITICAL_FRESH_MS;
+    const run = runInSmartleadLane("critical", () =>
+      runWithPass(criticalLock, token, async () => {
+        const monitorResult = await stage(
+          "monitor-results",
+          exclusiveCriticalStage("monitor-results", () => monitor.run()),
+          { skipIfFreshMs },
+        );
+        let reconcileResult: unknown = null;
+        if (config.enableTestReconciler) {
+          reconcileResult = await stage(
+            "test-reconcile",
+            exclusiveCriticalStage("test-reconcile", () => runTestReconcile()),
+            { skipIfFreshMs },
+          );
+        }
+        let isolationResult: unknown = null;
+        if (config.enableIsolationBranch) {
+          isolationResult = await stage(
+            "isolation-branch",
+            exclusiveCriticalStage("isolation-branch", (signal) =>
+              isolationBranch.run({ signal }),
+            ),
+            { skipIfFreshMs },
+          );
+        }
+        return { monitor: monitorResult, testReconcile: reconcileResult, isolation: isolationResult };
+      }),
+    );
+    criticalInFlight = run.finally(() => {
+      if (releasePass(criticalLock, token)) criticalInFlight = null;
+    });
+    return run;
+  };
+
   const runMonitor = async (
     opts: { remediate?: boolean; resume?: boolean; joshLive?: boolean } = {},
   ) => {
@@ -1634,9 +1709,12 @@ async function main(): Promise<void> {
           skipIfFreshMs,
         });
       }
-      const monitorResult = await stage("monitor-results", () => monitor.run(), {
-        skipIfFreshMs,
-      });
+      // A1 (D312) — placement results + test-reconcile also run on the
+      // critical sweep; skip them here when it ran lately.
+      const monitorResult = await stage("monitor-results",
+        exclusiveCriticalStage("monitor-results", () => monitor.run()),
+        { skipIfFreshMs: skipIfFreshMs ?? CRITICAL_FRESH_MS },
+      );
       feedBugRemediator(
         "monitor",
         (monitorResult as { errors?: string[] })?.errors ?? [],
@@ -1650,9 +1728,10 @@ async function main(): Promise<void> {
       // Stop recurring tests whose campaign stopped being active since the scan
       let reconcileResult: unknown = null;
       if (config.enableTestReconciler) {
-        reconcileResult = await stage("test-reconcile", () => runTestReconcile(), {
-          skipIfFreshMs,
-        });
+        reconcileResult = await stage("test-reconcile",
+          exclusiveCriticalStage("test-reconcile", () => runTestReconcile()),
+          { skipIfFreshMs: skipIfFreshMs ?? CRITICAL_FRESH_MS },
+        );
       }
       // Zone-level faults are invisible from inside Smartlead; resolve DNS
       // directly so a domain sending without SPF cannot stay silent.
@@ -1742,6 +1821,9 @@ async function main(): Promise<void> {
   }
   if (!cron.validate(config.cronMonitor)) {
     throw new Error(`Invalid CRON_MONITOR expression: ${config.cronMonitor}`);
+  }
+  if (!cron.validate(config.cronCriticalSweep)) {
+    throw new Error(`Invalid CRON_CRITICAL_SWEEP expression: ${config.cronCriticalSweep}`);
   }
   if (!cron.validate(config.cronHealth)) {
     throw new Error(`Invalid CRON_HEALTH expression: ${config.cronHealth}`);
@@ -1891,6 +1973,16 @@ async function main(): Promise<void> {
     // listen; attach (90s) plus that kick still 429'd inventory
     // (live 2026-08-26 D121: attach ended 06:35:31, boot health
     // skipped 06:36:01). The 15-minute cron is soon enough.
+  }
+
+  // A1 (D312) — critical sweep: placement results, test-reconcile, isolation.
+  if (config.enableCriticalSweep) {
+    scheduleJob("critical-sweep", config.cronCriticalSweep, () => {
+      return runCriticalSweep().catch((error) => {
+        console.error("[critical] Unhandled sweep error", error);
+        feedBugRemediator("critical-sweep-cron", error);
+      });
+    });
   }
 
   // D205 — always schedule so disabled / after-hours ticks still
@@ -2972,6 +3064,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     if (healthLock.held) names.push("health-pass");
     if (canonOpsLock.held) names.push("canon-ops-pass");
     if (monitorLock.held) names.push("monitor-pass");
+    if (criticalLock.held) names.push("critical-sweep-pass");
     const flags: Array<[string, unknown]> = [
       ["scan", scanInFlight],
       ["monitor", monitorInFlight],
@@ -2983,6 +3076,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       ["health", healthInFlight],
       ["bounce-autostop", bounceAutostopInFlight],
       ["canon-ops", canonOpsInFlight],
+      ["critical-sweep", criticalInFlight],
       ["ops-check", opsCheckInFlight],
       ["weekday-catch-up", catchUpInFlight],
     ];
@@ -3164,6 +3258,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         health: healthLock.snapshot(),
         canonOps: canonOpsLock.snapshot(),
         monitor: monitorLock.snapshot(),
+        critical: criticalLock.snapshot(),
       },
       // D308 (A0) — deploy safety. `safeToDeploy` is true only while drain
       // mode is on AND nothing is running; `idleNow` is just "nothing runs
@@ -3822,6 +3917,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     );
     console.log(
       `[boot] Campaign bounce loop (D141/D148): ${config.enableCampaignBounceAutostop ? `ENABLED (${config.cronBounceAutostop}; burst >${config.bounceBurstCount} bounces/10m from sends <24h old → classify + re-queue, never pause; ledger dumps do nothing; Smartlead bounce protection is UI-only, no API off-switch exists (D157))` : "disabled"}`,
+    );
+    console.log(
+      `[boot] Critical sweep (A1/D312): ${config.enableCriticalSweep ? `ENABLED (${config.cronCriticalSweep}; placement results + test-reconcile + isolation-branch on the top-priority Smartlead lane, own lock)` : "disabled"}`,
     );
     console.log(
       `[boot] Sender rest (D43): ${config.enableClientRest ? "ENABLED (per-client A/B, 2 weeks on / 2 weeks off)" : "disabled"}; generics ${config.enableGenericSendRest ? `sit after ${config.genericSendRestDays}d live send (override; D221 default is off)` : "fleet pool, no separate send-clock (D221)"}`,

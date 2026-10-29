@@ -12,6 +12,7 @@ import {
 import {
   campaignIdOf,
   normalizeTestList,
+  TEST_LIST_CAP,
   parseSenderInboxRates,
   testIdOf,
   type SmartDeliveryClient,
@@ -38,6 +39,11 @@ import {
   isCanaryCopyTestName,
 } from "../lib/isolationNames.js";
 import { isLockedCanarySeat } from "../lib/canaryLock.js";
+import {
+  canaryCreateLedger,
+  CANARY_DEDUPE_MAX_STOPS,
+  planCanaryDuplicates,
+} from "../lib/canaryDedupe.js";
 import { isCanaryShellCampaign } from "../lib/canaryShell.js";
 import { copySequence, isolationManualPayload } from "../lib/isolationPlacement.js";
 import { sleep } from "../lib/http.js";
@@ -236,6 +242,8 @@ export class CopyCanaryService {
         );
       }
     }
+
+    await this.stopDuplicateCanaries({ listed, listFailed, dryRun, result });
 
     await this.healOrphanCopyCanaryTestIds({
       campaigns,
@@ -554,6 +562,54 @@ export class CopyCanaryService {
     }
   }
 
+  /**
+   * D309 — keep one living Canary copy test per campaign and STOP (never
+   * delete) the extras. Idempotent; at most CANARY_DEDUPE_MAX_STOPS per pass.
+   */
+  private async stopDuplicateCanaries(opts: {
+    listed: unknown;
+    listFailed: boolean;
+    dryRun: boolean;
+    result: CopyCanaryAttachResult;
+  }): Promise<void> {
+    if (!this.smartDelivery || opts.listFailed) return;
+    const stored = new Map<number, string | undefined>();
+    for (const [campaignId, record] of Object.entries(
+      this.state.getIsolation().copyCanaries,
+    )) {
+      stored.set(Number(campaignId), record.testId);
+    }
+    const plan = planCanaryDuplicates(normalizeTestList(opts.listed), stored);
+    // Point state at the kept test so readers follow the one with readings.
+    for (const [campaignId, keepId] of plan.keep) {
+      const record = this.state.getIsolation().copyCanaries[String(campaignId)];
+      if (record && record.testId !== keepId && plan.stop.some((s) => s.campaignId === campaignId)) {
+        this.state.setCopyCanaries(campaignId, record.emails, keepId);
+      }
+    }
+    if (!plan.stop.length) return;
+    const batch = plan.stop.slice(0, CANARY_DEDUPE_MAX_STOPS);
+    const stopped: string[] = [];
+    for (const row of batch) {
+      if (opts.dryRun) continue;
+      try {
+        await this.smartDelivery.stopAutomatedTest(row.testId);
+        stopped.push(`#${row.campaignId}:${row.testId}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(
+          `[copy-canary] stop duplicate ${row.testId} (#${row.campaignId}) failed: ${message}`,
+        );
+      }
+    }
+    console.log(
+      `[copy-canary] duplicates: ${plan.stop.length} extra living canary test(s) across ${new Set(plan.stop.map((s) => s.campaignId)).size} campaign(s)` +
+        (opts.dryRun
+          ? " (dry run, none stopped)"
+          : `; stopped ${stopped.length} this pass (D309): ${stopped.join(" ")}`),
+    );
+  }
+
   private async listTestsRetrying(): Promise<unknown> {
     const attempts = 3;
     const gapMs = process.env.NODE_TEST_CONTEXT ? 0 : 8_000;
@@ -673,7 +729,33 @@ export class CopyCanaryService {
     });
   }
 
-  private async ensureCopyTest(
+  /**
+   * D309 — one live canary per campaign. Concurrent callers (overlapping
+   * passes, heal paths) share one in-flight ensure per campaign.
+   */
+  private ensureCopyTest(
+    campaign: SmartleadCampaign,
+    campaigns: SmartleadCampaign[],
+    picks: PoolMailboxRecord[],
+    dryRun: boolean,
+    listed: unknown,
+    listFailed: boolean,
+    providerIds: number[],
+  ): Promise<string | undefined> {
+    return canaryCreateLedger.singleFlight(campaign.id, () =>
+      this.ensureCopyTestOnce(
+        campaign,
+        campaigns,
+        picks,
+        dryRun,
+        listed,
+        listFailed,
+        providerIds,
+      ),
+    );
+  }
+
+  private async ensureCopyTestOnce(
     campaign: SmartleadCampaign,
     campaigns: SmartleadCampaign[],
     picks: PoolMailboxRecord[],
@@ -707,6 +789,23 @@ export class CopyCanaryService {
     const foundId = found ? testIdOf(found) : undefined;
     if (foundId && hasLivingUnwarmedCopyCanary(campaign.id, tests, foundId)) {
       return foundId;
+    }
+    // D309 — a list at the page cap may be missing the canary. Never
+    // create a second one from a list that cannot prove there is none.
+    if (existing && tests.length >= TEST_LIST_CAP) {
+      console.warn(
+        `[copy-canary] list hit the ${TEST_LIST_CAP}-test cap; keeping stored test ${existing} for #${campaign.id} (D309)`,
+      );
+      return existing;
+    }
+    // D309 — a create (or a failed, maybe-landed create) within the
+    // cooldown blocks another; the next list will show it.
+    const recent = canaryCreateLedger.recent(campaign.id);
+    if (recent) {
+      if (recent.testId) return recent.testId;
+      throw new Error(
+        "canary create cooling down after an earlier attempt (D309)",
+      );
     }
 
     const copy = await this.loadCampaignCopy(campaign.id);
@@ -756,6 +855,9 @@ export class CopyCanaryService {
 
     if (dryRun) return `dry-run-canary-${campaign.id}`;
 
+    // D309 — mark before the POST: if it lands but the reply fails, no
+    // second create for this campaign inside the cooldown.
+    canaryCreateLedger.markAttempt(campaign.id);
     if (this.config.autoPlacementTests) {
       const scheduledAt = paddedScheduleDate();
       const created = await this.smartDelivery.createAutomatedPlacement({
@@ -774,9 +876,11 @@ export class CopyCanaryService {
         ),
         provider_ids: providerIds,
       });
+      canaryCreateLedger.markCreated(campaign.id, String(created.id));
       return String(created.id);
     }
     const created = await this.smartDelivery.createManualPlacement(payload);
+    canaryCreateLedger.markCreated(campaign.id, String(created.id));
     return String(created.id);
   }
 

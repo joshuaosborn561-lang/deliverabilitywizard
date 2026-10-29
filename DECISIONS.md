@@ -298,6 +298,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D304 | Live — LOCKED | Every Smartlead campaign: enable_ai_esp_matching ON and min_time_btw_emails 10. Campaign-check (hourly/all) flags and fixes drift on every non-STOPPED campaign: ESP via POST /settings, gap via POST /schedule echoing the current window. Never status. Supersedes D242's 3m caller follow-up gap (now 10). |
 | D307 | Live | Tests that persist age-pruned ledgers (placement scores, copy suspects) stamp fixture times relative to now so D257's 14-day placement-score retention cannot drop a living row. Production prune windows and isolation sidecar persist are unchanged. LOCKED section unchanged. |
 | D308 | Live | Drain mode (A0): `POST /drain?action=on` skips every NEW cron tick, post-pass retry and manual `/run` while in-flight work finishes; `/health` reports `drain`, `activeJobs`, `idleNow` and `safeToDeploy` (drain on AND nothing running). Auto-expires (30m default, 120m max). Changes no campaigns, mailboxes, settings or WRITE_ENABLED. LOCKED section unchanged. |
+| D309 | Live | Copy-canary idempotent: one live "Canary copy" SmartDelivery test per campaign. Single-flight per campaign, a 3h create cooldown (also after a failed, maybe-landed create), stored test kept when the list hits the 5,000-test page cap, and each attach pass STOPS (never deletes) extra living canaries for a campaign, keeping the one with readings. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 
 ---
 
@@ -11161,4 +11162,30 @@ touched; the LOCKED section is unchanged.
 
 **Guards.** `src/lib/drainMode.test.ts`; `src/guards/canon.test.ts`
 D308.
+
+
+## D309 — Copy-canary is idempotent: one live canary per campaign
+
+**Decision (Josh, 2026-10-29 5:23am CT, relayed by Deliverability):**
+"hand it to coding to do a deep audit and make this resilient and
+bulletproof." Live evidence: overlapping attach runs (a stale-takeover
+pass racing the new one) and `ensure failed ... HTTP 429` creates that
+may have landed created about 253 duplicate "Canary copy" SmartDelivery
+tests (for example #3122546 x4, #3730560 x4, Peterson campaigns x2-3).
+
+**Rule.** At most one living "Canary copy: #<campaign>" test per
+campaign. `CopyCanaryService.ensureCopyTest` runs single-flight per
+campaign; after a create or a failed create it blocks another create for
+that campaign for 3 hours (the next list shows it); when the test list
+reaches the 5,000-test page cap the stored test is kept instead of
+creating another. Each attach pass also STOPS the extra living canaries
+for a campaign (never delete; at most 120 per pass), keeping the newest
+test with readings, then the stored test, then the newest, and points
+state at the kept test. The stopped ids are logged.
+
+**Not changed.** No campaign, mailbox, setting, key or WRITE_ENABLED is
+touched; the LOCKED section is unchanged.
+
+**Guards.** `src/services/copyCanaryDedupe.test.ts`;
+`src/guards/canon.test.ts` D309.
 

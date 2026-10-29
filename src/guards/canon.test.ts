@@ -18872,3 +18872,22 @@ describe("owner intent — D308 drain mode", () => {
     assert.match(decisions, /^\| D308 \|/m, "status index has no D308 row (D127)");
   });
 });
+
+describe("owner intent — D309 copy-canary idempotent", () => {
+  it("D309: ensureCopyTest is single-flight with a create ledger and a duplicate stop; ledger and canon say so", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const [svc, canon, decisions] = await Promise.all([
+      read("../services/copyCanary.ts"),
+      read("../../CANON.md"),
+      read("../../DECISIONS.md"),
+    ]);
+    assert.match(svc, /canaryCreateLedger\.singleFlight/, "ensureCopyTest lost single-flight (D309)");
+    assert.match(svc, /canaryCreateLedger\.markAttempt/, "create lost the cooldown mark (D309)");
+    assert.match(svc, /stopDuplicateCanaries/, "attach lost the duplicate stop (D309)");
+    assert.doesNotMatch(svc, /deleteTest|deleteAutomated/, "canary cleanup must stop, never delete (D309)");
+    assert.match(canon, /\*\*D309\.\*\*/, "CANON.md lost the D309 note");
+    assert.match(decisions, /## D309 — /, "DECISIONS.md has no D309 entry");
+    assert.match(decisions, /^\| D309 \|/m, "status index has no D309 row (D127)");
+  });
+});

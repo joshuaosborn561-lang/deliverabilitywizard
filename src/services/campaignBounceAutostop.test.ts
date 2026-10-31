@@ -581,6 +581,84 @@ describe("D140/D148 — a burst reads the SMTP reasons and opens the incident", 
     assert.equal(result.bursts[0]?.verdict?.dominant, "content_block");
     assert.deepEqual(queued, [3847794]);
   });
+
+  it("reads Exchange Mimecast NDRs even when Smartlead filed them Not Interested", async () => {
+    const MIMECAST_NDR =
+      "Your message to communications@pcg.org couldn't be delivered. " +
+      "Status code: 550 5.7.352 Mimecast detected message as spam or virus " +
+      "-> 554 Email rejected due to security policies";
+    const queued: number[] = [];
+    const statusWrites: string[] = [];
+    const sent: string[] = [];
+    const state = store();
+    state.setBounceSnapshot(4037557, {
+      bounced: 0,
+      sent: 130,
+      at: new Date(FIXED_T - 10 * 60 * 1000).toISOString(),
+    });
+    const service = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          { id: 4037557, name: "EMCOR E Small Ops", status: "ACTIVE" },
+        ],
+        getCampaignAnalyticsByDate: async () => ({
+          sent_count: 147,
+          bounce_count: 14,
+        }),
+        getCampaignStatistics: async () => ({}),
+        updateCampaignStatus: async (_id: number, status: string) => {
+          statusWrites.push(status);
+        },
+        listBouncedSendStats: async () => ({
+          total_stats: "2",
+          data: [
+            {
+              lead_email: "communications@pcg.org",
+              lead_category: "Not Interested",
+              sent_time: new Date(FIXED_T - 20 * 60 * 1000).toISOString(),
+            },
+            {
+              lead_email: "info@ivyliving.com",
+              lead_category: "Not Interested",
+              sent_time: new Date(FIXED_T - 25 * 60 * 1000).toISOString(),
+            },
+          ],
+        }),
+        fetchLeadByEmail: async (email: string) => ({
+          id: email.startsWith("communications") ? 111 : 222,
+        }),
+        getLeadMessageHistory: async () => ({
+          history: [
+            { type: "SENT", from: "philiphoppe@culturefitsaio.info" },
+            { type: "REPLY", email_body: MIMECAST_NDR },
+          ],
+        }),
+        fetchCampaignSequences: async () => [],
+        deleteCampaignLead: async () => undefined,
+        restoreCampaignLead: async () => undefined,
+      } as never,
+      state,
+      { send: async (text: string) => void sent.push(text) } as never,
+      undefined,
+      () => FIXED_T,
+    );
+    service.setIsolationBranch({
+      queueContentBlockSuspect: async (campaignId: number) => {
+        queued.push(campaignId);
+      },
+    });
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(statusWrites, [], "no pause (D148)");
+    assert.equal(result.bursts[0]?.verdict?.dominant, "content_block");
+    assert.match(result.bursts[0]?.verdict?.summary ?? "", /content_block/);
+    assert.deepEqual(result.bursts[0]?.verdict?.senderDomains, [
+      "culturefitsaio.info",
+    ]);
+    assert.deepEqual(queued, [4037557]);
+    assert.match(sent[0] ?? "", /Microsoft is blocking the message content/);
+    assert.doesNotMatch(sent[0] ?? "", /unreadable this tick/);
+  });
 });
 
 describe("D162 — 5.1.8 opens the retire ask without a burst", () => {

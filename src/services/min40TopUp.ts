@@ -1747,7 +1747,7 @@ export class Min40TopUpService {
       const email = accountEmail(account)?.toLowerCase();
       if (!email) continue;
       if (isGenericMailbox(account, email, this.config, this.state)) continue;
-      if (!owesWarmup(account, email, this.config, this.state)) continue;
+      if (!owesWarmup(account, email, this.config, this.state, now)) continue;
       const clientId = ownedNamedClientIdForSeat({
         account,
         email,

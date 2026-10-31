@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D320** (2026-10-29). One page of current truth. When a new
+Canon as of **D322** (2026-10-31). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -9,6 +9,8 @@ guard in `src/guards/meta.test.ts` enforces both).
 and every reversal, and most of it is **superseded**. Do not derive behaviour
 from it. Derive behaviour from this file; use the ledger only to understand
 *why* a rule here exists (each rule cites its decision numbers).
+
+**D322.** The `locked-canon` CI job passes a canon-consistent PR (LOCKED section, `docs/LOCKED-CANON.md`, and `src/lib/lockedCanon.ts` unchanged) without Josh's approval. It fails a PR that changes those locked canon files or rules unless the PR has the `canon-change` label approved by Josh. Canon edits still need Josh. Unauthorized locked-canon edits must never auto-merge. POD-40, the Generics Ledger, and ESP matching are unchanged.
 
 **D320.** `lead-runout` reads retry once and the walk stops at 7 minutes, resuming next pass; alert rules unchanged.
 

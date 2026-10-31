@@ -167,6 +167,11 @@ const ConfigSchema = z.object({
    */
   enableCampaignCheck: boolFromEnv(true),
   cronCampaignCheck: z.string().default("0 * * * *"),
+  /**
+   * D316 (B3) — named seats on POD-A / POD-B stay within 15%; pod-tags retags
+   * idle named seats larger→smaller. Kill switch for the only A↔B retag.
+   */
+  enableNamedPodRebalance: boolFromEnv(true),
   /** A1 (D312) — critical sweep: placement results, test-reconcile, isolation on the top-priority lane. */
   enableCriticalSweep: boolFromEnv(true),
   cronCriticalSweep: z.string().default("7,37 * * * *"),
@@ -640,6 +645,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableCampaignHealth: env.ENABLE_CAMPAIGN_HEALTH,
     enableCampaignCheck: env.ENABLE_CAMPAIGN_CHECK,
     cronCampaignCheck: env.CRON_CAMPAIGN_CHECK ?? "0 * * * *",
+    enableNamedPodRebalance: env.ENABLE_NAMED_POD_REBALANCE,
     enableCriticalSweep: env.ENABLE_CRITICAL_SWEEP,
     cronCriticalSweep: env.CRON_CRITICAL_SWEEP ?? "7,37 * * * *",
     enableClientRest: env.ENABLE_CLIENT_REST,

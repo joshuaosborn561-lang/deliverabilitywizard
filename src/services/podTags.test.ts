@@ -339,3 +339,70 @@ describe("PodTagService (D135)", () => {
     assert.ok(removes[0]![1]!.includes(72));
   });
 });
+
+describe("PodTagService D316 — named seats within 15%", () => {
+  const tagBody = (pod: "A" | "B") => [{ tag_name: pod === "A" ? POD_TAG_A : POD_TAG_B }];
+  async function setup(opts: { aOnCampaign: boolean; dryRun?: boolean }) {
+    const state = new StateStore(`/tmp/dw-d316-${process.pid}-${Date.now()}-${Math.random()}.json`);
+    await state.load();
+    const accounts: unknown[] = [];
+    const mk = (id: number, pod: "A" | "B", onCampaign: boolean) => {
+      const email = `n${id}@acme.test`;
+      accounts.push({
+        id,
+        from_email: email,
+        client_id: 9,
+        type: id % 2 ? "GMAIL" : "OUTLOOK",
+        campaign_ids: onCampaign ? [50] : [],
+        tags: tagBody(pod),
+      });
+      if (!onCampaign) {
+        state.markRestingInbox({ email, clientId: 9 } as never);
+      }
+    };
+    for (let i = 1; i <= 20; i += 1) mk(i, "A", opts.aOnCampaign);
+    for (let i = 21; i <= 24; i += 1) mk(i, "B", true);
+    const assigns: Array<[number[], number[]]> = [];
+    const removes: Array<[number[], number[]]> = [];
+    const smartlead = {
+      ensureTag: async (name: string) => ({ id: name === POD_TAG_A ? 71 : 72, name }),
+      assignTags: async (ids: number[], tags: number[]) => void assigns.push([ids, tags]),
+      removeTags: async (ids: number[], tags: number[]) => void removes.push([ids, tags]),
+    };
+    const config = loadConfig({ DRY_RUN: opts.dryRun ? "true" : "false" } as NodeJS.ProcessEnv);
+    const service = new PodTagService(
+      config,
+      smartlead as never,
+      state,
+      bookWith([{ id: 50, name: "Acme", status: "ACTIVE", client_id: 9 }], accounts),
+      async () => {},
+    );
+    return { service, assigns, removes };
+  }
+  const weekday = new Date("2026-10-05T14:00:00.000Z");
+
+  it("retags idle POD-A seats to POD-B (remove old, add new) and caps the pass", async () => {
+    const { service, assigns, removes } = await setup({ aOnCampaign: false });
+    const result = await service.run({ now: weekday });
+    assert.ok((result.rebalanced ?? 0) > 0 && (result.rebalanced ?? 0) <= 10);
+    const moved = removes.flatMap(([ids]) => ids);
+    assert.ok(moved.length > 0);
+    assert.ok(moved.every((id) => id <= 20), "only POD-A seats move");
+    assert.ok(removes.every(([, tags]) => tags[0] === 71), "old POD-A tag removed");
+    assert.ok(assigns.some(([, tags]) => tags[0] === 72), "POD-B tag added");
+  });
+
+  it("never retags a seat that is on an ACTIVE campaign (no unlink from live sending)", async () => {
+    const { service, removes } = await setup({ aOnCampaign: true });
+    const result = await service.run({ now: weekday });
+    assert.equal(result.rebalanced ?? 0, 0);
+    assert.deepEqual(removes, []);
+  });
+
+  it("dry-run logs the plan and writes nothing", async () => {
+    const { service, assigns, removes } = await setup({ aOnCampaign: false, dryRun: true });
+    const result = await service.run({ now: weekday });
+    assert.equal(result.rebalanced ?? 0, 0);
+    assert.deepEqual([assigns, removes], [[], []]);
+  });
+});

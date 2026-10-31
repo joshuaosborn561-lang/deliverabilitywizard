@@ -90,6 +90,15 @@ export function mailboxSignatureMismatch(opts: {
   clientBrand?: string | null;
   otherClientBrands?: string[];
 }): string | null {
+  // D321 — a blank or placeholder sender name is a mismatch, never "in sync".
+  // (The company name as the sender is fine: Josh, "just send as the company".)
+  const sender = (opts.fromName ?? "").trim();
+  if (
+    isPlaceholderPersonName(sender) &&
+    !isCompanySenderName(sender, resolveSignatureBrand(opts))
+  ) {
+    return `has no real sender name (${sender ? JSON.stringify(sender) : "blank"}; want a persona or the company name)`;
+  }
   const desired = desiredMailboxSignature(opts);
   if (!desired) return null;
   const actual = extractSignatureLines(opts.signature).join("\n");

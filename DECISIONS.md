@@ -308,6 +308,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D318 | Live | Exclusive health lane vs the serial mutation queue: a normal-lane job at the head of the Smartlead mutation queue parked behind the exclusive health lane while the health pass (reconnect, mailbox-gap, campaign-health writes) waited on that same queue — a deadlock released only by the 6-minute job timeout, three jobs deep (limiter idle, queue depth 3, oldest wait 300s+). Queued jobs now ride the health lane while it is exclusive (one job at a time, so at most one slot); direct normal-lane calls still wait. `/health` limiter adds `parkedBehindHealth` / `healthWaiting`. No cadence, stage, campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 | D319 | Live | Report-read budget + normal-lane share: (1) SmartDelivery `spam-test/report/*` reads (providerwise, domain-blacklist, blacklist, sender-account-wise) retry once, not four times, and three failed reads in a row (429 / 5xx / timeout) pause report reads for 2 minutes — callers fail fast; a missing test (404) does not count. (2) `monitor-results` works in a 6-minute budget, rotates its test walk from where the last pass stopped (unfinished tests carry over; paused reads are never recorded as "no hits"), and runs a second worker only while the limiter has headroom (no pause, no 429 streak, under 60% of 150/min). (3) While health is exclusive the normal lane keeps one share slot (never the last free one) so the 6-hour monitor chain (lead-runout, canary-adopt, isolation-rig …) can finish; idle slots are handed to waiters when the exclusive stretch ends. No stage removed, no cadence change, no campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 | D320 | Live | lead-runout budget: the 6-hour monitor chain's `lead-runout` walks every ACTIVE campaign serially (2-3 Smartlead reads each, normal lane) and timed out at 10m five times running (last ok 2:02am CT). Reads now retry once, the walk stops at 7 minutes and resumes where it stopped next pass (cursor in memory). No alert rule, threshold, campaign or WRITE_ENABLED change. LOCKED section unchanged. |
+| D321 | Live — LOCKED | Every inbox has a name (Josh, 2026-10-29: "Every inbox has a name. Canon that it can never have that again. If no name just send as the company. But everyone should have a name."). A blank or placeholder from_name / signature name (Pool User, Generic, Canary, test, one word, local part) is never written: a seat sends as its Generics Ledger / InboxKit persona, else as the client company name (signature = company). No assign is refused for a missing persona. A 10-minute sweep replaces any placeholder on a non-STOPPED campaign (name + signature only; write flag off until Josh merges); signature checks treat a blank/placeholder name as a mismatch; release restores the persona. Prod incident 2026-10-29: "Pool User Emcor" sent to a prospect. |
 | D322 | Live | Locked-canon CI passes canon-consistent PRs without Josh's approval. It fails when the LOCKED section, `docs/LOCKED-CANON.md`, or `src/lib/lockedCanon.ts` changes unless the PR has the `canon-change` label approved by Josh (`joshuaosborn561-lang` applied it, or he approved the PR while it is present). Josh stays CODEOWNER of those definition files. Implementation paths, including `src/guards/lockedCanon.test.ts`, are not Josh-only. Required checks stay `check` and `locked-canon`; code-owner review is not a merge gate. Unauthorized locked-canon edits never auto-merge. POD-40, Generics Ledger, and ESP matching unchanged. |
 
 ---
@@ -11479,6 +11480,47 @@ stage timeout) and the next pass resumes at the first unwalked campaign.
 Alert thresholds and messages are unchanged.
 
 **Guards.** `src/services/leadRunout.test.ts` (D320), `src/guards/canon.test.ts` D320.
+
+---
+
+## D321 — LOCKED: every inbox has a name
+
+**Decision (Josh, 2026-10-29 3:32pm CT, in his words):** "Every inbox has a
+name. Canon that it can never have that again. If no name just send as the
+company. But everyone should have a name."
+
+**Incident.** A prospect received an email signed "Pool User Emcor". When a
+generic seat had no named pool row, `min40TopUp.ts` (short-campaign and POD
+fill), `campaignTopUp.ts` and `poolProvisioner.ts` fell back to the literals
+"Pool" / "User", wrote Smartlead `from_name = "Pool User"` and the signature
+`from_name\nBrand`. Every signature check compared the signature to
+`from_name\nBrand`, so "Pool User\nEmcor" passed. About 299 mailboxes carried it
+(EMCOR, PowerGRYD, TechEvo, Nutter, Parlay, Peterson).
+
+**Rule.** A mailbox never carries, writes or sends with a blank or placeholder
+sender name. Identity = persona (pool row from the Generics Ledger / InboxKit,
+else the real name already on the mailbox) or, with no persona, the client
+company name as `from_name` with the company as the signature. Nothing invents
+a name; nothing refuses an assign for a missing persona. A name equal to
+another client's company is not reused as a person.
+
+**Enforcement.** Hotfix (PR #368, not locked): `src/lib/personaName.ts`, every
+fallback removed, `desiredMailboxSignature` never builds a placeholder
+signature. This decision adds: the 10-minute `placeholder-sweep` (replaces,
+never unlinks; `ENABLE_PLACEHOLDER_SWEEP` + `PLACEHOLDER_SWEEP_WRITE_ENABLED`,
+both default off until Josh merges this PR), `mailboxSignatureMismatch` flags a
+blank/placeholder name, and `returnGenericToUntaggedPool` restores the
+persona. The earlier draft "unlink + PLACEHOLDER-NAME tag + zero toward POD-40"
+is superseded by Josh's replace-with-company rule: a seat that is renamed stays
+on its campaigns and keeps counting toward POD-40.
+
+**Added to the LOCKED section** of CANON.md and docs/LOCKED-CANON.md, so this
+PR and any change to it never auto-merge (D285).
+
+**Guards.** `src/lib/personaName.test.ts`,
+`src/services/placeholderPersona.test.ts`,
+`src/services/placeholderSweep.test.ts`, `src/guards/canon.test.ts` D321,
+`src/guards/lockedCanon.test.ts` LOCKED text mirrored.
 
 ---
 

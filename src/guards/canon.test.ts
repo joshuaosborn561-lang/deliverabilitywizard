@@ -19019,3 +19019,21 @@ describe("owner intent — D322 canon-consistent merge gate", () => {
     );
   });
 });
+
+describe("owner intent — D314 Insight is exempt from esp_mix", () => {
+  it("D314: campaignCheck skips esp_mix for Insight; every other client keeps it", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const [check, canon, decisions] = await Promise.all([
+      read("../services/campaignCheck.ts"),
+      read("../../CANON.md"),
+      read("../../DECISIONS.md"),
+    ]);
+    assert.match(check, /espMixExempt/, "Insight esp_mix exemption is gone (D314)");
+    assert.match(check, /!espMixExempt\s*&&/, "esp_mix must be gated on the exemption (D314)");
+    assert.match(check, /kind: "esp_mix"/, "esp_mix must still exist for other clients (D314)");
+    assert.match(canon, /Insight, which is exempt \(D314/, "CANON.md lost the D314 note");
+    assert.match(decisions, /## D314 — /, "DECISIONS.md has no D314 entry");
+    assert.match(decisions, /^\| D314 \|/m, "status index has no D314 row");
+  });
+});

@@ -300,6 +300,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D308 | Live | Drain mode (A0): `POST /drain?action=on` skips every NEW cron tick, post-pass retry and manual `/run` while in-flight work finishes; `/health` reports `drain`, `activeJobs`, `idleNow` and `safeToDeploy` (drain on AND nothing running). Auto-expires (30m default, 120m max). Changes no campaigns, mailboxes, settings or WRITE_ENABLED. LOCKED section unchanged. |
 | D309 | Live | Copy-canary idempotent: one live "Canary copy" SmartDelivery test per campaign. Single-flight per campaign, a 3h create cooldown (also after a failed, maybe-landed create), stored test kept when the list hits the 5,000-test page cap, and each attach pass STOPS (never deletes) extra living canaries for a campaign, keeping the one with readings. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 | D312 | Live | A1 critical sweep: placement results (`monitor-results`), `test-reconcile` and `isolation-branch` run every 30 min on their own lock and a top-priority Smartlead lane; bounce-autostop's 10-min cron also runs on that lane (never blocked by the exclusive health lane, served first, and critical writes jump the mutation queue). Amends D270 (exclusive health lane), D257 (limiter) and D247 (locks). Those stages are overdue-paged at 75 min, not 6h45m. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
+| D314 | Live (LOCKED PR — Josh merges) | Insight is exempt from the `esp_mix` Canon finding (Josh 10/29: "yes exempt insight it is mostly msft"). Campaigns on Insight (client 582890 / Insight campaign ids) no longer raise `esp_mix`, so they stop counting against `/health` canonFindings and the Canon score. ESP-mix still applies to every other client; seat assignment, min-40 and the Azure rules are unchanged. |
 | D315 | Live | A4 bloat: (1) `enrichCampaignIds` remembers each test's campaign (immutable) instead of one `GET spam-test/{id}` per test in five services every pass — those were 3,088 of 4,886 logged 429s on 10/28–29 (628 tests); (2) the unfiltered `listTests` is shared for 30 s across callers and dropped on any write; (3) the D260 "treating as generic" warning logs once per host/client per process (~800 identical lines per 12 h). No stage removed, no behavior change. |
 | D317 | Live | Health-sweep budget: (1) a cold test→campaign cache (after a deploy) can no longer storm SmartDelivery — 3 failed lookups in a row open a 2-minute breaker, each lookup retries once not four times, and every `enrichCampaignIds` caller gets a 90 s default budget; (2) `campaign-health` and `client-rest` stage timeout 10m → 15m as a safety net, with a 20m hard cap on any stage; (3) campaign-health logs its top-up / fan-out / copy-canary seconds and `/health` publishes each stage's `lastDurationMs`. Builds on D315. No stage removed, no cadence change, no campaign, mailbox, setting or WRITE_ENABLED change. |
 | D318 | Live | Exclusive health lane vs the serial mutation queue: a normal-lane job at the head of the Smartlead mutation queue parked behind the exclusive health lane while the health pass (reconnect, mailbox-gap, campaign-health writes) waited on that same queue — a deadlock released only by the 6-minute job timeout, three jobs deep (limiter idle, queue depth 3, oldest wait 300s+). Queued jobs now ride the health lane while it is exclusive (one job at a time, so at most one slot); direct normal-lane calls still wait. `/health` limiter adds `parkedBehindHealth` / `healthWaiting`. No cadence, stage, campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
@@ -11229,6 +11230,24 @@ stages). Does not change POD-40, the Generics Ledger, any LOCKED rule, or
 `WRITE_ENABLED`.
 
 **Guards.** `src/lib/criticalLane.test.ts`; `src/guards/canon.test.ts` D312.
+
+
+## D314 — Insight is exempt from the ESP-mix finding
+
+**Decision (Josh, 2026-10-29):** "yes exempt insight it is mostly msft".
+
+**Evidence.** `esp_mix` was 10 of the 59 Canon failures on 10/29; the
+Insight campaigns are Microsoft-heavy by design.
+
+**Rule.** `campaignCheck` does not raise `esp_mix` for a campaign whose
+`client_id` is Insight (582890) or that is an Insight campaign. Every
+other client keeps the per-POD mix rule (D203/D233/D263/D301). No change
+to seat assignment, min-40 top-up, the Azure 0.1 weight or cross-ESP
+placement scoring.
+
+**Guards.** `campaignCheck.test.ts` D314 (a 30 Microsoft / 10 Gmail Insight
+POD raises no finding; the existing Parlay test keeps the rule for others);
+`src/guards/canon.test.ts` D314.
 
 
 ## D315 — A4 bloat removal: stop re-asking SmartDelivery the same questions

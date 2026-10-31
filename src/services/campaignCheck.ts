@@ -53,6 +53,7 @@ import {
   insightDualSignatureMismatch,
   insightSenderEmail,
   isInsightCampaign,
+  isInsightClientId,
   isInsightJoshAllowedSender,
   isInsightJoshOnlyCampaign,
   mailboxActiveSalesGliderCampaigns,
@@ -1611,7 +1612,14 @@ export class CampaignCheckService {
               senderEspBucket(row) === "gmail",
           );
         const microsoftShare = this.clientSplits?.shareForClient(taggedClient);
+        // D314 — Insight is mostly Microsoft by design (Josh, 10/29): the
+        // ESP-mix finding is not raised for Insight campaigns.
+        const espMixExempt =
+          isInsightClientId(campaign.client_id) ||
+          isInsightClientId(taggedClient?.id) ||
+          isInsightCampaign(campaign);
         if (
+          !espMixExempt &&
           clientHasBothEsps &&
           !podEspMixHolds({
             outlook,

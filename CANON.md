@@ -486,7 +486,8 @@ Caps ramp manually (35 on Oct 12).
   A POD must not go monoculture. D192 ESP-balanced ~50/50
   across A/B *within* each ESP still stands — this is a per-POD
   mix on top. An ACTIVE campaign whose on-week staffable
-  mix breaks that target is an `esp_mix` Canon finding (D217).
+  mix breaks that target is an `esp_mix` Canon finding (D217) —
+  **except Insight, which is exempt (D314: mostly Microsoft by design).**
   `/health` `canonFindings` counts **ACTIVE campaigns only**;
   campaign-check prunes STOPPED / COMPLETED / deleted leftover
   rows so they cannot keep flagging (D263).

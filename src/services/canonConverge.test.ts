@@ -35,7 +35,7 @@ const account = { id: 1, from_email: "box@client.com", client_id: 5 } as never;
 describe("D303 canon converge service", () => {
   it("INFRA + same-ESP under 80 rests the mailbox, generic covers via the ledger, returns after 28 days", async () => {
     const clock = { now: new Date("2026-10-26T12:00:00Z") };
-    const { state, svc, calls, sent } = await rig(clock);
+    const { state, svc, calls } = await rig(clock);
     const out = await svc.onIsolationVerdict({
       verdict: "INFRA", clientId: 5, pod: "A", campaignId: 11, accounts: [account],
       sameEspOf: () => ({ inboxRate: 50, scoredSameEsp: true }),
@@ -48,7 +48,6 @@ describe("D303 canon converge service", () => {
     assert.equal(seat.assignedPod, "A");
     assert.equal(seat.coveringFor[0]!.email, "box@client.com");
     assert.equal(state.getMailboxRest("box@client.com")!.coveringGeneric, "gen@pool.com");
-    assert.match(sent[0]!, /resting 28 days/);
 
     clock.now = new Date("2026-11-08T12:00:00Z");
     assert.deepEqual(await svc.returnDueRests(), [], "day 13 is not back yet");

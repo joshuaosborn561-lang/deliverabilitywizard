@@ -186,14 +186,3 @@ export function restCoveringFor(record: MailboxRestRecord): {
 } {
   return { email: record.email, warmReadyAt: record.restUntil };
 }
-
-/** Plain-English Slack line for a rest / burn. */
-export function restAlertText(
-  decision: Exclude<RestDecision, { action: "none" }>,
-): string {
-  const r = decision.record;
-  if (decision.action === "burn") {
-    return `:fire: *${r.email} is BURNED* (${r.burnReason}). Pulled for good. A retire/replace request is raised; any replacement spend needs approval.`;
-  }
-  return `:zzz: *${r.email} is resting ${MAILBOX_REST_DAYS} days* (rest ${r.restCount} of ${MAILBOX_REST_MAX_COUNT}). Same-ESP placement read under ${MAILBOX_REST_SAME_ESP_FLOOR}%, and isolation shows the mailbox, not the copy, is the cause. Warmup stays on; a warm generic covers its seat. It goes back on ${r.restUntil?.slice(0, 10)}.`;
-}

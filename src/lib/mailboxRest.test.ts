@@ -4,7 +4,6 @@ import {
   decideRest,
   mailboxIsCause,
   markReturned,
-  restAlertText,
   restsDueBack,
   MAILBOX_REST_DAYS,
 } from "./mailboxRest.js";
@@ -33,7 +32,6 @@ describe("D303 mailbox rest-then-burn", () => {
     assert.equal(d.record.restCount, 1);
     assert.equal(d.record.history.length, 1);
     assert.equal(Date.parse(d.record.restUntil!) - now.getTime(), MAILBOX_REST_DAYS * 86400000);
-    assert.match(restAlertText(d), /resting 28 days/);
   });
   it("due back after 28 days, then returned", () => {
     const d = decideRest({ ...base, now: new Date("2026-10-01T00:00:00Z") });
@@ -52,7 +50,6 @@ describe("D303 mailbox rest-then-burn", () => {
     const back = markReturned(d.record);
     const again = decideRest({ ...base, existing: back });
     assert.equal(again.action, "burn");
-    if (again.action === "burn") assert.match(restAlertText(again), /BURNED/);
   });
   it("rest_count over 3 is BURNED", () => {
     const d = decideRest(base);

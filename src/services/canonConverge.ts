@@ -20,7 +20,6 @@ import {
   decideRest,
   markReturned,
   mailboxIsCause,
-  restAlertText,
   restCoveringFor,
   restsDueBack,
   withCoveringGeneric,
@@ -153,7 +152,6 @@ export class CanonConvergeService {
         );
       }
       this.deps.state.upsertMailboxRest(record);
-      await this.deps.slack.send(restAlertText(decision.action === "rest" ? { action: "rest", record } : { action: "burn", record }));
     }
     return out;
   }

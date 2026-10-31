@@ -50,3 +50,28 @@ export function slackKindForIsolationAction(
   }
   return null;
 }
+
+/**
+ * Josh, Oct 31 2026: #deliverability carries ONLY one-tap asks. When
+ * DELIVERABILITY_SLACK_ONE_TAP_ONLY is on, every other Wizard post (log
+ * lane, ops alerts, EOD scoreboard, run summaries, action receipts, notes,
+ * the 550-hold digest) is dropped to the console. Default off so the repo's
+ * stated behaviour is unchanged until the env flag is set on Railway.
+ */
+export function oneTapOnly(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = (env.DELIVERABILITY_SLACK_ONE_TAP_ONLY ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+/** A one-tap ask is a message that carries an actions block (buttons). */
+export function hasActionButtons(blocks?: unknown[]): boolean {
+  return (
+    Array.isArray(blocks) &&
+    blocks.some(
+      (b) =>
+        typeof b === "object" &&
+        b !== null &&
+        (b as { type?: string }).type === "actions",
+    )
+  );
+}

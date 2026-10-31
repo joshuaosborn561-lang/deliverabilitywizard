@@ -6,6 +6,8 @@ import {
   isRateLimitNoise,
 } from "../lib/alertNoise.js";
 import {
+  hasActionButtons,
+  oneTapOnly,
   slackAllowed,
   slackKindForIsolationAction,
   type SlackAllowKind,
@@ -99,6 +101,12 @@ export class SlackClient {
     blocks?: unknown[],
     kind?: SlackAllowKind | SlackLogKind,
   ): Promise<{ channel?: string; ts?: string } | undefined> {
+    if (oneTapOnly() && !hasActionButtons(blocks)) {
+      console.log(
+        `[slack-quiet] one-tap-only dropped ${kind ?? "unclassified"}: ${text.replace(/\n/g, " ").slice(0, 200)}`,
+      );
+      return undefined;
+    }
     if (isSlackLogKind(kind)) {
       return this.sendToLog(text, blocks);
     }
@@ -186,6 +194,12 @@ export class SlackClient {
   async notifyDeliverabilityNote(
     text: string,
   ): Promise<{ channel?: string; ts?: string } | undefined> {
+    if (oneTapOnly()) {
+      console.log(
+        `[slack-quiet] one-tap-only dropped deliverability note: ${text.replace(/\n/g, " ").slice(0, 200)}`,
+      );
+      return undefined;
+    }
     const channel = deliverabilityChannelId({
       deliverabilitySlackChannelId: this.creds.deliverabilityChannelId,
     });

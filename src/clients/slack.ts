@@ -963,7 +963,7 @@ export class SlackClient {
     accountsChecked: number;
     removed: number;
     skipped: number;
-    /** D139 — the warmup days the gate actually enforces (config, 21). */
+    /** D139 — the warmup days the gate actually enforces (config, 14). */
     owedDays?: number;
     pausedCampaigns: number[];
     removals: Array<{
@@ -975,7 +975,7 @@ export class SlackClient {
     }>;
     errors: string[];
   }): Promise<void> {
-    const owedDays = summary.owedDays ?? 21;
+    const owedDays = summary.owedDays ?? 14;
     const seriousErrors = summary.errors
       .filter((e) => !isRateLimitNoise(e))
       .map(humanizeAlertError);

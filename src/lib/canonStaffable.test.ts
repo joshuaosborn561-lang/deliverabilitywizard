@@ -207,7 +207,7 @@ describe("canonStaffable (D217)", () => {
         now,
       }).reasons.includes("under_warmed"),
       true,
-      "without the tag, a 9/29 Smartlead clock is still under 21 days",
+      "without the tag, a 9/29 Smartlead clock is still under 14 days",
     );
   });
 });

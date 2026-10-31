@@ -25,6 +25,8 @@ export const CANON_CORE_KINDS = [
   "missing_canary",
   "inbox_missing_known_good",
   "merge_tag_blank",
+  "missing_breakup_step",
+  "send_window",
   ...GENERIC_POOL_CORE_KINDS,
   ...CANARY_LOCK_CORE_KINDS,
 ] as const;

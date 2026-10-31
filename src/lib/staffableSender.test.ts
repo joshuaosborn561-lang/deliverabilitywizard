@@ -61,7 +61,7 @@ describe("staffableSender", () => {
     );
   });
 
-  it("D227: WARMUP-GATE-EXEMPT tidalstack seats staff as 21+ days warm", () => {
+  it("D227: WARMUP-GATE-EXEMPT tidalstack seats staff as 14+ days warm", () => {
     const blocked = {
       is_smtp_success: true,
       is_imap_success: true,

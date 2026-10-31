@@ -104,6 +104,10 @@ import {
   step2NeedsDelayFix,
 } from "../lib/sequenceDelay.js";
 import {
+  campaignHasBreakupStepRule,
+  formatBreakupStepFinding,
+} from "../lib/breakupStep.js";
+import {
   appendSignatureTag,
   clientBrandList,
   findForeignBrand,
@@ -1495,6 +1499,12 @@ export class CampaignCheckService {
         const detail = formatStep2DelayFinding(sequences);
         if (detail) {
           findings.push({ kind: "step2_delay", detail });
+        }
+      }
+      if (campaignHasBreakupStepRule(campaign)) {
+        const breakup = formatBreakupStepFinding(sequences);
+        if (breakup) {
+          findings.push({ kind: "missing_breakup_step", detail: breakup });
         }
       }
     } catch (error) {

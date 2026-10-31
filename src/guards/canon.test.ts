@@ -50,20 +50,20 @@ describe("owner intent", () => {
     );
   });
 
-  it("D1/D50: pool warmup is 21 days from InboxKit import", () => {
+  it("D1/D306: pool warmup is 14 days from InboxKit import", () => {
     assert.equal(
       defaults.poolWarmupDays,
-      21,
+      14,
       stop(
-        "A mailbox owes 21 days from InboxKit import before going live (D1 clock, D50 duration).",
+        "A mailbox owes 14 days from InboxKit import before going live (D1 clock, D306 duration).",
         `Pool warmup is now ${defaults.poolWarmupDays} days.`,
       ),
     );
     assert.equal(
       defaults.campaignMinWarmupDays,
-      21,
+      14,
       stop(
-        "21 days is the warmed-vs-unwarmed clock (D50). D51 stopped the gate from pulling.",
+        "14 days is the warmed-vs-unwarmed clock (D306). D51 stopped the gate from pulling.",
         `Campaign min warmup is now ${defaults.campaignMinWarmupDays} days.`,
       ),
     );
@@ -515,28 +515,28 @@ describe("owner intent — D41 beanstalk rotation", () => {
     );
   });
 
-  it("D41/D50: fresh, pool, and campaign-min warmup are all 21 days", () => {
+  it("D41/D306: fresh, pool, and campaign-min warmup are all 14 days", () => {
     assert.equal(
       defaults.freshInboxWarmupDays,
-      21,
+      14,
       stop(
-        "Fresh InboxKit inboxes owe 21 days before a live campaign (D41).",
+        "Fresh InboxKit inboxes owe 14 days before a live campaign (D41/D306).",
         `Fresh warmup is now ${defaults.freshInboxWarmupDays} days.`,
       ),
     );
     assert.equal(
       defaults.poolWarmupDays,
-      21,
+      14,
       stop(
-        "Pool warmup is 21 days from InboxKit import (D50).",
+        "Pool warmup is 14 days from InboxKit import (D306).",
         `Pool warmup is now ${defaults.poolWarmupDays} days.`,
       ),
     );
     assert.equal(
       defaults.campaignMinWarmupDays,
-      21,
+      14,
       stop(
-        "MIN_CAMPAIGN_WARMUP_DAYS is 21 (D50). Fresh boxes use the same clock.",
+        "MIN_CAMPAIGN_WARMUP_DAYS is 14 (D306). Fresh boxes use the same clock.",
         `Campaign min warmup is now ${defaults.campaignMinWarmupDays} days.`,
       ),
     );
@@ -953,28 +953,28 @@ describe("owner intent — D49 isolation autonomy", () => {
 });
 
 describe("owner intent — D50 live-send warmup", () => {
-  it("D50: live-send warmup is 21 days; generic rest stays 14", () => {
+  it("D306: live-send warmup is 14 days; generic rest stays 14", () => {
     assert.equal(
       defaults.poolWarmupDays,
-      21,
+      14,
       stop(
-        "Pool mailboxes owe 21 days from InboxKit import (D50).",
+        "Pool mailboxes owe 14 days from InboxKit import (D306).",
         `Pool warmup is now ${defaults.poolWarmupDays} days.`,
       ),
     );
     assert.equal(
       defaults.campaignMinWarmupDays,
-      21,
+      14,
       stop(
-        "21 days is the warmed-vs-unwarmed clock (D50).",
+        "14 days is the warmed-vs-unwarmed clock (D306).",
         `Campaign min warmup is now ${defaults.campaignMinWarmupDays} days.`,
       ),
     );
     assert.equal(
       defaults.freshInboxWarmupDays,
-      21,
+      14,
       stop(
-        "Fresh InboxKit inboxes still owe 21 days (D41/D50).",
+        "Fresh InboxKit inboxes still owe 14 days (D41/D306).",
         `Fresh warmup is now ${defaults.freshInboxWarmupDays} days.`,
       ),
     );
@@ -3665,20 +3665,20 @@ describe("owner intent — D103 sequence writes keep only writable fields", () =
 });
 
 describe("owner intent — D105 warmup gate is on", () => {
-  it("D105: 21-day warmup gate defaults on; canaries stay a separate fleet", () => {
+  it("D105: 14-day warmup gate defaults on; canaries stay a separate fleet", () => {
     assert.equal(
       defaults.enableWarmupGate,
       true,
       stop(
-        "The 21-day warmup gate is on for live senders (D105).",
+        "The 14-day warmup gate is on for live senders (D105/D306).",
         "ENABLE_WARMUP_GATE now defaults off.",
       ),
     );
     assert.equal(
       defaults.campaignMinWarmupDays,
-      21,
+      14,
       stop(
-        "Live send owes 21 days from InboxKit (D50/D105).",
+        "Live send owes 14 days from InboxKit (D50/D105/D306).",
         `Campaign min warmup is now ${defaults.campaignMinWarmupDays}.`,
       ),
     );
@@ -7422,12 +7422,12 @@ describe("owner intent — D182 standing send window is Mon–Thu 8am–7pm ET",
         "smartlead-campaign-settings.SKILL.md added Friday to days_of_the_week.",
       ),
     );
-    assert.doesNotMatch(
+    assert.match(
       check,
-      /timezone|start_hour|end_hour|days_of_the_week|set_schedule/,
+      /convergeSendCanon\(/,
       stop(
-        "Campaign-check must not overwrite send windows (D182).",
-        "campaignCheck.ts now writes timezone / hours / days — that would smash Cold Call Followup-style custom windows.",
+        "Campaign-check converges the standing send window (D306).",
+        "campaignCheck.ts lost convergeSendCanon.",
       ),
     );
     assert.match(
@@ -7448,10 +7448,18 @@ describe("owner intent — D182 standing send window is Mon–Thu 8am–7pm ET",
     );
     assert.match(
       canon,
+      /Custom windows are overwritten/,
+      stop(
+        "CANON says custom windows are overwritten (D306).",
+        "CANON.md lost the D306 overwrite clause.",
+      ),
+    );
+    assert.doesNotMatch(
+      canon,
       /no schedule-window converge/,
       stop(
-        "CANON says custom windows are not overwritten (D182).",
-        "CANON.md lost the no-converge clause — a later writer could smash afternoon campaigns.",
+        "D306 retired the no-converge clause.",
+        "CANON.md still says there is no schedule-window converge.",
       ),
     );
     assert.match(
@@ -7919,11 +7927,19 @@ describe("owner intent — D186 step 2 delay is 2 days", () => {
         "campaignCheck.ts no longer writes sequences for D186.",
       ),
     );
+    assert.match(
+      check,
+      /formatBreakupStepFinding/,
+      stop(
+        "Campaign-check flags the breakup step (D306).",
+        "campaignCheck.ts lost formatBreakupStepFinding.",
+      ),
+    );
     assert.doesNotMatch(
       check,
-      /seq_number\) === 3|seq_number === 3/,
+      /updateCampaignSequences[\s\S]*seq_number\) === 3/,
       stop(
-        "Campaign-check must not converge step 3+ delays (D186).",
+        "Campaign-check must not write step 3+ delays (D186/D306).",
         "campaignCheck.ts now writes step 3+ delays.",
       ),
     );
@@ -7961,10 +7977,18 @@ describe("owner intent — D186 step 2 delay is 2 days", () => {
     );
     assert.match(
       canon,
-      /Do not change step 3\+ delays/,
+      /missing_breakup_step/,
       stop(
-        "CANON forbids a step 3+ delay converge (D186).",
-        "CANON.md lost the no-step-3+ clause.",
+        "CANON names the missing_breakup_step finding (D306).",
+        "CANON.md dropped missing_breakup_step.",
+      ),
+    );
+    assert.match(
+      canon,
+      /check only, never write sequences/,
+      stop(
+        "CANON says the breakup check never writes sequences (D306).",
+        "CANON.md lost the check-only clause.",
       ),
     );
     assert.match(
@@ -9073,10 +9097,18 @@ describe("owner intent — D192 Insight 582890; ESP pods; null generics stay nul
     );
     assert.match(
       canon,
+      /Named and generic\s+seats share the same 14-day clock/,
+      stop(
+        "CANON states named and generic seats share the 14-day clock (D306).",
+        "CANON.md lost the D306 14-day clock.",
+      ),
+    );
+    assert.doesNotMatch(
+      canon,
       /reporting-only/,
       stop(
-        "CANON states ≥14d warmed is reporting-only; live gate stays 21d (D192).",
-        "CANON.md lost the 14d-reporting / 21d-gate split.",
+        "D306 retired the reporting-only 14 / live-gate 21 split.",
+        "CANON.md still says 14d is reporting-only.",
       ),
     );
     assert.match(
@@ -14122,7 +14154,7 @@ describe("owner intent — D242 CALLER FOLLOW-UP campaign class", () => {
     assert.equal(CALLER_FOLLOWUP_NAME_PREFIX_DEFAULT, "Gabe Calls |");
     assert.equal(CALLER_FOLLOWUP_SENDER_TAG_DEFAULT, "GABE-VM-RESERVED");
     assert.equal(CALLER_FOLLOWUP_TIMEZONE, "America/Chicago");
-    assert.equal(CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS, 10); // D304 supersedes the 3m gap
+    assert.equal(CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS, 3); // D306 keeps D242's 3m gap
     assert.equal(
       isCallerFollowUpCampaign({ id: 4085160, name: "Gabe Calls | Deep Roots" }),
       true,
@@ -14162,7 +14194,7 @@ describe("owner intent — D242 CALLER FOLLOW-UP campaign class", () => {
     );
     assert.equal(
       callerFollowUpSkipsCanonMinGap({ id: 4085160, name: "Gabe Calls | Deep Roots" }),
-      false, // D304 — caller follow-ups get the 10m gap
+      true, // D306 — caller follow-ups keep the 3m gap
     );
     assert.equal(
       callerFollowUpSkipsRunwayAndTopUpAlerts({ id: 4085160, name: "Gabe Calls | Deep Roots" }),
@@ -14371,7 +14403,7 @@ describe("owner intent — D244 CALLER FOLLOW-UP attach is bridge / own-campaign
     );
     assert.match(
       helper,
-      /owned gabe@ still owes 21-day warmup/,
+      /owned gabe@ still owes 14-day warmup/,
       stop("Owned-seat warmup is checked before the reserved tag (D244).", "callerFollowUpMayAttach lost the owned-first order."),
     );
     assert.doesNotMatch(
@@ -19058,5 +19090,42 @@ describe("owner intent — D316 named POD balance 15%", () => {
     assert.match(decisions, /## D316 — /, "DECISIONS.md has no D316 entry");
     assert.match(decisions, /^\| D316 \|/m, "status index has no D316 row");
     assert.match(prompt, /D316 rebalance/, "campaign-setup prompt still says never retag with no exception");
+  });
+});
+
+describe("owner intent — D306 14-day warmup, breakup check, send-window converge", () => {
+  it("D306: 14-day defaults, breakup check-only, schedule never status", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const canon = await read("../../CANON.md");
+    const locked = await read("../../docs/LOCKED-CANON.md");
+    const ledger = await read("../../DECISIONS.md");
+    const config = await read("../config.ts");
+    const breakup = await read("../lib/breakupStep.ts");
+    const send = await read("../lib/campaignSendCanon.ts");
+    const check = await read("../services/campaignCheck.ts");
+
+    assert.match(canon, /D306 duration/);
+    assert.match(canon, /14 days from its InboxKit import/);
+    assert.doesNotMatch(canon, /reporting-only/);
+    assert.match(locked, /14-day warm-ready date/);
+    assert.match(locked, /reaches 14 days warm/);
+    assert.match(ledger, /## D306 — /);
+    assert.match(ledger, /Take \[21\] down to fourteen days/);
+    assert.match(config, /poolWarmupDays: z\.coerce\.number\(\)\.int\(\)\.positive\(\)\.default\(14\)/);
+    assert.match(config, /campaignMinWarmupDays: z\.coerce\.number\(\)\.int\(\)\.positive\(\)\.default\(14\)/);
+    assert.match(config, /freshInboxWarmupDays: z\.coerce\.number\(\)\.int\(\)\.positive\(\)\.default\(14\)/);
+    assert.match(breakup, /never writes sequences/i);
+    assert.match(check, /formatBreakupStepFinding/);
+    assert.doesNotMatch(breakup, /updateCampaignSequences/);
+    assert.match(send, /standingSendWindowBody/);
+    assert.doesNotMatch(send, /updateCampaignStatus|\/status/);
+    assert.match(canon, /Custom windows are overwritten/);
+    assert.match(canon, /Calls \|/);
+    assert.match(canon, /Booking Follow Up/);
+    assert.match(send, /isCallsCampaign/);
+    assert.match(send, /isBookingFollowUpCampaign/);
+    assert.match(ledger, /8:08pm CT/);
+    assert.match(check, /convergeSendCanon\(/);
   });
 });

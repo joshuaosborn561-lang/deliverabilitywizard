@@ -130,11 +130,11 @@ A mailbox may not send live campaign mail until it has served its warmup time.
 
 | Fleet | Wait before live send |
 |---|---|
-| Fresh, non-prewarmed InboxKit mailboxes | **21 days** |
+| Fresh, non-prewarmed InboxKit mailboxes | **14 days** |
 | crosslaunchco.com / crossscaleco.com / cleartechco.com | **none** — pre-warmed, live immediately |
-| Other pool generics (InboxKit import) | **21 days** from import, not from Smartlead's warmup clock |
+| Other pool generics (InboxKit import) | **14 days** from import, not from Smartlead's warmup clock |
 
-Pre-warmed fleets skip the 21-day wait. Do not pull them for "under-warmed"
+Pre-warmed fleets skip the 14-day wait. Do not pull them for "under-warmed"
 off Smartlead's warmup start date.
 
 **The warmup age gate runs before the placement test, not after.** Testing an
@@ -224,7 +224,9 @@ monitoring is the health job.
 - Monday–Thursday only. No Friday, no weekends. Smartlead is one
   window — do not invent a Friday slot.
 - 08:00–19:00 America/New_York (Eastern). Not Chicago 09:00–18:00
-  (retired by D182).
+  (retired by D182). Custom windows are overwritten to this
+  standing window (D306). CALLER FOLLOW-UP keeps Mon–Fri
+  07:00–20:00 Chicago with a 3-minute gap.
 - `min_time_btw_emails: 10` on every campaign (LOCKED, D304). Do not use 13 or 20. The hourly checker
   converges any drift back to 10 on sight, campaign and mailbox level
   (D138) — do not fight it.
@@ -333,11 +335,13 @@ On `upload_sequence`, set `seq_delay_details.delay_in_days` explicitly:
 |---|---|
 | 1 (first email) | **0** |
 | 2 (second email) | **2** |
-| 3+ | leave as uploaded — do not rewrite in this skill |
+| 3 (breakup) | **2** so it lands on day 4 |
 
 Campaign-check flags `step2_delay` when step 2 is not 2 and writes it
-back via `sequencesForWrite`. Canary / pod-control / word-hunt shells
-and 1-step instrumentation are skipped. Do not change step 3+.
+back via `sequencesForWrite`. It flags `missing_breakup_step` when
+step 3 is missing or not 2 — check only, never writes step 3 (D306).
+Canary / pod-control / word-hunt shells, Gabe caller follow-ups, and
+1-step instrumentation are skipped.
 
 Use the native `variants` array on `upload_sequence`. Never concatenate
 whole bodies with `|` as manual spintax.
@@ -403,7 +407,7 @@ Nothing goes ACTIVE until every line passes.
    after excluding unexpired HOLD-UNTIL tags, client off-week rest,
    generic sit, and copy-canary boxes.
 2. **Zero resting mailboxes attached.** Read back. No `MESSAGE_PER_DAY=0`.
-3. **Every attached mailbox clears warmup** (21 days from InboxKit import;
+3. **Every attached mailbox clears warmup** (14 days from InboxKit import;
    pre-warmed fleets waived).
 4. **Recurring SmartDelivery schedule** at `every_days: 1`.
 5. **Launch placement ≥85% same-ESP, promo = miss**, full real sender set,

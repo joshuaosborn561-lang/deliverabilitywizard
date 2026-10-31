@@ -11,9 +11,9 @@ import {
   isRestDetachableCampaign,
 } from "./clientRest.js";
 
-/** Old enough that owesWarmup is false under the 21-day clock. */
+/** Old enough that owesWarmup is false under the 14-day clock. */
 const WARMED = "2025-01-01T00:00:00.000Z";
-/** Still inside the 21-day owe window relative to wall clock (owesWarmup uses Date.now). */
+/** Still inside the 14-day owe window relative to wall clock (owesWarmup uses Date.now). */
 const YOUNG = new Date(Date.now() - 3 * 86_400_000).toISOString();
 
 /**

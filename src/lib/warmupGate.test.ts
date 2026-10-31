@@ -121,20 +121,20 @@ describe("warmupGate helpers", () => {
     );
   });
 
-  it("owes 21 days for fresh inboxes; pre-warmed follow campaignMinWarmupDays", () => {
+  it("owes 14 days for fresh inboxes; pre-warmed follow campaignMinWarmupDays", () => {
     assert.equal(
       owedWarmupDays(false, {
-        campaignMinWarmupDays: 21,
-        freshInboxWarmupDays: 21,
+        campaignMinWarmupDays: 14,
+        freshInboxWarmupDays: 14,
       }),
-      21,
+      14,
     );
     assert.equal(
       owedWarmupDays(true, {
-        campaignMinWarmupDays: 21,
-        freshInboxWarmupDays: 21,
+        campaignMinWarmupDays: 14,
+        freshInboxWarmupDays: 14,
       }),
-      21,
+      14,
     );
   });
 
@@ -174,7 +174,7 @@ describe("warmupGate helpers", () => {
     assert.equal(
       laterSmartlead,
       "2026-10-03T00:00:00.000Z",
-      "Goliath ready 10/24 is 21 days from the later Smartlead clock, not the 9/22 purchase",
+      "Goliath ready 10/17 is 14 days from the later Smartlead clock, not the 9/22 purchase",
     );
   });
 
@@ -191,18 +191,18 @@ describe("warmupGate helpers", () => {
     assert.equal(started, "2026-06-01T00:00:00.000Z");
   });
 
-  it("D227: WARMUP-GATE-EXEMPT counts as 21+ days and does not owe warmup", () => {
+  it("D227: WARMUP-GATE-EXEMPT counts as 14+ days and does not owe warmup", () => {
     const now = Date.parse("2026-10-04T00:04:00.000Z");
     const days = daysSince("2026-09-29T00:00:00.000Z", now);
-    assert.ok(days < 21, "9/29 → 10/4 is still under 21 days");
+    assert.ok(days < 14, "9/29 → 10/4 is still under 14 days");
     assert.equal(countsAsWarmed21([], days), false);
     assert.equal(countsAsWarmed21(["WARMUP-GATE-EXEMPT"], days), true);
     assert.equal(countsAsWarmed21(["warmup-gate-exempt", "type:azure"], 5), true);
-    assert.equal(countsAsWarmed21([], 21), true);
+    assert.equal(countsAsWarmed21([], 14), true);
 
     const config = {
-      campaignMinWarmupDays: 21,
-      freshInboxWarmupDays: 21,
+      campaignMinWarmupDays: 14,
+      freshInboxWarmupDays: 14,
       prewarmedDomains: [],
       extraGenericMailboxes: [],
     };

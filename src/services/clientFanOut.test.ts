@@ -288,7 +288,7 @@ describe("ClientFanOutService", () => {
 });
 
 describe("D139 — staffing never hands the gate its next pull", () => {
-  it("a freshly imported client inbox waits out its 21 days; exempt inventory still flows", async () => {
+  it("a freshly imported client inbox waits out its 14 days; exempt inventory still flows", async () => {
     const adds: Array<[number, number[]]> = [];
     const fresh = new Date(Date.now() - 2.8 * 86_400_000).toISOString();
     const smartlead = {
@@ -729,7 +729,7 @@ describe("D139 — staffing never hands the gate its next pull", () => {
         {
           id: 20,
           from_email: "gabe@gosalesglider.info",
-          created_at: "2026-10-04T00:00:00Z",
+          created_at: "2026-10-20T00:00:00Z",
           campaign_ids: [],
           client_id: 345263,
           tags: [{ tag_name: "GABE-VM-RESERVED" }, { tag_name: "POD-A" }],
@@ -737,7 +737,7 @@ describe("D139 — staffing never hands the gate its next pull", () => {
         {
           id: 21,
           from_email: "gabe@getmesaco.info",
-          created_at: "2026-10-03T00:00:00Z",
+          created_at: "2026-10-19T00:00:00Z",
           campaign_ids: [],
           client_id: 574020,
           tags: [{ tag_name: "GABE-VM-RESERVED" }, { tag_name: "type:m365" }],
@@ -745,7 +745,7 @@ describe("D139 — staffing never hands the gate its next pull", () => {
         {
           id: 22,
           from_email: "gabe@brightlanehq.info",
-          created_at: "2026-10-05T00:00:00Z",
+          created_at: "2026-10-21T00:00:00Z",
           campaign_ids: [],
           client_id: 597783,
           tags: [{ tag_name: "GABE-VM-RESERVED" }],
@@ -753,7 +753,7 @@ describe("D139 — staffing never hands the gate its next pull", () => {
         {
           id: 23,
           from_email: "gabe@larkhavenco.info",
-          created_at: "2026-10-06T00:00:00Z",
+          created_at: "2026-10-22T00:00:00Z",
           campaign_ids: [],
           client_id: 345263,
           tags: [{ tag_name: "GABE-VM-RESERVED" }],

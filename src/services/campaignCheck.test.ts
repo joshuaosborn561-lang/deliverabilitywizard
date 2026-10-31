@@ -126,6 +126,11 @@ describe("campaign check first-pass helpers", () => {
       true,
       "D186 auto-fixes step-2 delay; it does not block first-check identity",
     );
+    assert.equal(
+      firstCheckPassed([{ kind: "missing_breakup_step", detail: "step 3 missing" }]),
+      true,
+      "D306 breakup check does not block first-check identity",
+    );
   });
 
   it("D81/D193: Goliath is a POC client; Slack approve does not staff a named client", () => {
@@ -1877,7 +1882,7 @@ describe("D186 — step 2 delay must be 2 days", () => {
     {
       seq_number: 3,
       email_body: "<div>Last</div><div>%signature%</div>",
-      seq_delay_details: { delay_in_days: 4, delayInDays: 4 },
+      seq_delay_details: { delay_in_days: 2, delayInDays: 2 },
     },
   ];
 
@@ -1934,8 +1939,8 @@ describe("D186 — step 2 delay must be 2 days", () => {
     });
     assert.equal(posted[1]!.email_body, "<div>Follow up</div><div>%signature%</div>");
     assert.deepEqual(posted[2]!.seq_delay_details, {
-      delay_in_days: 4,
-      delayInDays: 4,
+      delay_in_days: 2,
+      delayInDays: 2,
     });
     const row = result.findings.find((r) => r.campaignId === 910);
     assert.ok(
@@ -2061,6 +2066,134 @@ describe("D186 — step 2 delay must be 2 days", () => {
   });
 });
 
+describe("D306 — breakup-step check only", () => {
+  const threeStep = (step3Delay: number | undefined) => [
+    {
+      seq_number: 1,
+      email_body: "<div>Hi</div><div>%signature%</div>",
+      seq_delay_details: { delay_in_days: 0 },
+    },
+    {
+      seq_number: 2,
+      email_body: "<div>Follow up</div><div>%signature%</div>",
+      seq_delay_details: { delay_in_days: 2 },
+    },
+    ...(step3Delay == null
+      ? []
+      : [
+          {
+            seq_number: 3,
+            email_body: "<div>Breakup</div><div>%signature%</div>",
+            seq_delay_details: { delay_in_days: step3Delay },
+          },
+        ]),
+  ];
+
+  const mkSl = (opts: {
+    name?: string;
+    sequences: unknown[];
+    writes: unknown[][];
+  }) =>
+    ({
+      listCampaigns: async () => [
+        {
+          id: 910,
+          name: opts.name ?? "Goliath Education Receipts",
+          status: "ACTIVE",
+          client_id: 548611,
+        },
+      ],
+      listAllEmailAccounts: async () => [],
+      listClients: async () => [goliath],
+      getCampaignSequences: async () => opts.sequences,
+      updateCampaignSequences: async (_id: number, sequences: unknown[]) => {
+        opts.writes.push(sequences);
+      },
+    }) as unknown as SmartleadClient;
+
+  it("flags a missing or wrong step 3 and never writes sequences", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const writes: unknown[][] = [];
+    const missing = mkCheck(
+      loadConfig({} as NodeJS.ProcessEnv),
+      mkSl({ sequences: threeStep(undefined), writes }),
+      delivery(),
+      state,
+    );
+    const missingResult = await missing.run({ mode: "all" });
+    const missingRow = missingResult.findings.find((r) => r.campaignId === 910);
+    assert.ok(
+      (missingRow?.findings ?? []).some((f) => f.kind === "missing_breakup_step"),
+    );
+    assert.deepEqual(writes, [], "breakup check must not write sequences");
+
+    const state2 = new StateStore(stateFile());
+    await state2.load();
+    const wrongWrites: unknown[][] = [];
+    const wrong = mkCheck(
+      loadConfig({} as NodeJS.ProcessEnv),
+      mkSl({ sequences: threeStep(4), writes: wrongWrites }),
+      delivery(),
+      state2,
+    );
+    const wrongResult = await wrong.run({ mode: "all" });
+    const wrongRow = wrongResult.findings.find((r) => r.campaignId === 910);
+    assert.match(
+      wrongRow?.findings.find((f) => f.kind === "missing_breakup_step")?.detail ?? "",
+      /4d/,
+    );
+    assert.deepEqual(wrongWrites, []);
+  });
+
+  it("skips Gabe caller follow-ups and 1-step tests", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const writes: unknown[][] = [];
+    const gabe = mkCheck(
+      loadConfig({} as NodeJS.ProcessEnv),
+      mkSl({
+        name: "Gabe Calls | SalesGlider",
+        sequences: threeStep(undefined),
+        writes,
+      }),
+      delivery(),
+      state,
+    );
+    const gabeResult = await gabe.run({ mode: "all" });
+    const gabeRow = gabeResult.findings.find((r) => r.campaignId === 910);
+    assert.equal(
+      (gabeRow?.findings ?? []).some((f) => f.kind === "missing_breakup_step"),
+      false,
+    );
+
+    const state2 = new StateStore(stateFile());
+    await state2.load();
+    const oneWrites: unknown[][] = [];
+    const one = mkCheck(
+      loadConfig({} as NodeJS.ProcessEnv),
+      mkSl({
+        sequences: [
+          {
+            seq_number: 1,
+            email_body: "<div>Hi</div><div>%signature%</div>",
+            seq_delay_details: { delay_in_days: 0 },
+          },
+        ],
+        writes: oneWrites,
+      }),
+      delivery(),
+      state2,
+    );
+    const oneResult = await one.run({ mode: "all" });
+    const oneRow = oneResult.findings.find((r) => r.campaignId === 910);
+    assert.equal(
+      (oneRow?.findings ?? []).some((f) => f.kind === "missing_breakup_step"),
+      false,
+    );
+  });
+});
+
 describe("D241 GABE-VM-RESERVED campaign-check", () => {
   it("does not raise cross_client_membership or rewrite the reserved seat", async () => {
     const state = new StateStore(stateFile());
@@ -2118,7 +2251,7 @@ describe("D241 GABE-VM-RESERVED campaign-check", () => {
     assert.deepEqual(writes, []);
   });
 
-  it("D242: does not converge understaffed or ESP mix on Gabe Calls; gap goes to 10 (D304)", async () => {
+  it("D242: does not converge understaffed, ESP mix, or the 3m gap on Gabe Calls (D306)", async () => {
     const state = new StateStore(stateFile());
     await state.load();
     const settings: Array<[number, Record<string, unknown>]> = [];
@@ -2164,7 +2297,7 @@ describe("D241 GABE-VM-RESERVED campaign-check", () => {
     } as unknown as SmartleadClient;
     const service = mkCheck(loadConfig({}), sl, delivery(), state);
     const hourly = await service.run({ mode: "hourly" });
-    assert.deepEqual(settings, [[4085158, { min_time_btwn_emails: 10 }]]);
+    assert.deepEqual(settings, []);
     const row = hourly.findings.find((item) => item.campaignId === 4085158);
     assert.equal(
       (row?.findings ?? []).some((finding) => finding.kind === "campaign_min_gap"),

@@ -23,7 +23,7 @@ import {
 import { minFloorForClient } from "./minFloorByClient.js";
 import { rankGenericsOldestWorstFirst } from "./genericAssign.js";
 
-export const GENERIC_LEDGER_WARMUP_DAYS = 21;
+export const GENERIC_LEDGER_WARMUP_DAYS = 14;
 
 export function isCornerstoneGenericDomain(
   emailOrDomain: string | null | undefined,

@@ -1,27 +1,42 @@
 /**
- * D304 — LOCKED: every Smartlead campaign has AI ESP matching ON
+ * D304 / D306 — send canon.
+ *
+ * D304 LOCKED: every Smartlead campaign has AI ESP matching ON
  * (`enable_ai_esp_matching: true`) and a 10-minute campaign gap
  * (`min_time_btw_emails: 10`). STOPPED campaigns are left alone.
  *
- * Settings only, never status:
- * - ESP matching is written with POST /campaigns/{id}/settings
- *   (`enable_ai_esp_matching` is in that endpoint's schema).
- * - The gap is written with POST /campaigns/{id}/schedule
- *   (`min_time_btw_emails` is in that endpoint's schema; it is not a
- *   documented /settings body field). The schedule body echoes the
- *   campaign's current window (timezone, days, hours, daily cap) so only
- *   the gap changes. With no window to echo, nothing is written and the
- *   drift stays a finding.
+ * D306: live campaigns also converge the send window to Monday–Thursday
+ * 08:00–19:00 America/New_York with `max_leads_per_day` 10000. Custom
+ * windows are overwritten. Skips every cold-call campaign — any name
+ * containing `Calls |` (Gabe Calls, Cayden Calls, any future caller)
+ * as well as D242 CALLER FOLLOW-UP detection — and every Booking
+ * Follow Up campaign (windows left untouched). Also skips shells /
+ * canaries (`isAnyShellCampaign`), word-hunt, test campaigns, and
+ * STOPPED. Everything else is enforced (SG Nurture, Referral Hosts,
+ * SG Subs 1019 included). Calls | / D242 keep their 3-minute gap;
+ * Booking Follow Up still takes the D304 10-minute gap.
+ *
+ * Settings / schedule only, never status:
+ * - ESP matching is written with POST /campaigns/{id}/settings.
+ * - Window + gap are written with POST /campaigns/{id}/schedule.
  * Neither endpoint accepts a status field. Status has its own endpoint,
  * which this module never calls.
- *
- * Caller follow-ups are included: D304 supersedes D242's 3-minute gap.
  */
 
+import { isAnyShellCampaign } from "./canaryShell.js";
+import { isCallerFollowUpCampaign } from "./callerFollowUp.js";
+import { isWordHuntShellCampaign } from "./wordHuntShell.js";
+
 export const SEND_CANON_GAP_MINS = 10;
+export const SEND_WINDOW_TIMEZONE = "America/New_York";
+export const SEND_WINDOW_DAYS = [1, 2, 3, 4] as const;
+export const SEND_WINDOW_START_HOUR = "08:00";
+export const SEND_WINDOW_END_HOUR = "19:00";
+export const SEND_WINDOW_MAX_LEADS = 10000;
 
 export interface SendCanonCampaign {
   id: number;
+  name?: string | null;
   status?: string | null;
   enable_ai_esp_matching?: boolean | null;
   min_time_btwn_emails?: number | string | null;
@@ -33,6 +48,7 @@ export interface SendCanonDrift {
   campaignId: number;
   espOff: boolean;
   gapOff: boolean;
+  windowOff: boolean;
   gapBefore: number | string | null;
 }
 
@@ -45,19 +61,84 @@ function gapValue(raw: number | string | null | undefined): number {
   return typeof raw === "string" ? Number(raw) : raw;
 }
 
+export function isTestCampaign(campaign: {
+  name?: string | null;
+}): boolean {
+  const name = String(campaign.name ?? "").trim();
+  if (!name) return false;
+  return /(?:^|[\s|:/_-])test(?:[\s|:/_-]|$)/i.test(name);
+}
+
+/**
+ * D306 (Josh, 2026-10-27 8:08pm CT): any cold-call campaign.
+ * Name contains `Calls |` (Gabe, Cayden, future callers) plus the
+ * D242 CALLER FOLLOW-UP detection (config ids / `Gabe Calls |`).
+ */
+export function isCallsCampaign(campaign: {
+  id?: number | null;
+  name?: string | null;
+}): boolean {
+  if (isCallerFollowUpCampaign(campaign)) return true;
+  return String(campaign.name ?? "").includes("Calls |");
+}
+
+/** D306: Booking Follow Up campaigns keep their own send window. */
+export function isBookingFollowUpCampaign(campaign: {
+  name?: string | null;
+}): boolean {
+  return String(campaign.name ?? "").includes("Booking Follow Up");
+}
+
+/** D304 gap applies everywhere except STOPPED and Calls | / D242. */
+export function campaignHasSendGapRule(campaign: {
+  id?: number | null;
+  name?: string | null;
+  status?: string | null;
+}): boolean {
+  if (sendCanonSkipsStatus(campaign.status)) return false;
+  if (isCallsCampaign(campaign)) return false;
+  return true;
+}
+
+export function campaignHasSendWindowRule(campaign: {
+  id?: number | null;
+  name?: string | null;
+  status?: string | null;
+}): boolean {
+  if (sendCanonSkipsStatus(campaign.status)) return false;
+  if (isCallsCampaign(campaign)) return false;
+  if (isBookingFollowUpCampaign(campaign)) return false;
+  if (isAnyShellCampaign(campaign)) return false;
+  if (
+    isWordHuntShellCampaign({
+      id: campaign.id ?? undefined,
+      name: campaign.name,
+    })
+  ) {
+    return false;
+  }
+  if (isTestCampaign(campaign)) return false;
+  return true;
+}
+
 export function sendCanonDrift(
   campaign: SendCanonCampaign,
-  opts: { gapExempt?: boolean; espExempt?: boolean } = {},
+  opts: { gapExempt?: boolean; espExempt?: boolean; windowExempt?: boolean } = {},
 ): SendCanonDrift | null {
   if (sendCanonSkipsStatus(campaign.status)) return null;
+  const windowRule = campaignHasSendWindowRule(campaign);
   const espOff = !opts.espExempt && campaign.enable_ai_esp_matching !== true;
   const gapOff =
-    !opts.gapExempt && gapValue(campaign.min_time_btwn_emails) !== SEND_CANON_GAP_MINS;
-  if (!espOff && !gapOff) return null;
+    !opts.gapExempt &&
+    campaignHasSendGapRule(campaign) &&
+    gapValue(campaign.min_time_btwn_emails) !== SEND_CANON_GAP_MINS;
+  const windowOff = !opts.windowExempt && windowRule && sendWindowIsOff(campaign);
+  if (!espOff && !gapOff && !windowOff) return null;
   return {
     campaignId: campaign.id,
     espOff,
     gapOff,
+    windowOff,
     gapBefore: campaign.min_time_btwn_emails ?? null,
   };
 }
@@ -67,14 +148,14 @@ export function sendCanonSettingsBody(): { enable_ai_esp_matching: true } {
   return { enable_ai_esp_matching: true };
 }
 
-/**
- * Body for POST /campaigns/{id}/schedule that keeps the current window and
- * sets only the gap. Returns null when there is no window to echo.
- */
-export function sendCanonScheduleBody(
-  campaign: SendCanonCampaign,
-): Record<string, unknown> | null {
-  const raw = campaign.scheduler_cron_value;
+function parseSchedulerCron(
+  raw: unknown,
+): {
+  tz: string;
+  days: number[];
+  startHour: string;
+  endHour: string;
+} | null {
   let cron: Record<string, unknown> | null = null;
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
     cron = raw as Record<string, unknown>;
@@ -93,11 +174,49 @@ export function sendCanonScheduleBody(
   const start = typeof cron.startHour === "string" ? cron.startHour : null;
   const end = typeof cron.endHour === "string" ? cron.endHour : null;
   if (!tz || !days.length || !start || !end) return null;
+  return { tz, days, startHour: start, endHour: end };
+}
+
+export function sendWindowIsOff(campaign: SendCanonCampaign): boolean {
+  const cron = parseSchedulerCron(campaign.scheduler_cron_value);
+  if (!cron) return true;
+  if (cron.tz !== SEND_WINDOW_TIMEZONE) return true;
+  if (cron.startHour !== SEND_WINDOW_START_HOUR) return true;
+  if (cron.endHour !== SEND_WINDOW_END_HOUR) return true;
+  if (cron.days.length !== SEND_WINDOW_DAYS.length) return true;
+  if (SEND_WINDOW_DAYS.some((d, i) => cron.days[i] !== d)) return true;
+  const cap = Number(campaign.max_leads_per_day);
+  if (!Number.isFinite(cap) || cap !== SEND_WINDOW_MAX_LEADS) return true;
+  return false;
+}
+
+/** D306 standing window. Always 10000 new leads / day. */
+export function standingSendWindowBody(): Record<string, unknown> {
+  return {
+    timezone: SEND_WINDOW_TIMEZONE,
+    days_of_the_week: [...SEND_WINDOW_DAYS],
+    start_hour: SEND_WINDOW_START_HOUR,
+    end_hour: SEND_WINDOW_END_HOUR,
+    min_time_btw_emails: SEND_CANON_GAP_MINS,
+    max_new_leads_per_day: SEND_WINDOW_MAX_LEADS,
+  };
+}
+
+/**
+ * Body for POST /campaigns/{id}/schedule that keeps the current window and
+ * sets only the gap. Returns null when there is no window to echo.
+ * D306 eligible campaigns use standingSendWindowBody instead.
+ */
+export function sendCanonScheduleBody(
+  campaign: SendCanonCampaign,
+): Record<string, unknown> | null {
+  const cron = parseSchedulerCron(campaign.scheduler_cron_value);
+  if (!cron) return null;
   const body: Record<string, unknown> = {
-    timezone: tz,
-    days_of_the_week: days,
-    start_hour: start,
-    end_hour: end,
+    timezone: cron.tz,
+    days_of_the_week: cron.days,
+    start_hour: cron.startHour,
+    end_hour: cron.endHour,
     min_time_btw_emails: SEND_CANON_GAP_MINS,
   };
   const cap = Number(campaign.max_leads_per_day);
@@ -112,19 +231,23 @@ export interface SendCanonWriter {
 
 export interface SendCanonOutcome {
   campaignId: number;
-  fixed: Array<"esp" | "gap">;
-  problems: Array<{ kind: "esp_matching_off" | "campaign_send_gap"; detail: string }>;
+  fixed: Array<"esp" | "gap" | "window">;
+  problems: Array<{
+    kind: "esp_matching_off" | "campaign_send_gap" | "send_window";
+    detail: string;
+  }>;
 }
 
 /** Flag, and unless dryRun, fix one campaign. Never touches status. */
 export async function convergeSendCanon(
   campaign: SendCanonCampaign,
   writer: SendCanonWriter,
-  opts: { dryRun: boolean; gapExempt?: boolean; espExempt?: boolean },
+  opts: { dryRun: boolean; gapExempt?: boolean; espExempt?: boolean; windowExempt?: boolean },
 ): Promise<SendCanonOutcome | null> {
   const drift = sendCanonDrift(campaign, {
     gapExempt: opts.gapExempt,
     espExempt: opts.espExempt,
+    windowExempt: opts.windowExempt,
   });
   if (!drift) return null;
   const out: SendCanonOutcome = { campaignId: campaign.id, fixed: [], problems: [] };
@@ -141,18 +264,34 @@ export async function convergeSendCanon(
       }
     }
   }
-  if (drift.gapOff) {
-    const detail = `${String(drift.gapBefore ?? "unset")} → ${SEND_CANON_GAP_MINS}m (D304)`;
-    const body = sendCanonScheduleBody(campaign);
-    if (opts.dryRun) out.problems.push({ kind: "campaign_send_gap", detail });
-    else if (!body) {
-      out.problems.push({ kind: "campaign_send_gap", detail: `${detail} not written: no schedule window to keep` });
+  if (drift.windowOff || drift.gapOff) {
+    const windowDetail = drift.windowOff
+      ? "custom window → Mon–Thu 08:00–19:00 America/New_York (D306)"
+      : null;
+    const gapDetail = drift.gapOff
+      ? `${String(drift.gapBefore ?? "unset")} → ${SEND_CANON_GAP_MINS}m`
+      : null;
+    const detail = [windowDetail, gapDetail].filter(Boolean).join("; ");
+    const kind = drift.windowOff ? "send_window" : "campaign_send_gap";
+    const body = drift.windowOff
+      ? standingSendWindowBody()
+      : sendCanonScheduleBody(campaign);
+    if (!body) {
+      if (drift.gapOff) {
+        out.problems.push({
+          kind: "campaign_send_gap",
+          detail: `${detail || `${String(drift.gapBefore ?? "unset")} → ${SEND_CANON_GAP_MINS}m`} (no schedule window to echo)`,
+        });
+      }
+    } else if (opts.dryRun) {
+      out.problems.push({ kind, detail });
     } else {
       try {
         await writer.updateCampaignSchedule(campaign.id, body);
-        out.fixed.push("gap");
+        if (drift.windowOff) out.fixed.push("window");
+        if (drift.gapOff) out.fixed.push("gap");
       } catch (e) {
-        out.problems.push({ kind: "campaign_send_gap", detail: `${detail} failed: ${message(e)}` });
+        out.problems.push({ kind, detail: `${detail} failed: ${message(e)}` });
       }
     }
   }

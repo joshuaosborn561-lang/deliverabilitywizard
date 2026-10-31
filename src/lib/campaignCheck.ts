@@ -32,7 +32,9 @@ export const CAMPAIGN_CHECK_KINDS = [
   "campaign_min_gap",
   "esp_matching_off",
   "campaign_send_gap",
+  "send_window",
   "step2_delay",
+  "missing_breakup_step",
   "below_launch_bar",
   "merge_tag_blank",
 ] as const;

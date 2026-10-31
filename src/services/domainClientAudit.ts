@@ -248,7 +248,7 @@ export class DomainClientAuditService {
             advisories.push({
               domain,
               kind: "unmapped",
-              note: `${deferred} mailbox(es) match ${match.clientName} but still owe the 21-day warmup — attach happens when it is served (D143)`,
+              note: `${deferred} mailbox(es) match ${match.clientName} but still owe the 14-day warmup — attach happens when it is served (D143)`,
               at: now,
             });
             console.log(

@@ -3940,7 +3940,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Warmup gate: ${config.enableWarmupGate ? `ENABLED (min ${config.campaignMinWarmupDays}d from InboxKit; canary/pre-warmed exempt; every health pass)` : "disabled"}`,
     );
     console.log(
-      `[boot] Live mailbox pull: KILL-ONLY (domain retire + 21-day gate + backfill; D51/D105/D130)`,
+      `[boot] Live mailbox pull: KILL-ONLY (domain retire + 14-day gate + backfill; D51/D105/D306/D130)`,
     );
     console.log(
       `[boot] Copy canaries: ${config.enableCopyCanary ? "ENABLED (dedicated 2-domain fleet, warmup off, off-campaign copy tests)" : "disabled"}`,

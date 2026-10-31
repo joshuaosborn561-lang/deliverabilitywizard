@@ -9,7 +9,7 @@
  * Today's caller is Gabe Lopez. The three gabriel@ bridge seats sit
  * in SalesGlider 345263 and serve all three campaigns. That is the
  * one-client-per-sender exception. Twelve owned gabe@ seats warm
- * for 21 days, then attach to that client's Gabe Calls campaign
+ * for 14 days, then attach to that client's Gabe Calls campaign
  * only. Bridge seats come off by 2026-11-03.
  */
 
@@ -22,8 +22,8 @@ export const CALLER_FOLLOWUP_CAMPAIGN_IDS_DEFAULT = [
 ] as const;
 
 export const CALLER_FOLLOWUP_HOME_CLIENT_ID = 345263;
-/** D304 supersedes D242's 3-minute gap: caller follow-ups use the canon 10. */
-export const CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS = 10;
+/** D306: caller follow-ups keep D242's 3-minute gap (not the LOCKED 10). */
+export const CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS = 3;
 export const CALLER_FOLLOWUP_TIMEZONE = "America/Chicago";
 export const CALLER_FOLLOWUP_START_HOUR = 7;
 export const CALLER_FOLLOWUP_END_HOUR = 20;
@@ -263,13 +263,13 @@ export type CallerFollowUpAttachDecision =
  * Rule 3 + 9, tightened D244.
  *
  * Owned gabe@ seats are checked first even when they carry
- * GABE-VM-RESERVED — the tag must not skip the 21-day clock or
+ * GABE-VM-RESERVED — the tag must not skip the 14-day clock or
  * the own-campaign rule (10/6–10/7: tagged Mesa / Deep Roots /
  * unlisted reserved seats kept landing on ACTIVE #4085158).
  *
  * Only the three gabriel@ bridge seats may sit on any class
  * campaign. Owned gabe@ attach only to their own client's Gabe
- * Calls campaign after 21 warm days. Other reserved-tagged
+ * Calls campaign after 14 warm days. Other reserved-tagged
  * seats (new domains not yet in the owned list) never attach.
  * Class / owned / reserved seats never fan out.
  */
@@ -308,7 +308,7 @@ export function callerFollowUpMayAttach(input: {
       return { ok: false, reason: "owned gabe@ only attaches to its own Gabe Calls campaign" };
     }
     if (!input.warmed) {
-      return { ok: false, reason: "owned gabe@ still owes 21-day warmup (D242)" };
+      return { ok: false, reason: "owned gabe@ still owes 14-day warmup (D242)" };
     }
     return { ok: true, reason: "owned gabe@ cleared warmup for its campaign" };
   }
@@ -450,11 +450,10 @@ export function callerFollowUpSkipsCanonMinGap(
       }
     | null
     | undefined,
-  _policy: CallerFollowUpPolicy = DEFAULT_CALLER_FOLLOWUP_POLICY,
+  policy: CallerFollowUpPolicy = DEFAULT_CALLER_FOLLOWUP_POLICY,
 ): boolean {
-  // D304 — the LOCKED 10m gap covers caller follow-ups too. No skip.
-  void campaign;
-  return false;
+  // D306 — caller follow-ups keep the 3-minute gap; do not converge to 10.
+  return isCallerFollowUpCampaign(campaign, policy);
 }
 
 export function callerFollowUpScheduleHolds(input: {

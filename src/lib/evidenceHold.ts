@@ -10,7 +10,7 @@ import { emailDomainOf } from "./isolationDomain.js";
 
 export const EVIDENCE_HOLD_MAX_DAYS = 30;
 export const EVIDENCE_HOLD_MAX_MS = EVIDENCE_HOLD_MAX_DAYS * 24 * 60 * 60 * 1000;
-export const EVIDENCE_HOLD_WARMUP_DAYS = 21;
+export const EVIDENCE_HOLD_WARMUP_DAYS = 14;
 export const EVIDENCE_HOLD_WARMUP_REPUTATION_THRESHOLD = 80;
 
 export const EVIDENCE_HOLD_REASONS = [
@@ -308,7 +308,7 @@ function qualifyEvidence(
       const short = days != null && days < EVIDENCE_HOLD_WARMUP_DAYS;
       const low = rep != null && rep < EVIDENCE_HOLD_WARMUP_REPUTATION_THRESHOLD;
       if (!short && !low) {
-        return "warmup is not under 21 days and reputation is not below threshold";
+        return "warmup is not under 14 days and reputation is not below threshold";
       }
       return null;
     }

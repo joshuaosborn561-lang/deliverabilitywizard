@@ -176,7 +176,7 @@ describe("D224 evidence-per-seat hold gate", () => {
     assert.match(gated.rejected[0]!.rejectReason, /SURBL/);
   });
 
-  it("holds warmup under 21 days or reputation below threshold", () => {
+  it("holds warmup under 14 days or reputation below threshold", () => {
     const gated = gateSeatHolds(
       [
         {

@@ -209,7 +209,7 @@ export class ClientFanOutService {
         }
         // D139 — the gate pulls under-warmed inboxes every pass; fanning the
         // same inboxes back out seconds later made the pull a no-op and the
-        // 21-day clock (D1/D50/D105) fiction. Freshly imported client inboxes
+        // 14-day clock (D1/D50/D105/D306) fiction. Freshly imported client inboxes
         // wait out their clock; pre-warmed fleets and exempt tags still flow.
         if (owesWarmup(account, email, this.config, this.state, now)) {
           result.skipped.push(`${email}: owes warmup (D139)`);
@@ -498,7 +498,7 @@ export class ClientFanOutService {
    * D242 / D244 — the only path that may attach to a CALLER
    * FOLLOW-UP campaign. Bridge gabriel@ seats may sit on every
    * living class campaign. Owned gabe@ seats attach to their own
-   * client's campaign only after 21 warm days. Tagged reserved
+   * client's campaign only after 14 warm days. Tagged reserved
    * seats that are neither bridge nor listed-owned never attach.
    * Regular fan-out / min40 never staff these campaigns.
    */

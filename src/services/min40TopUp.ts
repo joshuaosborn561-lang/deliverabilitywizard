@@ -1764,7 +1764,7 @@ export class Min40TopUpService {
         pod,
         warmReadyAt: warmReadyAtFromClock(
           warmupClockStartedAt(account, email, this.state),
-          this.config.campaignMinWarmupDays ?? 21,
+          this.config.campaignMinWarmupDays ?? 14,
           now,
         ),
       });

@@ -7,9 +7,14 @@
 /DECISIONS.md @joshuaosborn561-lang
 /DEPLOYMENT.md @joshuaosborn561-lang
 
-# LOCKED canon (POD-40 and any later locked rules) requires Josh's
-# explicit approval. PRs that change these files must never auto-merge.
+# Canon definition files. Josh owns these.
+# D322: a canon-consistent PR (LOCKED section and these files unchanged)
+# does not require Josh's review. Paths that only implement a locked
+# rule, including src/guards/lockedCanon.test.ts, are not listed here.
+# The locked-canon CI job fails a PR that modifies locked canon files
+# or rules unless it has the canon-change label approved by Josh.
+# Unauthorized locked-canon edits must never auto-merge.
+# Canon edits themselves still need Josh.
 /CANON.md @joshuaosborn561-lang
 /docs/LOCKED-CANON.md @joshuaosborn561-lang
 /src/lib/lockedCanon.ts @joshuaosborn561-lang
-/src/guards/lockedCanon.test.ts @joshuaosborn561-lang

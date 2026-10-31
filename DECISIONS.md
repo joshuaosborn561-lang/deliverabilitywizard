@@ -280,7 +280,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D272 | Live | Freeze/restart follow-up after D271: stringify time-slices via setTimeout(0) and emits flushed slices (saveHot included); indexAccountsByCampaign yields on inner campaign ids; campaign-audit pauses CPU while health is live. Watchdog thresholds unchanged. |
 | D282 | Live — understaffed/min40 silence superseded by D285; no-generics stays; from-name matcher amended by D290; Insight `client_id` domain signal added by D295 | Insight (Smartlead client 582890) campaigns may only send from Josh Osborn inboxes on SalesGlider or Insight domains; no generics / other named senders; Josh-only seats count toward the POD floor; `insight_non_josh_sender` flags existing violations; POD shortfalls still page Josh daily (D285) |
 | D283 | Live — never-generics onto PowerGRYD superseded by D285; freed-seat ownership stays | Onboarding-freed Smartlead `client_id=null` is authoritative over a stale PowerGRYD / `powergryd_dedicated` pool row (one-time cleanup of those generic-domain seats); those freed seats must not flip back onto 592842. CornerStone 574088 and unexpired HOLD-UNTIL never attach (`addEmailAccountsToCampaign` hard-reject, same shape as D282); leftover HOLD-UNTIL still does not pull; never START / unpause STOPPED. PowerGRYD otherwise takes generics (D285). |
-| D285 | Live — Generics Ledger fields / per-seat swap / new findings added by D286 | Min-40 is per POD owned inventory, never per campaign. POD A and POD B each hold >=40 warm seats the client owns (TechEvo 30). Borrowed seats never count. When under, rotate free warm generics in; never skip the off-week POD. Insight 582890 is the only client that never gets generics; alert Josh daily while under. PowerGRYD takes generics. LOCKED core canon — Josh-only; PRs that change the locked section must never auto-merge. |
+| D285 | Live — Generics Ledger fields / per-seat swap / new findings added by D286; merge gate amended by D322 | Min-40 is per POD owned inventory, never per campaign. POD A and POD B each hold >=40 warm seats the client owns (TechEvo 30). Borrowed seats never count. When under, rotate free warm generics in; never skip the off-week POD. Insight 582890 is the only client that never gets generics; alert Josh daily while under. PowerGRYD takes generics. LOCKED core canon — Josh-only; PRs that change the locked section must never auto-merge. |
 | D286 | Live | Generics Ledger: one row per generic (email, ESP, warmup on/off, assigned client, POD, assigned_at, covering_for). All generics warm continuously; seeder re-enables warmup the same day. Assigned only to fill one client's POD to 40 (TechEvo 30), one client + one POD, never moves PODs. Branded-preferred per-seat swap via covering_for + `returnGenericToUntaggedPool`; headcount is fallback for unlinked seats. No assign/release outside the ledger. Insight never receives generics; every other client including PowerGRYD does. CornerStone-domain inboxes are never generics. Findings `generic_outside_ledger` / `generic_not_warming` / `generic_on_insight` / `pod_short_no_free_generic` page Josh the same day. Optional upsert-only `wizard.generic_ledger` Supabase mirror. |
 | D287 | Live — saveHot maps / Insight unlinked count amended by D288 | Old-wizard fix: ledger assigns free warm generics into every under-floor POD (A and B) with covering_for; retire-pending domains last; CornerStone never; Insight still no generics. Owned-seat count includes Insight Josh seats (even SL 345263), PowerGRYD dedicated generics without a POD tag, and Peterson named-domain fallback. Peterson under-floor alerts suppressed (winding down). marekbrooks@meetconnectbox.com stays in the ledger and never re-links to PowerGRYD #4005226. isolation-buy-resume yields and skips idle full-state stringify. 0% canary-copy scores start isolation within 30 min; isolation never hold-pauses. Never START / PAUSE / touch STOPPED; never buy. LOCKED section unchanged. |
 | D288 | Live — min40 covering/owned-count yield amended by D289; Insight from-name/domain matcher amended by D290; unlinked salesglider* remap amended by D291 | Old-wizard fix: `saveHot` sidecar is stamps + goneIds + pool goneEmails only (never isolation score/suspect/canary maps); overlapping saveHot coalesces; nothing stringifies big state inside per-seat loops. Insight Josh seats count for Insight even when unlinked / leftover on SalesGlider 345263. Insight still gets no generics and a daily Josh alert. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
@@ -305,6 +305,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D318 | Live | Exclusive health lane vs the serial mutation queue: a normal-lane job at the head of the Smartlead mutation queue parked behind the exclusive health lane while the health pass (reconnect, mailbox-gap, campaign-health writes) waited on that same queue — a deadlock released only by the 6-minute job timeout, three jobs deep (limiter idle, queue depth 3, oldest wait 300s+). Queued jobs now ride the health lane while it is exclusive (one job at a time, so at most one slot); direct normal-lane calls still wait. `/health` limiter adds `parkedBehindHealth` / `healthWaiting`. No cadence, stage, campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 | D319 | Live | Report-read budget + normal-lane share: (1) SmartDelivery `spam-test/report/*` reads (providerwise, domain-blacklist, blacklist, sender-account-wise) retry once, not four times, and three failed reads in a row (429 / 5xx / timeout) pause report reads for 2 minutes — callers fail fast; a missing test (404) does not count. (2) `monitor-results` works in a 6-minute budget, rotates its test walk from where the last pass stopped (unfinished tests carry over; paused reads are never recorded as "no hits"), and runs a second worker only while the limiter has headroom (no pause, no 429 streak, under 60% of 150/min). (3) While health is exclusive the normal lane keeps one share slot (never the last free one) so the 6-hour monitor chain (lead-runout, canary-adopt, isolation-rig …) can finish; idle slots are handed to waiters when the exclusive stretch ends. No stage removed, no cadence change, no campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 | D320 | Live | lead-runout budget: the 6-hour monitor chain's `lead-runout` walks every ACTIVE campaign serially (2-3 Smartlead reads each, normal lane) and timed out at 10m five times running (last ok 2:02am CT). Reads now retry once, the walk stops at 7 minutes and resumes where it stopped next pass (cursor in memory). No alert rule, threshold, campaign or WRITE_ENABLED change. LOCKED section unchanged. |
+| D322 | Live | Locked-canon CI passes canon-consistent PRs without Josh's approval. It fails when the LOCKED section, `docs/LOCKED-CANON.md`, or `src/lib/lockedCanon.ts` changes unless the PR has the `canon-change` label approved by Josh (`joshuaosborn561-lang` applied it, or he approved the PR while it is present). Josh stays CODEOWNER of those definition files. Implementation paths, including `src/guards/lockedCanon.test.ts`, are not Josh-only. Required checks stay `check` and `locked-canon`; code-owner review is not a merge gate. Unauthorized locked-canon edits never auto-merge. POD-40, Generics Ledger, and ESP matching unchanged. |
 
 ---
 
@@ -11352,3 +11353,51 @@ stage timeout) and the next pass resumes at the first unwalked campaign.
 Alert thresholds and messages are unchanged.
 
 **Guards.** `src/services/leadRunout.test.ts` (D320), `src/guards/canon.test.ts` D320.
+
+---
+
+## D322 — Deliverability may merge canon-consistent PRs
+
+**Date.** 2026-10-31 (Josh, approved).
+
+**Decision.** The Deliverability bot may merge a pull request past the
+locked-canon gate when the PR matches canon. Coding may change the CI
+gate, CODEOWNERS, and branch protection so that stays true.
+
+1. **Canon-consistent PRs do not need Josh.** `locked-canon` passes when
+   the LOCKED section of `CANON.md`, `docs/LOCKED-CANON.md`, and
+   `src/lib/lockedCanon.ts` are unchanged against the base. No
+   `canon-change` label and no review from Josh are required.
+2. **Canon edits still need Josh.** If any of those locked canon files
+   or rules changed, `locked-canon` fails unless the PR has the
+   `canon-change` label approved by Josh: he applied the label, or his
+   latest review is APPROVED while the label is present. A label applied
+   by anyone else, or Josh's approval without the label, does not pass.
+   The fail path still says never auto-merge.
+3. **CODEOWNERS.** Josh stays the owner of the canon definition files
+   (`CANON.md`, `docs/LOCKED-CANON.md`, `src/lib/lockedCanon.ts`).
+   Paths that only implement a locked rule, including
+   `src/guards/lockedCanon.test.ts`, are not Josh-only, so a
+   canon-consistent change there does not require his review.
+4. **Branch protection.** Keep the required status checks `check` and
+   `locked-canon`. Do not require review from Code Owners as a merge
+   gate: every canon-consistent decision PR edits `CANON.md` outside
+   the LOCKED section. One approval, stale-review dismissal,
+   conversation resolution, and the force-push / deletion blocks stay.
+
+**Why.** Josh (2026-10-31): Deliverability may merge PRs that match
+canon without waiting on him, and may merge a real canon edit once he
+has approved it with the `canon-change` label. The old job failed every
+locked-section diff with no machine-readable approval, and CODEOWNERS
+treated the guard test as a Josh-only path.
+
+**Rejected.** Dropping `check`. Letting a locked-canon edit merge with
+no label and no approval from Josh. Removing Josh as owner of the
+canon definition files. Changing the POD-40, Generics Ledger, or ESP
+matching sentences.
+
+**Supersedes / amends.** Amends the D285 merge procedure (CODEOWNERS +
+the `locked-canon` job). Does not reverse the locked rules.
+
+**Guards.** `src/lib/lockedCanonGate.test.ts`,
+`src/guards/lockedCanon.test.ts`, `src/guards/canon.test.ts` D322.

@@ -224,7 +224,7 @@ export function seatIsWarmStaffableForPod(input: {
     return false;
   }
   if (!accountIsPeelStaffable(account, key, state)) return false;
-  if (owesWarmup(account, key, warmupConfigOf(config), state)) return false;
+  if (owesWarmup(account, key, warmupConfigOf(config), state, input.now)) return false;
   const mpd = readMessagePerDay(account);
   if (Number.isFinite(mpd) && mpd <= 0) return false;
   return true;

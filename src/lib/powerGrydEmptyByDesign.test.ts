@@ -17,7 +17,7 @@ function warmingPgNamed(i: number): SmartleadAccountWithCampaigns {
     type: "GMAIL",
     is_smtp_success: true,
     is_imap_success: true,
-    created_at: "2026-10-10T00:00:00.000Z",
+    created_at: new Date(Date.now() - 2 * 86_400_000).toISOString(),
     campaign_ids: [],
   } as SmartleadAccountWithCampaigns;
 }

@@ -546,6 +546,7 @@ export async function syncGenericSeatsFromInventory(
           extraGenericMailboxes: input.config.extraGenericMailboxes,
         },
         input.state,
+        now,
       );
       if (
         clientId != null &&

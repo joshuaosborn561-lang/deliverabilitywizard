@@ -19000,3 +19000,22 @@ describe("owner intent — D320 lead-runout budget", () => {
     assert.match(decisions, /^\| D320 \|/m, "status index has no D320 row (D127)");
   });
 });
+
+describe("owner intent — D322 canon-consistent merge gate", () => {
+  it("D322: canon-consistent PRs pass; locked edits need Josh's canon-change label", async () => {
+    const { readFileSync } = await import("node:fs");
+    const canon = readFileSync("CANON.md", "utf8");
+    const decisions = readFileSync("DECISIONS.md", "utf8");
+    const gate = readFileSync("src/lib/lockedCanonGate.ts", "utf8");
+    assert.match(canon, /Canon as of \*\*D322\*\*/, "CANON.md is not dated D322");
+    assert.match(canon, /\*\*D322\.\*\*/, "CANON.md lost the D322 blurb");
+    assert.match(decisions, /## D322 — /, "DECISIONS.md has no D322 entry");
+    assert.match(decisions, /^\| D322 \|/m, "status index has no D322 row (D127)");
+    assert.match(gate, /CANON_CHANGE_LABEL = "canon-change"/, "canon-change label constant is gone (D322)");
+    assert.match(
+      gate,
+      /Josh's approval is not required/,
+      "canon-consistent pass still requires Josh (D322)",
+    );
+  });
+});

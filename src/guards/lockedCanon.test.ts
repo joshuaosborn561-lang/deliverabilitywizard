@@ -141,10 +141,42 @@ describe("owner intent — D285 LOCKED POD-40 canon", () => {
     );
     assert.match(
       owners,
+      /\/docs\/LOCKED-CANON\.md @joshuaosborn561-lang/,
+      stop(
+        "Josh owns the canon definition files (D322).",
+        "CODEOWNERS no longer assigns docs/LOCKED-CANON.md to Josh.",
+      ),
+    );
+    assert.match(
+      owners,
+      /\/src\/lib\/lockedCanon\.ts @joshuaosborn561-lang/,
+      stop(
+        "Josh owns the canon definition files (D322).",
+        "CODEOWNERS no longer assigns src/lib/lockedCanon.ts to Josh.",
+      ),
+    );
+    assert.match(
+      owners,
+      /does not require Josh's review/,
+      stop(
+        "Canon-consistent PRs do not require Josh's review (D322).",
+        "CODEOWNERS lost the canon-consistent review exception.",
+      ),
+    );
+    assert.match(
+      owners,
       /must never auto-merge/,
       stop(
         "LOCKED canon PRs must never auto-merge (D285).",
         "CODEOWNERS lost the never-auto-merge comment.",
+      ),
+    );
+    assert.doesNotMatch(
+      owners,
+      /^\/src\/guards\/lockedCanon\.test\.ts\s+@joshuaosborn561-lang\s*$/m,
+      stop(
+        "Implementation paths are not Josh-only (D322).",
+        "CODEOWNERS again requires Josh alone on src/guards/lockedCanon.test.ts.",
       ),
     );
     assert.match(
@@ -157,10 +189,54 @@ describe("owner intent — D285 LOCKED POD-40 canon", () => {
     );
     assert.match(
       ci,
+      /src\/lib\/lockedCanonGateCli\.ts/,
+      stop(
+        "The locked-canon job uses the D322 gate (D322).",
+        "ci.yml no longer runs lockedCanonGateCli.ts.",
+      ),
+    );
+    assert.match(
+      ci,
       /Never auto-merge/,
       stop(
         "LOCKED canon PRs must never auto-merge (D285).",
         "ci.yml locked-canon job lost the never-auto-merge fail path.",
+      ),
+    );
+    assert.doesNotMatch(
+      ci,
+      /LOCKED canon section changed vs base/,
+      stop(
+        "Canon-consistent PRs are not a hard Josh block (D322).",
+        "ci.yml still fails every LOCKED-section diff with no canon-change label.",
+      ),
+    );
+    const gate = await readFile(
+      new URL("../lib/lockedCanonGate.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      gate,
+      /Canon-consistent/,
+      stop(
+        "Canon-consistent PRs pass without Josh (D322).",
+        "lockedCanonGate.ts lost the canon-consistent pass.",
+      ),
+    );
+    assert.match(
+      gate,
+      /canon-change/,
+      stop(
+        "Locked edits need the canon-change label (D322).",
+        "lockedCanonGate.ts lost the canon-change label.",
+      ),
+    );
+    assert.match(
+      gate,
+      /Never auto-merge/,
+      stop(
+        "Unauthorized locked edits never auto-merge (D322).",
+        "lockedCanonGate.ts lost the never-auto-merge fail path.",
       ),
     );
     assert.match(
@@ -169,6 +245,38 @@ describe("owner intent — D285 LOCKED POD-40 canon", () => {
       stop(
         "LOCKED canon PRs must never auto-merge (D285).",
         "docs/BRANCH_PROTECTION.md lost the never-auto-merge rule.",
+      ),
+    );
+    assert.match(
+      protection,
+      /canon-change/,
+      stop(
+        "Branch protection records the canon-change label (D322).",
+        "docs/BRANCH_PROTECTION.md lost the canon-change rule.",
+      ),
+    );
+    assert.match(
+      protection,
+      /Do \*\*not\*\* require review from Code Owners/,
+      stop(
+        "Code-owner review is not the merge gate (D322).",
+        "docs/BRANCH_PROTECTION.md again requires code-owner review to merge.",
+      ),
+    );
+    assert.match(
+      protection,
+      /\*\*`check`\*\*/,
+      stop(
+        "The check status stays required (D322).",
+        "docs/BRANCH_PROTECTION.md dropped the check status.",
+      ),
+    );
+    assert.match(
+      protection,
+      /\*\*`locked-canon`\*\*/,
+      stop(
+        "The locked-canon status stays required (D322).",
+        "docs/BRANCH_PROTECTION.md dropped the locked-canon status.",
       ),
     );
 

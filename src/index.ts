@@ -172,6 +172,8 @@ import { CopyCanaryService } from "./services/copyCanary.js";
 import { LeadRunoutService } from "./services/leadRunout.js";
 import { SendingInfraService } from "./services/sendingInfra.js";
 import { canonBoard, canonCompliantOverall, findingKind } from "./lib/canonCompliance.js";
+import { CanonQaService } from "./services/canonQa.js";
+import { createWakeQueueSink } from "./services/canonQaSink.js";
 import { campaignCheckIsActive } from "./lib/campaignCheck.js";
 import { placementIsolationHealth } from "./lib/placementSuspect.js";
 import {
@@ -557,6 +559,13 @@ async function main(): Promise<void> {
     state,
   );
   const dnsAudit = new DnsAuditService(smartlead, slack, state);
+  // Canon QA stage: read-only compare with the last pass; queues (never Slack) only when newly broken.
+  const canonQa = new CanonQaService({
+    load: () => state.getCanonQaSnapshot(),
+    save: (snapshot) => state.setCanonQaSnapshot(snapshot),
+    sink: createWakeQueueSink(),
+    deploySha: () => process.env.RAILWAY_GIT_COMMIT_SHA ?? null,
+  });
   const mailboxSettings = new MailboxSettingsService(
     config,
     smartlead,
@@ -1315,6 +1324,30 @@ async function main(): Promise<void> {
       }
 
       logCanonScoreboard();
+      // Canon QA: same numbers as /health canonFindings and overdueStages.
+      await stage("canon-qa", async () => {
+        const counts: Record<string, number> = {};
+        const statusById = livingCampaignStatusById();
+        for (const record of state.listCampaignChecks()) {
+          if (!campaignCheckIsActive(record, statusById.size ? statusById : undefined)) continue;
+          for (const finding of record.findings ?? []) {
+            const kind = findingKind(finding);
+            counts[kind] = (counts[kind] ?? 0) + 1;
+          }
+        }
+        for (const finding of state.listGenericPoolFindings()) {
+          const kind = findingKind(finding);
+          counts[kind] = (counts[kind] ?? 0) + 1;
+        }
+        return canonQa.run({
+          at: new Date().toISOString(),
+          findings: counts,
+          overdueStages: overdueStages(state.listStageHealth())
+            .map((row) => row.name)
+            .filter((name) => name !== "canon-qa"),
+          canaryFleetDown: Boolean(state.getCanaryFleetDown()),
+        });
+      });
       const passMs = Date.now() - passStart;
       if (passMs > 15 * 60 * 1000) {
         console.warn(

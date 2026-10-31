@@ -137,3 +137,24 @@ describe("isolation Slack native confirm buttons (D248)", () => {
     assert.equal(meta.event_payload?.campaign_id, 3739758);
   });
 });
+
+describe("one-tap-only mode drops non-ask posts", () => {
+  it("drops plain sends and notes, keeps sends with buttons", async () => {
+    const prev = process.env.DELIVERABILITY_SLACK_ONE_TAP_ONLY;
+    process.env.DELIVERABILITY_SLACK_ONE_TAP_ONLY = "true";
+    try {
+      const client = new SlackClient({ channelLabel: "#test" });
+      // No token or webhook configured: a post that is not dropped would throw.
+      assert.equal(await client.send("ops", undefined, "ops_alert"), undefined);
+      assert.equal(await client.send("eod", undefined, "eod_summary"), undefined);
+      assert.equal(await client.send("log", undefined, "canon_miss"), undefined);
+      assert.equal(await client.notifyDeliverabilityNote("550 digest"), undefined);
+      await assert.rejects(() =>
+        client.send("ask", [{ type: "actions", elements: [] }], "burned_domain"),
+      );
+    } finally {
+      if (prev === undefined) delete process.env.DELIVERABILITY_SLACK_ONE_TAP_ONLY;
+      else process.env.DELIVERABILITY_SLACK_ONE_TAP_ONLY = prev;
+    }
+  });
+});

@@ -53,6 +53,7 @@ import {
   type GenericPoolCoreKind,
   type GenericSeatRecord,
 } from "./genericPool.js";
+import { DEFAULT_WARMUP_DAYS } from "./warmupDays.js";
 
 export type { GenericPoolCoreKind, GenericSeatRecord };
 
@@ -540,8 +541,8 @@ export async function syncGenericSeatsFromInventory(
         account as SmartleadAccountWithCampaigns,
         email,
         {
-          campaignMinWarmupDays: input.config.campaignMinWarmupDays ?? 21,
-          freshInboxWarmupDays: input.config.freshInboxWarmupDays ?? 21,
+          campaignMinWarmupDays: input.config.campaignMinWarmupDays ?? DEFAULT_WARMUP_DAYS,
+          freshInboxWarmupDays: input.config.freshInboxWarmupDays ?? DEFAULT_WARMUP_DAYS,
           prewarmedDomains: input.config.prewarmedDomains,
           extraGenericMailboxes: input.config.extraGenericMailboxes,
         },
@@ -565,7 +566,7 @@ export async function syncGenericSeatsFromInventory(
               email,
               input.state,
             ),
-            input.config.campaignMinWarmupDays ?? 21,
+            input.config.campaignMinWarmupDays ?? DEFAULT_WARMUP_DAYS,
             now,
           ),
         });

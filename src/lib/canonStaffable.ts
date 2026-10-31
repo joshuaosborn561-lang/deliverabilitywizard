@@ -8,7 +8,7 @@
  * linked / 34 staffable, 7 Vasco SMTP fails).
  *
  * Staffable here is a seat that can actually send on the on-week POD:
- * SMTP/IMAP ok, campaign mpd > 0, warmup ≥21 days when a clock is
+ * SMTP/IMAP ok, campaign mpd > 0, warmup ≥14 days when a clock is
  * readable, correct client (or that client's dedicated generic),
  * on-week POD tag (off-week tagged seats do not count), not a canary,
  * not HOLD/RETIRE, not InboxKit-lapsed when the store knows.
@@ -25,11 +25,12 @@ import { readMessagePerDay } from "./mailboxSendSettings.js";
 import { onWeekCohort, type RestCohort } from "./restCohort.js";
 import { isConnectedAccount } from "./staffableSender.js";
 import {
-  countsAsWarmed21,
+  countsAsWarmed,
   daysSince,
   tagNames,
   warmupClockStartedAt,
 } from "../services/warmupGate.js";
+import { DEFAULT_WARMUP_DAYS } from "./warmupDays.js";
 
 const POD_A = "POD-A";
 const POD_B = "POD-B";
@@ -70,7 +71,7 @@ export interface CanonStaffableInput {
   copyCanary?: boolean;
   inboxKitLapsed?: boolean;
   /**
-   * Readable warmup days. When set and < 21 (and not exempt), the seat
+   * Readable warmup days. When set and < 14 (and not exempt), the seat
    * is not staffable. Missing clocks do not fail this check — the
    * separate `under_warmed` finding still pages those.
    */
@@ -161,8 +162,8 @@ export function canonStaffableVerdict(
       ? input.warmupDays
       : warmupDaysOf(account, input.email, now);
   const warmed =
-    input.warmupExempt === true || countsAsWarmed21(tagNames(account), days);
-  if (!warmed && days != null && days < 21) reasons.push("under_warmed");
+    input.warmupExempt === true || countsAsWarmed(tagNames(account), days);
+  if (!warmed && days != null && days < DEFAULT_WARMUP_DAYS) reasons.push("under_warmed");
 
   if (
     !accountMatchesCampaignClient(

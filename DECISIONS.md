@@ -222,7 +222,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D213 | Live | 5.1.8 / AS(42004) is tenant_outbound_block (not tenant_rate_limit); permanent hold at 0, no 7:15 restore; Watchdog once; seed appquickconnectsales.com ids |
 | D214 | Live — leftover newest ignores inventory (D215) | Health resume is chain inversion (later lastOk older than newest earlier); skip the prefix. D211's 15m early-fresh gate starved pod-cover after a deploy reset the cron. `/run?mode=pod-cover` |
 | D215 | Live | Health-resume newest stamp ignores inventory (shared-book / skip-if-fresh refresh); leftover is after the deepest non-inventory lastOk so an inventory-only kill cannot hide pod-cover |
-| D217 | Live | Canon pages understaffed only on <40 on-week staffable (agent definition: SMTP/IMAP ok, mpd>0, warmup≥21 when readable, correct client, on-week POD tag); ESP mix + exclusivity are core findings. D216 is claimed by open PR #265 |
+| D217 | Live | Canon pages understaffed only on <40 on-week staffable (agent definition: SMTP/IMAP ok, mpd>0, warmup≥14 when readable, correct client, on-week POD tag); ESP mix + exclusivity are core findings. D216 is claimed by open PR #265 |
 | D218 | Live — TERRL overnight restore superseded by D219 24h-then-type-cap | TERRL / D148 bounce-hold ids are not pruned at 7:15pm CT. Every max_email_per_day raise path skips held seats during the window |
 | D219 | Live | Mailbox type tags (type:google / type:m365 / type:azure; tidalstackco.com = Azure). Caps: Azure 2 campaign + 5 warmup; M365 15 campaign; Google unchanged. 550 5.7.233 holds the tenant 24h at 0 then resumes the type cap (no 80% / no learned limit). Stopped seat stays linked, POD tag untouched; one same-client warm generic temporarily links on the on-week campaign (41/40). Restore + unlink after 24h. No cross-client borrow; EOD names a 39-sending campaign. One weekday ~5:30pm CT #deliverability digest, never per bounce |
 | D220 | Live | Weekday 7:16am CT Cayden per-client spend digest from existing pending-spend state; fleet GET /email-accounts pages limit=100 until empty and never decides teardown from a partial list |
@@ -232,7 +232,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D224 | Live | Every hold is evidence-per-seat from a fixed reason list; no pattern / substring / client holds; no 5/10/25% numeric caps; store reason+evidence; expire when the reason clears or at 30 days; rejected seats in one #deliverability note |
 | D225 | Live — surplus is per THAT POD; a needed off-week assignment with no campaign links is not surplus (D228); return order and untagged-pool strip governed by D230; PowerGRYD skip retired by D237 | Weekday surplus generic return on min40-topup and generic-cleanup: unlink, clear `client_id`, reset signature; never drop a POD below 40 staffable; skip active POC-engagement seats and 24h TERRL substitutes so `generic_idle` does not page on legitimate state |
 | D226 | Live | Monday InboxKit sweep must not post findings to #deliverability. Handoff per client (lapsed/cancelled/inactive-but-connected + upcoming cancellations with dates) via state / /health. After cleanup, Slack only `Found X inboxes that had lapsed; they're deleted from Smartlead and InboxKit.` when X > 0 |
-| D227 | Live | `WARMUP-GATE-EXEMPT` counts as 21+ days warm for isStaffableSender, generic-pool named count, min40-topup, and surplus return. tidalstackco.com Azure/Entra seats Josh tagged that way are warm now (do not wait 21 days from the 9/29 Smartlead import). Azure cap stays 2 campaign + 5 warmup |
+| D227 | Live | `WARMUP-GATE-EXEMPT` counts as 14+ days warm for isStaffableSender, generic-pool named count, min40-topup, and surplus return. tidalstackco.com Azure/Entra seats Josh tagged that way are warm now (do not wait 14 days from the 9/29 Smartlead import). Azure cap stays 2 campaign + 5 warmup |
 | D228 | Live — one-client / one-POD attach and named-warm return lock is D230 | Generics top up EACH POD (A and B) to 40 staffable per client (inventory 40/40, not only the on-week POD). Campaigns link only the on-week POD. Off-week POD keeps assigned generics (`client_id`, POD tag, signature) with no campaign links. Surplus is generics beyond 40 staffable in THAT POD. Off-week named leftovers unlink from on-week campaigns without peeling on-week below 40 |
 | D229 | Live | D189 Insight rest-sticky is retired: Insight off-week seats unlink; fan-out will not re-spread off-week POD-B onto Insight. D193 POC-only / "named clients never receive generics" is retired: assigned 40/40 generics stay on every named client; leftover D134 tap is still not a rotating-pool dump. D184/D192 Insight ≠ SalesGlider mix stays |
 | D230 | Live — sole assign/release path and `released_at` history locked by D231 | Governing generic rule: one shared pool in a table; a generic attaches to ONE client and ONE POD (A or B, whichever is under 40) and never rotates PODs; stays until branded named seats fill that POD back to 40, then returns to the untagged pool; while tagged no other client may use it; never pre-split across clients. min40 takes only untagged pool or same client+POD. Named-warm swap returns one generic per newly-warm named seat, oldest/worst first, never below 40; surplus beyond 40 also returns |
@@ -244,7 +244,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D236 | Live | POC engagement: reuse `pocClientNamePatterns` (default `goliath,deep roots`). Name-list matches except Goliath 548611 get 60 seats, no PODs, survive DRAFTED/ACTIVE, exempt from rotation, min40 fills to 60 with no Allow ask, `POC` tag reserves the seat, signature is `<from_name>\n{full brand}`. Release only when marked done (`/run?mode=end-poc`). Deep Roots 597783 is the first; never staff Gabe post-call 4074266. |
 | D237 | Live — D256 confirms PowerGRYD stays a full named client, not POC | PowerGRYD 592842 is a full named client. Leave-alone / dedicated-generic / rotation-skip / idle-exempt / min40 auto-allow special-cases are deleted. Not the D236 POC mode. Campaigns may PAUSE when done. |
 | D238 | Live | Canary fleet is hard-locked: identify by copyCanary fleet membership + Canary signature backstop; exclude from every attach/staff/top-up/generic-pool/POC path; never set client_id/POD/GENERIC; Canon pages `canary_on_live` / `canary_warmup_on` |
-| D239 | Live | generic_idle named staffable count matches CANON: 21-day gate, exclude GABE-VM-RESERVED and canary |
+| D239 | Live | generic_idle named staffable count matches CANON: 14-day gate, exclude GABE-VM-RESERVED and canary |
 | D240 | Live | Canary fleet swap: living fleet is size 10, adopted by CANARY tag and/or CANARY_FLEET_EMAILS; contaminated 6-seat getcrosslaunchco.info / crosslaunchcoget.info fleet is released and is no longer a D238 canary; empty replacement fleet is one fleet-level notice |
 | D241 | Live — write exemption folded into D242 CALLER FOLLOW-UP class | GABE-VM-RESERVED seats are exempt from every mutating stage (never unlink / link / retag / rewrite); min40 POC fill skips campaigns named Gabe and campaigns whose linked seats are GABE-VM-RESERVED, not just 4074266 |
 | D242 | Live — attach tightened by D244; stray peel / top-up exempt hardened by D264 | CALLER FOLLOW-UP campaign class: config-driven ids or `Gabe Calls |` prefix plus CALLER_FOLLOWUP sender tag (GABE-VM-RESERVED); empty signature; no rename; exclusive attach; rest/clock/floor/ESP/schedule/runway exempt; Slack before kill; never START/PAUSE; owned gabe@ attach when warm; bridge off by Nov 3 |
@@ -285,7 +285,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D287 | Live — saveHot maps / Insight unlinked count amended by D288 | Old-wizard fix: ledger assigns free warm generics into every under-floor POD (A and B) with covering_for; retire-pending domains last; CornerStone never; Insight still no generics. Owned-seat count includes Insight Josh seats (even SL 345263), PowerGRYD dedicated generics without a POD tag, and Peterson named-domain fallback. Peterson under-floor alerts suppressed (winding down). marekbrooks@meetconnectbox.com stays in the ledger and never re-links to PowerGRYD #4005226. isolation-buy-resume yields and skips idle full-state stringify. 0% canary-copy scores start isolation within 30 min; isolation never hold-pauses. Never START / PAUSE / touch STOPPED; never buy. LOCKED section unchanged. |
 | D288 | Live — min40 covering/owned-count yield amended by D289; Insight from-name/domain matcher amended by D290; unlinked salesglider* remap amended by D291 | Old-wizard fix: `saveHot` sidecar is stamps + goneIds + pool goneEmails only (never isolation score/suspect/canary maps); overlapping saveHot coalesces; nothing stringifies big state inside per-seat loops. Insight Josh seats count for Insight even when unlinked / leftover on SalesGlider 345263. Insight still gets no generics and a daily Josh alert. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
 | D289 | Live | Old-wizard fix: min40 owned-count, covering_for relink, and seat-index walks time-slice so a 514×1690 fleet pass cannot pin the event loop 6–18s after Smartlead pages stream to disk. Watchdog 3× ≥3s / 120s stays. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
-| D290 | Live — salesglider* owned remap amended by D291; Insight `client_id` domain signal added by D295 | Old-wizard fix: Insight owned-count accepts production `Joshua Osborn` on `joshuaosborn*` / `joshosborn*` / `salesglider*` (D288 matcher required exact `Josh Osborn` and substring `joshosborn`, so 85 live `Joshua Osborn` @ `joshuaosborn*` seats counted 0). The 1:53pm CT min40 pass that assigned 0 was correct canon: all 122 free generics still owe warmup — do not loosen the warm filter; never assign unwarmed generics. PowerGRYD 0 owned is also correct: branded `*powergryd.info` seats created Oct 16–17 still owe 21 days; warm dedicated generics with `client_id=592842` still count (D287). Insight still no generics. CornerStone never. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
+| D290 | Live — salesglider* owned remap amended by D291; Insight `client_id` domain signal added by D295 | Old-wizard fix: Insight owned-count accepts production `Joshua Osborn` on `joshuaosborn*` / `joshosborn*` / `salesglider*` (D288 matcher required exact `Josh Osborn` and substring `joshosborn`, so 85 live `Joshua Osborn` @ `joshuaosborn*` seats counted 0). The 1:53pm CT min40 pass that assigned 0 was correct canon: all 122 free generics still owe warmup — do not loosen the warm filter; never assign unwarmed generics. PowerGRYD 0 owned is also correct: branded `*powergryd.info` seats created Oct 16–17 still owe 14 days; warm dedicated generics with `client_id=592842` still count (D287). Insight still no generics. CornerStone never. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
 | D291 | Live | Old-wizard fix: SalesGlider's own `salesglider*` Josh seats with client 345263 (unlinked or on SG campaigns) count for SalesGlider, never Insight. Insight-named Josh seats (`joshuaosborn*` / `joshosborn*` / `insight*`) and leftover Josh seats sitting on an Insight campaign still count for Insight, never SalesGlider. D288's remap of every Josh+salesglider* seat to Insight 582890 emptied SG POD-A/B (prod 2026-10-19 2:32pm CT under-floor: SG A 0/40, B 4/40) after D290 made joshuaosborn* fill Insight. Never both. Insight still no generics. CornerStone never. Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
 | D292 | Live — overlap-with-health freeze / cleanup flap / silent errors / 10m timeout / PowerGRYD empty-by-design log amended by D293 | Old-wizard fix: min40 assigns free warm ledger seats into under-floor PODs even when leftover Smartlead marker `client_id` / pool assignment / POD tags / foreign signatures remain (rewrite client sig on assign); PowerGRYD empty-by-design no longer refuses that free-pool rotation; Insight still no generics. canonOps hold-enforcement + min40-topup run at least every 30 min in the weekday window even when health is long or back-to-back (waive health-running skip when overdue; share the Smartlead limiter). Never START / pause / touch STOPPED; never buy. LOCKED section unchanged. |
 | D293 | Live | Old-wizard fix after D292 prod (deploy f446303c, 2026-10-19 ~5:10pm CT): overdue min40 serializes against health CPU (does not overlap client-rest / campaign-check scans); cleanup and min40 agree on assigned generics (ledger + owned POD count) so cleanup cannot undo a just-assigned under-floor seat; min40 logs each error and each POD's rejection reasons; one seat error does not abort the rest of the POD; min40-topup step budget 20m; PowerGRYD empty-by-design refuse-generics log/logic removed (Insight is the only no-generics client). Watchdog thresholds unchanged. Warm gate, CornerStone, ESP match, ≥33% mix unchanged. LOCKED section unchanged. |
@@ -294,12 +294,16 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D297 | Live | Old-wizard fix: health-pass scan-backfill honors the stage AbortSignal (and Smartlead fetches stop, no retry-as-timeout), runs after isolation-buy-resume, skips when less than ~20 minutes remain in the 45-minute health lock, and HTTP 429s log the Smartlead endpoint. LOCKED section unchanged. |
 | D299 | Live — stringify batching amended by D300; 60-minute freeze quarantine stays | Freeze/restart loop 2026-10-23: state/hot stringify batches compact values so one JSON.stringify cannot pin the loop for seconds; a health-loop stage that freeze-exits 3 times is quarantined for 60 minutes so leftover resume does not restart there forever. Thresholds are not widened. LOCKED section unchanged. |
 | D300 | Live | Freeze/restart loop after D299 (2026-10-23): objects/arrays are never native-stringified; persist and indexAccountsByCampaign yield to timers; campaign-health snapshots use a campaign Map and yield. lastOk stamps unchanged. Thresholds not widened. LOCKED section unchanged. |
+| D303 | Live | LOCKED canon change (Josh 2026-10-25): per-variant placement + canary-copy tests; mailboxes-summary paged to every mailbox; on-week POD ESP mix auto-rebalanced (1-for-1, warm, same client, ledger generics); every ACTIVE client campaign converged to Mon–Thu 8–7 ET; mailbox rest-then-burn (14-day rest, generic covers, rest_count, burn on repeat or >3) replaces kill-only for mailbox-cause INFRA. POD-40, Insight no-generics, no cross-client generics, 21-day warmup unchanged. Rest length amended to 28 days by D310. |
 | D301 | Live | POD ESP mix matches each client's InboxKit Google/Microsoft split (±max(2, 10% of the POD) of round(POD × Microsoft share)); 1/3 floor is fallback only when InboxKit has no row. SMTP smtp.gmail.com and type:google are Gmail; type:m365 / type:azure are Microsoft. min-40 / campaign top-up pick generics toward that split. Finding text shows the client's target. Parlay ~54%, EMCOR ~60%, Peterson ~35%. LOCKED section unchanged. |
 | D304 | Live — LOCKED | Every Smartlead campaign: enable_ai_esp_matching ON and min_time_btw_emails 10. Campaign-check (hourly/all) flags and fixes drift on every non-STOPPED campaign: ESP via POST /settings, gap via POST /schedule echoing the current window. Never status. Supersedes D242's 3m caller follow-up gap (now 10). |
 | D307 | Live | Tests that persist age-pruned ledgers (placement scores, copy suspects) stamp fixture times relative to now so D257's 14-day placement-score retention cannot drop a living row. Production prune windows and isolation sidecar persist are unchanged. LOCKED section unchanged. |
 | D308 | Live | Drain mode (A0): `POST /drain?action=on` skips every NEW cron tick, post-pass retry and manual `/run` while in-flight work finishes; `/health` reports `drain`, `activeJobs`, `idleNow` and `safeToDeploy` (drain on AND nothing running). Auto-expires (30m default, 120m max). Changes no campaigns, mailboxes, settings or WRITE_ENABLED. LOCKED section unchanged. |
 | D309 | Live | Copy-canary idempotent: one live "Canary copy" SmartDelivery test per campaign. Single-flight per campaign, a 3h create cooldown (also after a failed, maybe-landed create), stored test kept when the list hits the 5,000-test page cap, and each attach pass STOPS (never deletes) extra living canaries for a campaign, keeping the one with readings. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
+| D310 | Live — LOCKED (needs Josh's merge) | Amends D303: a pulled mailbox rests 28 days (4 weeks), not 14. The rest timer, the ready date of the covering generic (`covering_for` warm-ready = day 28) and the date it goes back all move to 28 days; the generic stays until day 28. The 14-day warmup for new seats is unchanged. |
+| D311 | Live — LOCKED (needs Josh's merge) | Reply-rate-drop trigger: a sending domain whose trailing 7-day reply rate (150+ sends) is 40%+ below its client's 30-day baseline across ACTIVE campaigns is flagged. Alert only: alert Josh, then one placement test on that domain; never pulls, rests, pauses or isolation-tests. Sits on top of the placement gates. |
 | D312 | Live | A1 critical sweep: placement results (`monitor-results`), `test-reconcile` and `isolation-branch` run every 30 min on their own lock and a top-priority Smartlead lane; bounce-autostop's 10-min cron also runs on that lane (never blocked by the exclusive health lane, served first, and critical writes jump the mutation queue). Amends D270 (exclusive health lane), D257 (limiter) and D247 (locks). Those stages are overdue-paged at 75 min, not 6h45m. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
+| D313 | Live (LOCKED text updated) | Inbox warmup is **14 days**, not 21 (Josh, 10/29/2026 7:18am CT). One default (`DEFAULT_WARMUP_DAYS` = 14, `src/lib/warmupDays.ts`) for the pool clock, campaign-min gate, fresh InboxKit clock, evidence hold, Generics Ledger warm-ready date and the named-warm swap. `POOL_WARMUP_DAYS` / `MIN_CAMPAIGN_WARMUP_DAYS` / `FRESH_INBOX_WARMUP_DAYS` still override. Supersedes the 21 in D1/D41/D50/D105 and every later row that repeats it. The 28-day mailbox rest (D310) is unchanged. |
 | D314 | Live (LOCKED PR — Josh merges) | Insight is exempt from the `esp_mix` Canon finding (Josh 10/29: "yes exempt insight it is mostly msft"). Campaigns on Insight (client 582890 / Insight campaign ids) no longer raise `esp_mix`, so they stop counting against `/health` canonFindings and the Canon score. ESP-mix still applies to every other client; seat assignment, min-40 and the Azure rules are unchanged. |
 | D315 | Live | A4 bloat: (1) `enrichCampaignIds` remembers each test's campaign (immutable) instead of one `GET spam-test/{id}` per test in five services every pass — those were 3,088 of 4,886 logged 429s on 10/28–29 (628 tests); (2) the unfiltered `listTests` is shared for 30 s across callers and dropped on any write; (3) the D260 "treating as generic" warning logs once per host/client per process (~800 identical lines per 12 h). No stage removed, no behavior change. |
 | D317 | Live | Health-sweep budget: (1) a cold test→campaign cache (after a deploy) can no longer storm SmartDelivery — 3 failed lookups in a row open a 2-minute breaker, each lookup retries once not four times, and every `enrichCampaignIds` caller gets a 90 s default budget; (2) `campaign-health` and `client-rest` stage timeout 10m → 15m as a safety net, with a 20m hard cap on any stage; (3) campaign-health logs its top-up / fan-out / copy-canary seconds and `/health` publishes each stage's `lastDurationMs`. Builds on D315. No stage removed, no cadence change, no campaign, mailbox, setting or WRITE_ENABLED change. |
@@ -10142,7 +10146,7 @@ when the locked section changes vs base.
 row in `state.genericSeats`: email, ESP, warmup on/off,
 assigned client (blank = free pool), assigned POD (A/B),
 assigned_at, and covering_for (the specific branded seats of
-that client it stands in for, each with its 21-day warm-ready
+that client it stands in for, each with its 14-day warm-ready
 date). Wizard state is source of truth. An optional upsert-only
 Supabase mirror (`wizard.generic_ledger`) writes when
 `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are present; if
@@ -10411,11 +10415,11 @@ unwarmed generics.
    `seatIsWarmStaffableForPod` / `owesWarmup`. Leftover
    Smartlead `client_id` and Onboarding-freed seats stay
    D283 idle-not-supply, not free-pool for other clients.
-3. **PowerGRYD 0 owned is the 21-day clock.** Production
+3. **PowerGRYD 0 owned is the 14-day clock.** Production
    2026-10-19: 76+ branded `*powergryd.info` seats with
    `client_id=592842` were created Oct 16–17 (1–2 days
    warmed, `campaign_count=0`). They are named PowerGRYD
-   inventory still owing 21 days, so owned 0 is empty-by-design
+   inventory still owing 14 days, so owned 0 is empty-by-design
    and correct. Warm dedicated generics that still have
    `client_id=592842` continue to count (D287). Do not count
    unwarmed named or dedicated seats to paper over the short.
@@ -11197,6 +11201,106 @@ touched; the LOCKED section is unchanged.
 **Guards.** `src/services/copyCanaryDedupe.test.ts`;
 `src/guards/canon.test.ts` D309.
 
+## D303 — Per-variant tests, ESP rebalance, send-window converge, rest-then-burn (LOCKED)
+
+**Date.** 2026-10-25 (Josh, approved in the Deliverability chat, 8:35pm CT).
+
+**Decision.** Five changes, added to the LOCKED section:
+
+1. Every A/B variant of every campaign gets its own placement test and
+   its own canary-copy test, instead of one per campaign.
+2. `resultMonitor.checkMailboxSummary()` pages
+   `spam-test/report/mailboxes-summary` with limit/offset until every
+   mailbox is read (it read 10 of ~2,151).
+3. An on-week POD off the client's InboxKit Microsoft share (D301) is
+   auto-rebalanced, not only reported, using only swaps canon already
+   allows: warm seats, same client, ledger generics. 1-for-1 so POD-40
+   never drops.
+4. Every ACTIVE client campaign converges to Mon–Thu 08:00–19:00
+   America/New_York (D182 window), keeping its own gap and daily cap.
+   Shells and the D242 caller follow-up class are skipped.
+5. Mailbox rest-then-burn: when isolation shows the mailbox (same-ESP
+   placement under 80%), not the copy, is the cause, the mailbox is
+   pulled from its POD and campaigns, keeps warmup on, rests 14 days; a
+   free warm generic covers the seat in the Generics Ledger (client, POD,
+   covering_for). After 14 days it goes back and the generic comes out.
+   rest_count + history per mailbox. BURNED if under 80% again after
+   returning, or rest_count over 3: pulled permanently, retire/replace
+   action opened; replacement spend needs approval. The misleading
+   "Isolation is remediating this" alert text is replaced.
+
+**Why.** Josh (2026-10-25): one test per campaign hid weak variants; the
+summary read 10 mailboxes; esp_mix and drifting windows were only
+reported; kill-only left mailbox-caused spam running.
+
+**Supersedes / amends.** Amends D51 / D128 kill-only for the
+mailbox-is-the-cause case only. Amends D182's "no schedule-window
+converge". Amends D217 / D301 esp_mix from report-only to rebalance.
+Does not change POD-40, Insight no-generics, generics never shared
+across clients, or the 21-day warmup.
+
+**Guards.** `src/guards/canon.test.ts` D303. `src/guards/lockedCanon.test.ts`
+LOCKED section. `src/lib/sequenceVariants.test.ts`,
+`src/lib/mailboxRest.test.ts`, `src/lib/espRebalance.test.ts`,
+`src/lib/sendWindow.test.ts`, `src/services/canonConverge.test.ts`,
+`src/services/resultMonitor.mailboxSummary.test.ts`.
+
+## D310 — LOCKED: mailbox rest is 28 days (4 weeks)
+
+**Decision (Josh, 2026-10-29 6:25am CT, relayed by the parent agent):**
+change the rest period for pulled mailboxes from 14 days to 28 days
+(4 weeks). Generics standing in for a resting mailbox stay until day 28.
+The 14-day warmup for new seats is unchanged.
+
+**Rule.** Amends D303's mailbox rest-then-burn. A mailbox pulled because
+isolation shows the mailbox is the cause rests 28 days (`MAILBOX_REST_DAYS`
+= 28). The Generics Ledger `covering_for` ready date for the covering
+generic is the rest end (day 28), so the generic stays until then; after
+28 days the mailbox goes back automatically and the generic comes out.
+`rest_count`, the >3 burn, the under-80% burn and the alert text follow.
+
+**Scope.** Only the D303 mailbox rest. The D43 client A/B fortnight and the
+generic send-clock are separate rules and are unchanged. LOCKED text for
+the rest bullet is updated in `CANON.md`, `docs/LOCKED-CANON.md` and
+`src/lib/lockedCanon.ts`, so this never auto-merges (D285): **Josh merges.**
+
+**Guards.** `src/lib/mailboxRest.test.ts` (28-day timer, due-back date),
+`src/services/canonConverge.test.ts` (generic stays through day 27, goes
+back at day 28), `src/guards/canon.test.ts` D310, `lockedCanon.test.ts`.
+
+
+## D311 — LOCKED: reply-rate-drop trigger (alert, then a placement test on that domain)
+
+**Decision (Josh, 2026-10-29 6:25am CT and 6:26am CT, relayed by the
+parent agent):** a 40% reply-rate-drop rule. Josh: "for now i want the 40%
+rule to alert me, then i want it to run a test for that specific domain".
+
+**Rule.** Flag a sending domain when its trailing 7-day reply rate, with
+at least 150 sends in that window, is 40% or more below the client's
+baseline: the client's trailing 30-day reply rate across ACTIVE
+campaigns (sent and replied over the client's mailboxes on ACTIVE
+campaigns, from `analytics/mailbox/name-wise-health-metrics`). When it
+fires: (1) alert Josh in Slack (`ops_alert`), then (2) run one placement
+test on that domain's mailboxes only. No isolation test, no pull, no
+rest, no pause, no status change: the service's Smartlead surface is the
+read-only metrics call. A domain is not re-alerted for 7 days. It sits on
+top of the placement gates and does not replace them.
+
+**Mechanics.** `src/lib/replyRateDrop.ts` (threshold, sample floor),
+`src/services/replyRateWatch.ts`, cron `CRON_REPLY_RATE_DROP` (default
+`27 1,7,13,19 * * *`), kill switch `ENABLE_REPLY_RATE_DROP` (default on).
+The placement test is a one-off manual test named `Reply drop: <domain>`
+with the control sequence from the domain's mailboxes. State: the
+`replyDrops` ledger (domain, alert time, rate, baseline, test id).
+
+**Locked.** The rule is a bullet in the LOCKED section (`CANON.md`,
+`docs/LOCKED-CANON.md`, `src/lib/lockedCanon.ts`), so it never
+auto-merges (D285): **Josh merges.**
+
+**Guards.** `src/lib/replyRateDrop.test.ts` (40% threshold, 150-send
+minimum), `src/services/replyRateWatch.test.ts` (alert first then one
+domain-only test, alert-only, no re-alert, dry run),
+`src/guards/canon.test.ts` D311, `lockedCanon.test.ts`.
 
 ## D312 — Critical sweep: placement, test-reconcile and isolation on a top-priority lane
 
@@ -11231,6 +11335,27 @@ stages). Does not change POD-40, the Generics Ledger, any LOCKED rule, or
 
 **Guards.** `src/lib/criticalLane.test.ts`; `src/guards/canon.test.ts` D312.
 
+
+## D313 — Warmup is 14 days (reverses D50's 21)
+
+**Decision (Josh, 2026-10-29 7:18am CT, relayed):** inbox warmup is 14
+days, not 21.
+
+**Rule.** `DEFAULT_WARMUP_DAYS = 14` is the only default for the pool
+clock (`poolWarmupDays`), campaign-min gate (`campaignMinWarmupDays`),
+fresh InboxKit clock (`freshInboxWarmupDays`), the evidence-hold warmup
+test, the Generics Ledger `covering_for` warm-ready date, the staffable
+"warmed" test and the named-warm swap ("when a covered branded seat
+reaches 14 days warm"). The env vars `POOL_WARMUP_DAYS`,
+`MIN_CAMPAIGN_WARMUP_DAYS` and `FRESH_INBOX_WARMUP_DAYS` still override.
+The warmup gate, its pull rules and the `WARMUP-GATE-EXEMPT` tag are
+unchanged; only the day count moves. LOCKED-CANON text for the Generics
+Ledger and named-warm swap now says 14.
+
+**Not changed.** The mailbox **rest** stays 28 days (D310). Older
+decision entries that say "21" are history; this entry supersedes them.
+
+**Guards.** `src/lib/warmupDays.test.ts`; `src/guards/canon.test.ts` D313.
 
 ## D314 — Insight is exempt from the ESP-mix finding
 

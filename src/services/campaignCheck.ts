@@ -204,6 +204,21 @@ export interface CampaignCheckResult {
  * is not this checker.
  */
 export class CampaignCheckService {
+  /** D303 — ESP auto-rebalance hook. Wired in index.ts. */
+  private espRebalancer:
+    | ((input: {
+        campaign: SmartleadCampaign;
+        microsoftShare: number | undefined;
+        attached: SmartleadAccountWithCampaigns[];
+        allAccounts: SmartleadAccountWithCampaigns[];
+        campaigns?: SmartleadCampaign[];
+      }) => Promise<{ swaps: number; reason: string }>)
+    | null = null;
+
+  setEspRebalancer(fn: CampaignCheckService["espRebalancer"]): void {
+    this.espRebalancer = fn;
+  }
+
   constructor(
     private readonly config: AppConfig,
     private readonly smartlead: SmartleadClient,
@@ -1629,6 +1644,27 @@ export class CampaignCheckService {
             microsoftShare,
           })
         ) {
+          // D303 — auto-rebalance, not just report. Same client, warm,
+          // ledger generics only; 1-for-1 so POD-40 holds.
+          if (this.espRebalancer) {
+            try {
+              const done = await this.espRebalancer({
+                campaign,
+                microsoftShare,
+                attached: attached.filter((row) => {
+                  const e = accountEmail(row)?.toLowerCase();
+                  return Boolean(e && serving.includes(e));
+                }),
+                allAccounts: input.accounts,
+                campaigns: [...input.campaigns.values()],
+              });
+              console.log(
+                `[campaign-check] D303 ESP rebalance #${campaign.id}: swaps=${done.swaps} (${done.reason})`,
+              );
+            } catch (error) {
+              console.warn(`[campaign-check] D303 ESP rebalance #${campaign.id} failed`, error);
+            }
+          }
           findings.push({
             kind: "esp_mix",
             detail: formatPodEspMixFinding({

@@ -194,7 +194,7 @@ describe("D286 generics ledger helpers", () => {
     assert.ok(seatCoveringReady({
       coveringFor: [{ email: "a@x.com", warmReadyAt: "2020-01-01T00:00:00.000Z" }],
     }).length);
-    assert.ok(warmReadyAtFromClock("2026-10-01T00:00:00.000Z")?.startsWith("2026-10-22"));
+    assert.ok(warmReadyAtFromClock("2026-10-01T00:00:00.000Z")?.startsWith("2026-10-15"));
     assert.equal(alreadyCoveredEmails([
       emptyGenericSeat("g@getintroduced.info", {
         coveringFor: [{ email: "n@x.com", warmReadyAt: null }],

@@ -187,7 +187,7 @@ describe("DomainClientAuditService (D136)", () => {
     const deferredNote = advisories.find(
       (row) => row.domain === "salesgliderfresh.info",
     )?.note;
-    assert.match(deferredNote ?? "", /owe the 21-day warmup/);
+    assert.match(deferredNote ?? "", /owe the 14-day warmup/);
     assert.equal(byDomain.size, 3);
   });
 });
@@ -343,7 +343,7 @@ describe("DomainClientAuditService (D172)", () => {
       (row) => row.domain === "salesgliderfresh.info",
     );
     assert.equal(deferred?.kind, "unmapped");
-    assert.match(deferred?.note ?? "", /owe the 21-day warmup/);
+    assert.match(deferred?.note ?? "", /owe the 14-day warmup/);
     assert.doesNotMatch(deferred?.note ?? "", /none resolve to a client/);
   });
 

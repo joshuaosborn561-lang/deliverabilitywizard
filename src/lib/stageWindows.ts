@@ -170,6 +170,8 @@ export const STAGE_OVERDUE_WINDOWS_MS: Record<string, number | null> = {
   "isolation-rig": SIX_HOURLY_MS,
   // D159 — score→suspect→evaluate rides the 15-minute health sweep.
   "isolation-branch": HEALTH_MS,
+  // Read-only canon QA: compares open findings and overdue stages with the last pass; queues only when newly broken.
+  "canon-qa": HEALTH_MS,
   "copy-isolation": SIX_HOURLY_MS,
   // D205 — weekday Chicago 30-minute canon-ops. Idle ticks outside
   // hours still refresh lastOkAt so a weekend is not OVERDUE.

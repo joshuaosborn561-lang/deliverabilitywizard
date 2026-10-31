@@ -357,6 +357,8 @@ export interface AppState {
    * one connected mailbox.
    */
   canaryFleetDown: CanaryFleetDownRecord | null;
+  /** Canon QA stage: last baseline (findings by kind, overdue stages) it compared against. Read-only QA, never a mutation. */
+  canonQaSnapshot: import("../services/canonQa.js").CanonQaSnapshot | null;
   /**
    * D194 — Josh/Cayden standing START/PAUSE prefs from #deliverability
    * one-taps. Goliath hold is refused at the handler (Insight SEG unlocked by D246).
@@ -832,6 +834,7 @@ const EMPTY_STATE: AppState = {
   stageAlertedAt: {},
   canonMissAlerted: {},
   canaryFleetDown: null,
+  canonQaSnapshot: null,
   campaignStandingPrefs: {},
   deliverabilityDecisions: {},
   powerGrydSeatCount: null,
@@ -948,6 +951,7 @@ export class StateStore {
         stageAlertedAt: parsed.stageAlertedAt ?? {},
         canonMissAlerted: parsed.canonMissAlerted ?? {},
         canaryFleetDown: parsed.canaryFleetDown ?? null,
+        canonQaSnapshot: parsed.canonQaSnapshot ?? null,
         campaignStandingPrefs: parsed.campaignStandingPrefs ?? {},
         deliverabilityDecisions: parsed.deliverabilityDecisions ?? {},
         powerGrydSeatCount:
@@ -1898,6 +1902,14 @@ export class StateStore {
 
   clearCanaryFleetDown(): void {
     this.state.canaryFleetDown = null;
+  }
+
+  getCanonQaSnapshot(): import("../services/canonQa.js").CanonQaSnapshot | null {
+    return this.state.canonQaSnapshot ?? null;
+  }
+
+  setCanonQaSnapshot(snapshot: import("../services/canonQa.js").CanonQaSnapshot): void {
+    this.state.canonQaSnapshot = snapshot;
   }
 
   /** D205 — PowerGRYD dedicated-seat watch (alert-only). */

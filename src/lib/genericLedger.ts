@@ -22,8 +22,9 @@ import {
 } from "./genericPool.js";
 import { minFloorForClient } from "./minFloorByClient.js";
 import { rankGenericsOldestWorstFirst } from "./genericAssign.js";
+import { DEFAULT_WARMUP_DAYS } from "./warmupDays.js";
 
-export const GENERIC_LEDGER_WARMUP_DAYS = 14;
+export const GENERIC_LEDGER_WARMUP_DAYS = DEFAULT_WARMUP_DAYS;
 
 export function isCornerstoneGenericDomain(
   emailOrDomain: string | null | undefined,

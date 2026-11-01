@@ -49,6 +49,7 @@ import { assignClientCohorts } from "./restCohort.js";
 import { owesWarmup } from "../services/warmupGate.js";
 import { runWithStallScopeAsync } from "./eventLoopAttribution.js";
 import { createLoopYielder } from "./stringifyYielding.js";
+import { DEFAULT_WARMUP_DAYS } from "./warmupDays.js";
 
 /** D289 — time-slice so a 1690-seat owned count cannot pin the loop 14–18s. */
 export const OWNED_COUNT_YIELD_EVERY = 8;
@@ -185,8 +186,8 @@ function warmupConfigOf(
   >,
 ) {
   return {
-    campaignMinWarmupDays: config.campaignMinWarmupDays ?? 14,
-    freshInboxWarmupDays: config.freshInboxWarmupDays ?? 14,
+    campaignMinWarmupDays: config.campaignMinWarmupDays ?? DEFAULT_WARMUP_DAYS,
+    freshInboxWarmupDays: config.freshInboxWarmupDays ?? DEFAULT_WARMUP_DAYS,
     prewarmedDomains: config.prewarmedDomains,
     extraGenericMailboxes: config.extraGenericMailboxes,
   };

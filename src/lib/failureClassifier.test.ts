@@ -178,6 +178,25 @@ describe("classifyFailure", () => {
     assert.match(c.summary, /one-ESP/i);
   });
 
+  it("treats SmartDelivery no-leads-on-sequence as non-remediable noise", () => {
+    // Production fingerprint was collapsing to
+    // unknown:scan:scan-failed-creating-tests-for-campaign-n-no-lea.
+    const c = classifyFailure(
+      "scan",
+      "Failed creating tests for campaign 4085159: No leads available for the selected or lower sequence",
+    );
+    assert.equal(c.class, "noise");
+    assert.equal(c.autoRemediate, false);
+    assert.equal(c.fingerprint, "noise:scan-no-leads");
+    assert.match(c.summary, /no leads/i);
+
+    const other = classifyFailure(
+      "scan",
+      "Failed creating tests for campaign 999999: No leads available for the selected or lower sequence",
+    );
+    assert.equal(other.fingerprint, c.fingerprint);
+  });
+
   it("treats denied/pending teardown approval as non-remediable noise", () => {
     const denied = classifyFailure(
       "remediation",

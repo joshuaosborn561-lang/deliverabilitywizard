@@ -9,6 +9,7 @@ import {
   isMissingSpamTestNoise,
   isRateLimitNoise,
   isRetryRemovalNoise,
+  isScanNoLeadsNoise,
   isSenderNotInCampaignNoise,
   reconnectFailureCategory,
 } from "./alertNoise.js";
@@ -95,6 +96,15 @@ describe("alert noise", () => {
     assert.equal(isBenignOpsNoise(message), true);
     assert.equal(isRateLimitNoise(message), false);
     assert.match(humanizeAlertError(message), /one email platform per domain/i);
+  });
+
+  it("treats SmartDelivery no-leads-on-sequence as benign ops noise", () => {
+    const message =
+      "Failed creating tests for campaign 4085159: No leads available for the selected or lower sequence";
+    assert.equal(isScanNoLeadsNoise(message), true);
+    assert.equal(isBenignOpsNoise(message), true);
+    assert.equal(isRateLimitNoise(message), false);
+    assert.match(humanizeAlertError(message), /no leads on the sequence/i);
   });
 
   it("explains missing SmartDelivery seed accounts in plain English", () => {

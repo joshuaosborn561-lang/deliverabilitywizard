@@ -237,6 +237,20 @@ export function classifyFailure(
     };
   }
 
+  // SmartDelivery cannot schedule a placement test until the campaign has at
+  // least one lead on the selected (or lower) sequence. Empty CALLER FOLLOW-UP
+  // / new campaigns hit this until leads land; next scan retries.
+  if (/no leads available for the selected or lower sequence/i.test(lower)) {
+    return {
+      class: "noise",
+      fingerprint: fingerprintOf("noise", "scan-no-leads"),
+      autoRemediate: false,
+      summary:
+        "SmartDelivery has no leads on the campaign sequence yet (empty campaign)",
+      raw: text,
+    };
+  }
+
   // D175 — InboxKit: one ESP platform per domain. Resume used to plan
   // Microsoft buys on a domain that already had Google (and vice versa).
   if (

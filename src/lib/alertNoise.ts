@@ -96,6 +96,14 @@ export function isInboxkitOneEspNoise(message: string): boolean {
   );
 }
 
+/**
+ * SmartDelivery refuses placement creates when the campaign has no lead on
+ * the selected sequence. Scan skips and retries later; do not page Slack.
+ */
+export function isScanNoLeadsNoise(message: string): boolean {
+  return /no leads available for the selected or lower sequence/i.test(message);
+}
+
 /** Rate limits/timeouts + approval gates + gone tests — skip Slack paging. */
 export function isBenignOpsNoise(message: string): boolean {
   return (
@@ -105,7 +113,8 @@ export function isBenignOpsNoise(message: string): boolean {
     isRetryRemovalNoise(message) ||
     isBurnChecklistNoise(message) ||
     isSenderNotInCampaignNoise(message) ||
-    isInboxkitOneEspNoise(message)
+    isInboxkitOneEspNoise(message) ||
+    isScanNoLeadsNoise(message)
   );
 }
 
@@ -159,6 +168,10 @@ export function humanizeAlertError(message: string): string {
 
   if (isInboxkitOneEspNoise(raw)) {
     return "InboxKit allows only one email platform per domain — that domain is already locked to Google or Microsoft. Isolation-buy skips the other ESP.";
+  }
+
+  if (isScanNoLeadsNoise(raw)) {
+    return "That campaign has no leads on the sequence yet, so SmartDelivery cannot start a placement test. We'll retry after leads land.";
   }
 
   if (bounceStats && /\b404\b/i.test(raw)) {

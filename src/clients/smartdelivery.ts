@@ -508,6 +508,20 @@ export class SmartDeliveryClient {
     );
   }
 
+  /**
+   * D303 — one page of the mailbox summary. Without limit/offset the
+   * endpoint returns only ~10 of ~2,151 mailboxes.
+   */
+  async getMailboxSummaryPage(
+    limit: number,
+    offset: number,
+  ): Promise<MailboxSummaryRow[]> {
+    const raw = await this.request<unknown>(
+      `spam-test/report/mailboxes-summary?limit=${limit}&offset=${offset}`,
+    );
+    return normalizeMailboxSummary(raw);
+  }
+
   getDomainBlacklist(spamTestId: string | number): Promise<BlacklistRow[] | Record<string, unknown>> {
     return this.reportRead(`spam-test/report/${spamTestId}/domain-blacklist`,
     );
@@ -1089,4 +1103,21 @@ export function inboxRateFromSeedDetails(
   }
   if (total === 0) return undefined;
   return { rate: (inbox / total) * 100, samples: total, inbox };
+}
+
+/** D303 — the summary may come back bare or wrapped (data/result/mailboxes). */
+export function normalizeMailboxSummary(raw: unknown): MailboxSummaryRow[] {
+  if (Array.isArray(raw)) return raw as MailboxSummaryRow[];
+  if (raw && typeof raw === "object") {
+    const row = raw as Record<string, unknown>;
+    for (const key of ["data", "result", "mailboxes", "rows"]) {
+      const v = row[key];
+      if (Array.isArray(v)) return v as MailboxSummaryRow[];
+      if (v && typeof v === "object") {
+        const inner = normalizeMailboxSummary(v);
+        if (inner.length) return inner;
+      }
+    }
+  }
+  return [];
 }

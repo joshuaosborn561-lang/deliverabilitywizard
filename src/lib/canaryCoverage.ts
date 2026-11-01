@@ -50,10 +50,30 @@ export function hasLivingUnwarmedCopyCanary(
     if (!isAutomatedTest(test) || !isTestStoppable(test)) continue;
     const id = testIdOf(test);
     const named = campaignIdFromCanaryTestName(test.test_name);
-    if (named === campaignId) return true;
+    // D303 — a [variant X] canary covers that variant, not the primary.
+    if (named === campaignId && !/\[variant [^\]]+\]/.test(String(test.test_name ?? ""))) {
+      return true;
+    }
     if (stored && id && String(id) === stored && isCanaryCopyTestName(test.test_name)) {
       return true;
     }
   }
   return false;
+}
+
+/** D303 — living per-variant canary-copy test for one campaign variant. */
+export function livingVariantCopyCanaryId(
+  campaignId: number,
+  variantLabel: string,
+  tests: SpamTestSummary[],
+): string | undefined {
+  const want = `[variant ${variantLabel}]`.toUpperCase();
+  for (const test of tests) {
+    if (!isAutomatedTest(test) || !isTestStoppable(test)) continue;
+    if (campaignIdFromCanaryTestName(test.test_name) !== campaignId) continue;
+    if (!String(test.test_name ?? "").toUpperCase().includes(want)) continue;
+    const id = testIdOf(test);
+    if (id) return String(id);
+  }
+  return undefined;
 }

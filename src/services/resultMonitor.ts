@@ -395,8 +395,8 @@ export class ResultMonitor {
     // English; this per-mailbox summary is a log-side reading (D51/D71).
 
     let alerts = 0;
-    const rows: MailboxSummaryRow[] = await this.smartDelivery.getMailboxSummary();
-    if (!Array.isArray(rows)) return 0;
+    const rows = await readAllMailboxSummaryRows(this.smartDelivery);
+    if (!rows.length) return 0;
 
     for (const row of rows) {
       const score =
@@ -493,4 +493,36 @@ function providerInboxRate(row: {
 
   if (!total || total <= 0) return undefined;
   return (inbox / total) * 100;
+}
+
+export const MAILBOX_SUMMARY_PAGE = 100;
+const MAILBOX_SUMMARY_MAX_PAGES = 200;
+
+/**
+ * D303 — page mailboxes-summary with limit/offset until a short page, so
+ * every mailbox (~2,151) is read, not just the first 10. Stops if a page
+ * repeats the previous one (endpoint ignoring offset).
+ */
+export async function readAllMailboxSummaryRows(client: {
+  getMailboxSummaryPage?: (limit: number, offset: number) => Promise<MailboxSummaryRow[]>;
+  getMailboxSummary: () => Promise<MailboxSummaryRow[]>;
+}): Promise<MailboxSummaryRow[]> {
+  if (!client.getMailboxSummaryPage) {
+    const rows = await client.getMailboxSummary();
+    return Array.isArray(rows) ? rows : [];
+  }
+  const all: MailboxSummaryRow[] = [];
+  let offset = 0;
+  let prevFirst: string | undefined;
+  for (let page = 0; page < MAILBOX_SUMMARY_MAX_PAGES; page += 1) {
+    const rows = await client.getMailboxSummaryPage(MAILBOX_SUMMARY_PAGE, offset);
+    if (!Array.isArray(rows) || !rows.length) break;
+    const first = JSON.stringify(rows[0]);
+    if (page > 0 && first === prevFirst) break;
+    prevFirst = first;
+    all.push(...rows);
+    if (rows.length < MAILBOX_SUMMARY_PAGE) break;
+    offset += rows.length;
+  }
+  return all;
 }

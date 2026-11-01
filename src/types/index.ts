@@ -187,4 +187,11 @@ export interface CampaignTestPlan {
   sequenceNumber: number;
   subjectPreview: string;
   batches: string[][];
+  /**
+   * D303 — one placement test per A/B variant. Each entry carries its own
+   * sequence_mapping_id. Omitted on legacy plans = one campaign-level test.
+   */
+  variants?: Array<{ key: string; label: string; mappingId: number; subject: string }>;
+  /** D303 — total variant count on the step (drives the test-name suffix). */
+  variantTotal?: number;
 }

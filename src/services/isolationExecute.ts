@@ -407,6 +407,7 @@ export class IsolationExecuteService {
     actor: string,
   ): Promise<string> {
     if (approved.kind === "retire_domain") return this.retire(approved, actor);
+    if (approved.kind === "retire_mailbox") return this.retireMailbox(approved, actor);
     if (approved.kind === "swap_copy") return this.swapCopy(approved, actor);
     if (approved.kind === "add_signature_tag") {
       return this.addSignatureTag(approved, actor);
@@ -421,6 +422,38 @@ export class IsolationExecuteService {
       return `${actor} — Allow-generics is retired (D268). Generics top up to the floor only; I did not Allow and I did not attach.`;
     }
     return this.buyDomains(approved, actor);
+  }
+
+  /**
+   * D303 — retire one burned mailbox. Pulls it from every campaign it is
+   * still on and marks it retired. Never touches its domain or the other
+   * inboxes on it; never buys (a replacement needs its own approval).
+   */
+  private async retireMailbox(
+    action: IsolationActionRecord,
+    actor: string,
+  ): Promise<string> {
+    const email = String(action.detail.email ?? "").toLowerCase();
+    const accountId = Number(action.detail.accountId);
+    const campaignIds = Array.isArray(action.detail.campaignIds)
+      ? (action.detail.campaignIds as unknown[]).map(Number).filter(Number.isFinite)
+      : [];
+    if (!email) return `${actor} — no mailbox on this ask; nothing retired.`;
+    if (Number.isFinite(accountId) && accountId > 0) {
+      for (const cid of campaignIds) {
+        await this.smartlead.removeEmailAccountsFromCampaign(cid, [accountId]);
+      }
+    }
+    const rest = this.state.getMailboxRest(email);
+    if (rest) {
+      this.state.upsertMailboxRest({
+        ...rest,
+        status: "burned",
+        retiredAt: new Date().toISOString(),
+      });
+    }
+    await this.state.save();
+    return `${actor} — retired ${email} only. Its domain and other inboxes stay. No replacement bought.`;
   }
 
   private async retire(

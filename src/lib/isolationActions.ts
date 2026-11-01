@@ -29,6 +29,7 @@ export function buildIsolationAction(input: {
       input.kind === "swap_copy" ||
       input.kind === "add_signature_tag" ||
       input.kind === "retire_domain" ||
+      input.kind === "retire_mailbox" ||
       input.kind === "buy_domains"
         ? "owner_or_operator"
         : "owner",

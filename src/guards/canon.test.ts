@@ -12720,8 +12720,8 @@ describe("owner intent — D227 WARMUP-GATE-EXEMPT counts as 21+ warm", () => {
     );
     assert.match(
       gate,
-      /export function countsAsWarmed21/,
-      stop("countsAsWarmed21 is the 21+ grant (D227).", "warmupGate.ts lost countsAsWarmed21."),
+      /export function countsAsWarmed/,
+      stop("countsAsWarmed is the 21+ grant (D227).", "warmupGate.ts lost countsAsWarmed."),
     );
     assert.match(
       min40,
@@ -13859,7 +13859,7 @@ describe("owner intent — D238 canary hard lock + D239 named staffable count", 
     assert.match(
       sync,
       /owesWarmup/,
-      stop("Named staffable applies the 21-day gate (D239).", "genericPoolCanon.ts lost owesWarmup."),
+      stop("Named staffable applies the 14-day gate (D239).", "genericPoolCanon.ts lost owesWarmup."),
     );
   });
 });
@@ -19112,9 +19112,9 @@ describe("owner intent — D306 14-day warmup, breakup check, send-window conver
     assert.match(locked, /reaches 14 days warm/);
     assert.match(ledger, /## D306 — /);
     assert.match(ledger, /Take \[21\] down to fourteen days/);
-    assert.match(config, /poolWarmupDays: z\.coerce\.number\(\)\.int\(\)\.positive\(\)\.default\(14\)/);
-    assert.match(config, /campaignMinWarmupDays: z\.coerce\.number\(\)\.int\(\)\.positive\(\)\.default\(14\)/);
-    assert.match(config, /freshInboxWarmupDays: z\.coerce\.number\(\)\.int\(\)\.positive\(\)\.default\(14\)/);
+    assert.match(config, /poolWarmupDays: z\.coerce\.number\(\)\.int\(\)\.positive\(\)\.default\((?:14|DEFAULT_WARMUP_DAYS)\)/);
+    assert.match(config, /campaignMinWarmupDays: z\.coerce\.number\(\)\.int\(\)\.positive\(\)\.default\((?:14|DEFAULT_WARMUP_DAYS)\)/);
+    assert.match(config, /freshInboxWarmupDays: z\.coerce\.number\(\)\.int\(\)\.positive\(\)\.default\((?:14|DEFAULT_WARMUP_DAYS)\)/);
     assert.match(breakup, /never writes sequences/i);
     assert.match(check, /formatBreakupStepFinding/);
     assert.doesNotMatch(breakup, /updateCampaignSequences/);
@@ -19154,5 +19154,59 @@ describe("owner intent — D321 LOCKED every inbox has a name", () => {
       /removeEmailAccountsFromCampaign|updateCampaignStatus|\/status/,
       "the D321 sweep replaces names; it never unlinks or touches status.",
     );
+  });
+});
+
+describe("owner intent — D303 LOCKED rest-then-burn / per-variant / ESP rebalance", () => {
+  it("D303: CANON, ledger, LOCKED text and code agree", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const canon = await read("../../CANON.md");
+    const decisions = await read("../../DECISIONS.md");
+    const locked = await read("../../docs/LOCKED-CANON.md");
+    const slack = await read("../clients/slack.ts");
+    const monitor = await read("../services/resultMonitor.ts");
+    assert.match(canon, /Canon as of \*\*D(30[3-9]|3[1-9][0-9])\*\*/);
+    assert.match(decisions, /## D303 — /);
+    assert.match(decisions, /^\| D303 \|/m);
+    for (const doc of [canon, locked]) {
+      assert.match(doc, /Per-variant tests \(D303\)/);
+      assert.match(doc, /Mailbox rest \(D303\)/);
+      assert.match(doc, /ESP mix \(D303\)/);
+    }
+    assert.doesNotMatch(slack, /Isolation is remediating this/);
+    assert.match(monitor, /getMailboxSummaryPage/);
+  });
+});
+
+describe("owner intent — D310 28-day rest and D311 reply-rate drop (LOCKED)", () => {
+  it("D310/D311: rest is 28 days; reply-rate drop is alert + one placement test, never a pull", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const [canon, locked, decisions, rest, watch, drop] = await Promise.all([
+      read("../../CANON.md"),
+      read("../../docs/LOCKED-CANON.md"),
+      read("../../DECISIONS.md"),
+      read("../lib/mailboxRest.ts"),
+      read("../services/replyRateWatch.ts"),
+      read("../lib/replyRateDrop.ts"),
+    ]);
+    assert.match(rest, /MAILBOX_REST_DAYS = 28;/, "mailbox rest must be 28 days (D310)");
+    for (const doc of [canon, locked]) {
+      assert.match(doc, /rests 28 days \(4 weeks\)/, "LOCKED rest text lost 28 days (D310)");
+      assert.match(doc, /Reply-rate drop \(D311\)/, "LOCKED text lost the reply-rate drop (D311)");
+      assert.doesNotMatch(doc, /rests 14 days/, "no 14-day rest text may remain (D310)");
+    }
+    assert.match(drop, /REPLY_DROP_MIN_SENDS = 150/);
+    assert.match(drop, /REPLY_DROP_THRESHOLD = 0\.4/);
+    // Alert-only: the service's Smartlead surface is the read-only metrics call.
+    assert.match(watch, /Pick<SmartleadClient, "getMailboxHealthMetrics">/, "reply-drop must stay read-only on Smartlead (D311)");
+    assert.doesNotMatch(watch, /updateCampaignStatus|removeEmailAccountsFromCampaign|upsertMailboxRest|requestIsolationAction/, "reply-drop must never pull, rest or isolate (D311)");
+    assert.match(canon, /\*\*D310\.\*\*/);
+    assert.match(canon, /\*\*D311\.\*\*/);
+    for (const n of ["D310", "D311"]) {
+      assert.match(decisions, new RegExp(`## ${n} — `), `DECISIONS.md has no ${n} entry`);
+      assert.match(decisions, new RegExp(`^\\| ${n} \\|`, "m"), `status index has no ${n} row (D127)`);
+    }
   });
 });

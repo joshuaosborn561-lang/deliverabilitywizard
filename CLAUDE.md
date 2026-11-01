@@ -23,7 +23,7 @@ Josh owns the product decisions. Cayden contributes freely alongside him.
   decision. Name the conflicting decision, ask Josh, and stop until he
   answers. Example, asked to rotate in mailboxes that have not warmed:
 
-  > That reverses D1 / D50 — a mailbox owes 21 days from its InboxKit
+  > That reverses D1 / D50 — a mailbox owes 14 days from its InboxKit
   > import before going into a live campaign, and these have not served it.
   > Check with Josh and I will make the change if he agrees.
 

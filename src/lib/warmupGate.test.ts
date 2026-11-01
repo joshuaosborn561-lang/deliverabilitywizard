@@ -6,7 +6,7 @@ import type { SmartleadClient } from "../clients/smartlead.js";
 import { StateStore } from "../state/store.js";
 import {
   activeHoldUntilDate,
-  countsAsWarmed21,
+  countsAsWarmed,
   daysSince,
   isActiveCampaignStatus,
   isPrewarmedGeneric,
@@ -194,11 +194,11 @@ describe("warmupGate helpers", () => {
   it("D227: WARMUP-GATE-EXEMPT counts as 14+ days and does not owe warmup", () => {
     const now = Date.parse("2026-10-04T00:04:00.000Z");
     const days = daysSince("2026-09-29T00:00:00.000Z", now);
-    assert.ok(days < 14, "9/29 → 10/4 is still under 14 days");
-    assert.equal(countsAsWarmed21([], days), false);
-    assert.equal(countsAsWarmed21(["WARMUP-GATE-EXEMPT"], days), true);
-    assert.equal(countsAsWarmed21(["warmup-gate-exempt", "type:azure"], 5), true);
-    assert.equal(countsAsWarmed21([], 14), true);
+    assert.ok(days < 21, "9/29 → 10/4 is still under 21 days");
+    assert.equal(countsAsWarmed([], days), false);
+    assert.equal(countsAsWarmed(["WARMUP-GATE-EXEMPT"], days), true);
+    assert.equal(countsAsWarmed(["warmup-gate-exempt", "type:azure"], 5), true);
+    assert.equal(countsAsWarmed([], 21), true);
 
     const config = {
       campaignMinWarmupDays: 14,

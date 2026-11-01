@@ -17,6 +17,7 @@ import {
 } from "../lib/callerFollowUp.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadEmailAccount } from "../types/index.js";
+import { DEFAULT_WARMUP_DAYS } from "../lib/warmupDays.js";
 
 // D128 — a leftover HOLD-UNTIL tag is inert residue, never a pull, so the
 // gate's only removal reason is an unfinished warmup.
@@ -446,12 +447,12 @@ export function isWarmupGateExempt(tags: string[]): boolean {
  * Missing clocks stay undecided here; callers that fail-closed
  * (owesWarmup) still treat unknown as owing unless exempt.
  */
-export function countsAsWarmed21(
+export function countsAsWarmed(
   tags: string[],
   daysWarmed: number | null | undefined,
 ): boolean {
   if (isWarmupGateExempt(tags)) return true;
-  return typeof daysWarmed === "number" && Number.isFinite(daysWarmed) && daysWarmed >= 14;
+  return typeof daysWarmed === "number" && Number.isFinite(daysWarmed) && daysWarmed >= DEFAULT_WARMUP_DAYS;
 }
 
 /** Return HOLD-UNTIL date if the hold has not expired yet (end of that UTC day). */

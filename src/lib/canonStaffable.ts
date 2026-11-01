@@ -25,11 +25,12 @@ import { readMessagePerDay } from "./mailboxSendSettings.js";
 import { onWeekCohort, type RestCohort } from "./restCohort.js";
 import { isConnectedAccount } from "./staffableSender.js";
 import {
-  countsAsWarmed21,
+  countsAsWarmed,
   daysSince,
   tagNames,
   warmupClockStartedAt,
 } from "../services/warmupGate.js";
+import { DEFAULT_WARMUP_DAYS } from "./warmupDays.js";
 
 const POD_A = "POD-A";
 const POD_B = "POD-B";
@@ -161,8 +162,8 @@ export function canonStaffableVerdict(
       ? input.warmupDays
       : warmupDaysOf(account, input.email, now);
   const warmed =
-    input.warmupExempt === true || countsAsWarmed21(tagNames(account), days);
-  if (!warmed && days != null && days < 14) reasons.push("under_warmed");
+    input.warmupExempt === true || countsAsWarmed(tagNames(account), days);
+  if (!warmed && days != null && days < DEFAULT_WARMUP_DAYS) reasons.push("under_warmed");
 
   if (
     !accountMatchesCampaignClient(

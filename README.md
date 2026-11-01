@@ -27,7 +27,7 @@ to look. Behaviour questions end at CANON.md.
 
 | Loop | Cadence | Owns |
 |------|---------|------|
-| Canon sweep (health) | every 15 min | One shared Smartlead inventory fetch, reconnect, client A/B rest + generic send clock, 21-day warmup gate, fan-out / top-up, mailbox settings converge, signature fixes, placement-test backfill |
+| Canon sweep (health) | every 15 min | One shared Smartlead inventory fetch, reconnect, client A/B rest + generic send clock, 14-day warmup gate, fan-out / top-up, mailbox settings converge, signature fixes, placement-test backfill |
 | Bounce loop | every 10 min | Never pauses or STARTs (D148): a real burst (>10 new bounces in 10 min, sends <24h old) is classified from its NDRs (tenant cap / bad recipients / content block), receipted, remediated and re-queued; Smartlead's own auto-pause is UI-only — no API off-switch exists (D157) |
 | Campaign check | hourly | Re-inspect blocked first-checks, shells, signatures, staffing floor, campaign min-gap converge |
 | Monitor | every 6 h | POD tags first (so decoration writes are not starved by placement pulls), then placement pulls, DNS advisory audit, canary adoption, campaign audit, domain→client advisory |
@@ -69,7 +69,7 @@ lives in `src/config.ts`; the load-bearing ones:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MIN_CAMPAIGN_WARMUP_DAYS` / `FRESH_INBOX_WARMUP_DAYS` | `21` | Warmup owed from InboxKit import before live send |
+| `MIN_CAMPAIGN_WARMUP_DAYS` / `FRESH_INBOX_WARMUP_DAYS` | `14` | Warmup owed from InboxKit import before live send |
 | `EXTRA_GENERIC_DOMAINS` | 6 fleet domains | Generic-pool membership (staffing supply) — does NOT skip warmup |
 | `PREWARMED_DOMAINS` | crosslaunchco.com, crossscaleco.com, cleartechco.com | The only warmup exemption; granted by Josh alone |
 | `MESSAGE_PER_DAY` | `30` | Campaign sends per Gmail/SMTP mailbox per day (warmups excluded). Outlook/Microsoft is 15 (D183), not this constant. |

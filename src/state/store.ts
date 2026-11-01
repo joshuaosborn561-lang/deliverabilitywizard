@@ -108,6 +108,8 @@ export interface TestedCampaignRecord {
   testIds: string[];
   mailboxCount: number;
   testsCreated: number;
+  /** D303 — A/B variant keys that have their own placement test. */
+  variantKeys?: string[];
 }
 
 export type PoolMailboxStatus =
@@ -261,6 +263,12 @@ export interface AppState {
   heldInboxes: Record<string, HeldInboxRecord>;
   /** D41/D43 — client A/B resters and generics on the send-clock sit */
   restingInboxes: Record<string, RestingInboxRecord>;
+  /** D303 — per-variant canary-copy tests (campaign → variant key → test id). */
+  variantCopyCanaryTests?: Record<string, Record<string, string>>;
+  /** D303 — mailbox rest-then-burn records (email → record). */
+  mailboxRests?: Record<string, MailboxRestRecord>;
+  /** D311 — reply-rate-drop alerts (domain → last alert + placement test). */
+  replyDrops?: Record<string, ReplyDropRecord>;
   /** First time we saw a generic on a live campaign (send clock). */
   genericSendStartedAt: Record<string, string>;
   /** Generic recovery-pool mailboxes (client-agnostic) */
@@ -475,6 +483,17 @@ export interface SpendApprovalRecord {
   decidedBy?: string;
 }
 
+/** D311 — one row per domain that tripped the reply-rate-drop trigger. */
+export interface ReplyDropRecord {
+  domain: string;
+  clientId: number;
+  alertedAt: string;
+  dropPercent: number;
+  rate7: number;
+  baselineRate: number;
+  testId?: string;
+}
+
 export interface HeldInboxRecord {
   accountId: number;
   email: string;
@@ -567,6 +586,9 @@ export const WARMUP_BOOMERANG_MIN_COUNT = 3;
 export const WARMUP_BOOMERANG_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** D143 — how long one warmup re-enable write is trusted before rewriting. */
 export const WARMUP_ENSURE_TTL_MS = 24 * 60 * 60 * 1000;
+
+export type { MailboxRestRecord } from "../lib/mailboxRest.js";
+import type { MailboxRestRecord } from "../lib/mailboxRest.js";
 
 export interface RestingInboxRecord {
   accountId: number;
@@ -1022,6 +1044,17 @@ export class StateStore {
   }
 
   markCampaignTested(record: TestedCampaignRecord): void {
+    // D303 — per-variant tests add to a campaign's coverage; never drop
+    // the ids/variants an earlier pass already created.
+    const prior = this.state.testedCampaigns[String(record.campaignId)];
+    if (prior && record.variantKeys) {
+      record = {
+        ...record,
+        testIds: [...new Set([...(prior.testIds ?? []), ...record.testIds])],
+        variantKeys: [...new Set([...(prior.variantKeys ?? []), ...record.variantKeys])],
+        testsCreated: (prior.testsCreated ?? 0) + record.testsCreated,
+      };
+    }
     this.state.testedCampaigns[String(record.campaignId)] = record;
   }
 
@@ -1141,6 +1174,28 @@ export class StateStore {
 
   listRestingInboxes(): RestingInboxRecord[] {
     return Object.values(this.state.restingInboxes);
+  }
+
+  /** D311 — reply-rate-drop alert ledger. */
+  getReplyDrop(domain: string): ReplyDropRecord | undefined {
+    return this.state.replyDrops?.[domain.trim().toLowerCase()];
+  }
+
+  setReplyDrop(record: ReplyDropRecord): void {
+    (this.state.replyDrops ??= {})[record.domain.trim().toLowerCase()] = record;
+  }
+
+  /** D303 — mailbox rest-then-burn ledger. */
+  getMailboxRest(email: string): MailboxRestRecord | undefined {
+    return this.state.mailboxRests?.[email.trim().toLowerCase()];
+  }
+
+  listMailboxRests(): MailboxRestRecord[] {
+    return Object.values(this.state.mailboxRests ?? {});
+  }
+
+  upsertMailboxRest(record: MailboxRestRecord): void {
+    (this.state.mailboxRests ??= {})[record.email.trim().toLowerCase()] = record;
   }
 
   clearRestingInbox(email: string): void {
@@ -2687,6 +2742,17 @@ export class StateStore {
 
   getCopyCanaries(campaignId: number): string[] {
     return this.state.isolation.copyCanaries[String(campaignId)]?.emails ?? [];
+  }
+
+  /** D303 — per-variant canary-copy test ids, keyed campaign → variant. */
+  getVariantCopyCanaryTestId(campaignId: number, variantKey: string): string | undefined {
+    return this.state.variantCopyCanaryTests?.[String(campaignId)]?.[variantKey.toUpperCase()];
+  }
+
+  setVariantCopyCanaryTestId(campaignId: number, variantKey: string, testId: string): void {
+    const all = (this.state.variantCopyCanaryTests ??= {});
+    const row = (all[String(campaignId)] ??= {});
+    row[variantKey.toUpperCase()] = testId;
   }
 
   getCopyCanaryTestId(campaignId: number): string | undefined {

@@ -1,3 +1,6 @@
+import { ReplyRateWatchService } from "./services/replyRateWatch.js";
+import { CanonConvergeService } from "./services/canonConverge.js";
+import { onWeekCohort as onWeekCohortD303 } from "./lib/restCohort.js";
 import express from "express";
 import cron from "node-cron";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -649,6 +652,18 @@ async function main(): Promise<void> {
     copyCanary,
   );
   campaignBounceAutostop.setIsolationBranch(isolationBranch);
+  // D303 — LOCKED rest-then-burn / ESP rebalance.
+  const canonConverge = new CanonConvergeService({ smartlead, state, slack, config });
+  if (config.enableMailboxRest) isolationBranch.setRestRule(canonConverge);
+  // D311 — LOCKED reply-rate-drop trigger: alert Josh, then one placement
+  // test on that domain. Alert-only; read-only Smartlead surface.
+  const replyRateWatch = new ReplyRateWatchService({
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+    config,
+  });
   const podControls = new PodControlService(
     config,
     smartlead,
@@ -735,6 +750,11 @@ async function main(): Promise<void> {
     slack,
     inboxkitClientSplits,
   );
+  if (config.enableEspRebalance) {
+    campaignCheck.setEspRebalancer((input) =>
+      canonConverge.rebalanceFromCampaign({ ...input, pod: onWeekCohortD303() }),
+    );
+  }
   const holdEnforcement = new HoldEnforcementService(
     config,
     smartlead,
@@ -2018,6 +2038,39 @@ async function main(): Promise<void> {
     });
   }
 
+  // D303 — rests due back after 28 days (D310).
+  scheduleJob("canon-converge", config.cronCanonConverge, () => {
+    return (async () => {
+      if (config.enableMailboxRest) {
+        const back = await canonConverge.returnDueRests();
+        if (back.length) console.log(`[d303] rest over, back on: ${back.length}`);
+      }
+      await state.save();
+    })().catch((error) => {
+      console.error("[d303] Unhandled cron error", error);
+      feedBugRemediator("canon-converge-cron", error);
+    });
+  });
+
+  // D311 — reply-rate-drop trigger (alert Josh, then a placement test on that domain).
+  if (config.enableReplyRateDrop) {
+    scheduleJob("reply-rate-drop", config.cronReplyRateDrop, () => {
+      return (async () => {
+        const inventory = await inventoryBook.get();
+        const r = await replyRateWatch.run({
+          campaigns: inventory.campaigns,
+          accounts: inventory.accounts,
+        });
+        console.log(
+          `[d311] reply-rate-drop flagged=${r.flagged.length} alerted=${r.alerted.length} tested=${r.tested.length} skipped=${r.skipped.length} errors=${r.errors.length}`,
+        );
+      })().catch((error) => {
+        console.error("[d311] Unhandled cron error", error);
+        feedBugRemediator("reply-rate-drop-cron", error);
+      });
+    });
+  }
+
   // D205 — always schedule so disabled / after-hours ticks still
   // refresh lastOkAt. No boot kick (D122).
   scheduleJob("canon-ops",
@@ -2276,6 +2329,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     if (kind === "buy_isolation_domain") return "Buy it and arm the rig";
     if (kind === "buy_domains") return "Buy replacements";
     if (kind === "retire_domain") return "Retire this domain";
+    if (kind === "retire_mailbox") return "Retire this mailbox";
     if (kind === "swap_copy") return "Edit the copy";
     if (kind === "add_signature_tag") return "Add %signature%";
     return kind;

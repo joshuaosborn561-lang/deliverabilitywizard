@@ -26,7 +26,12 @@ from it. Derive behaviour from this file; use the ledger only to understand
 
 **D315.** A4: test→campaign lookups are cached, the shared test list is reused for 30 s, and the D260 log line prints once per host — fewer 429s, shorter passes; no cadence or rule change.
 
+**D313.** Warmup is 14 days, not 21 (LOCKED text updated; `DEFAULT_WARMUP_DAYS`, env vars still override). The 28-day rest (D310) is unchanged.
 **D312.** Critical sweep: placement results, test-reconcile and isolation run every 30 minutes on their own lock and the top-priority Smartlead lane; paged overdue at 75 minutes.
+
+**D311.** Reply-rate-drop trigger (LOCKED): a sending domain 40%+ below its client's 30-day reply baseline over 7 days (150+ sends) alerts Josh, then runs one placement test on that domain; never pulls or pauses.
+
+**D310.** Mailbox rest is 28 days (LOCKED, amends D303).
 
 **D309.** Copy-canary is idempotent: one living "Canary copy" test per campaign (single-flight, 3h create cooldown, stored test kept at the 5,000-test list cap); extras are stopped, never deleted.
 
@@ -44,6 +49,10 @@ Changes to this section require Josh's explicit approval. PRs that alter it must
 - Generics Ledger: Every generic inbox we own has exactly one row: email, ESP, warmup on/off, assigned client (blank = free pool), assigned POD (A/B), assigned_at, and covering_for (the specific branded seats of that client it stands in for, each with its 14-day warm-ready date). All generics warm continuously; any generic found not warming gets warmup turned back on the same day. A generic is assigned only to fill one client's POD to 40 (30 TechEvo), to one client and one POD, and never moves PODs. Branded is preferred: when a covered branded seat reaches 14 days warm, it goes into the POD and the generic it covered comes out the same day: unlinked, client_id cleared, POD/POC tags stripped, signature reset, back to the free pool. No generic is assigned or released outside the ledger. Insight never receives generics; every other client, including PowerGRYD, does. CornerStone-domain inboxes are never generics and never in the pool. A generic on a live campaign without a ledger row, a generic tagged to Insight, a generic not warming, or a POD under 40 with no free warm generic alerts Josh the same day.
 - ESP matching + 10m gap: every Smartlead campaign has AI ESP matching ON (enable_ai_esp_matching: true) and min_time_btw_emails = 10, always (D304). The wizard flags and fixes drift on sight with settings / schedule writes only, never a status change; STOPPED campaigns are left alone.
 - Every inbox has a name (D321): no mailbox may be linked to a live campaign, or send, with a blank or placeholder from_name or signature name (Pool User, Generic, Canary, test, one word, the email local part, or any other placeholder word). A seat sends as its persona from the Generics Ledger / InboxKit; with no persona it sends as the client company name (from_name = company, signature = company). The wizard never invents or defaults a name and never refuses an assign for a missing persona. A sweep every 10 minutes replaces any placeholder on a non-STOPPED campaign with the persona, or the company name, writing from_name and signature only (never unlink, never a status change, never copy or leads); signature checks treat a blank or placeholder name as a mismatch; releasing a generic restores its persona. Exempt: Gabe VM reserved seats, the copy-canary fleet, and Insight's Josh Osborn rule. Josh, 2026-10-29: "Every inbox has a name. Canon that it can never have that again. If no name just send as the company. But everyone should have a name."
+- Per-variant tests (D303): every A/B variant of every campaign gets its own placement test and its own canary-copy test, never one test per campaign.
+- ESP mix (D303): an on-week POD off the client's InboxKit Microsoft share is auto-rebalanced, not only reported, using only swaps canon already allows: warm mailboxes, the same client, generics from the Generics Ledger; every swap is 1-for-1 so POD-40 never drops.
+- Mailbox rest (D303): when isolation shows the mailbox, not the copy, is the cause (same-ESP placement under 80%), the mailbox is pulled from its POD and campaigns, keeps warmup on, and rests 28 days (4 weeks); a free warm generic covers its seat, recorded in the Generics Ledger with client, POD and covering_for, and stays until day 28. After 28 days the mailbox goes back automatically and the generic comes out, the same way as the warm-swap. Every mailbox keeps a rest_count and rest history. It is BURNED if it reads under 80% again after going back on, or if rest_count goes over 3: pulled permanently and a retire/replace request is raised; any replacement spend needs approval. This replaces kill-only (D51/D128) for this case only.
+- Reply-rate drop (D311): a sending domain is flagged when its trailing 7-day reply rate, with at least 150 sends in that window, is 40% or more below its client's baseline, the client's trailing 30-day reply rate across ACTIVE campaigns. Alert only: Josh is alerted, then one placement test runs on that domain only. It never pulls, rests, pauses or isolation-tests anything, and it sits on top of the placement gates, not in place of them.
 
 ## Mission
 
@@ -162,7 +171,7 @@ Caps ramp manually (35 on Oct 12).
   named count, min40-topup, and surplus return — including when
   Smartlead still reports warmup-blocked or a short import clock.
   The tidalstackco.com Azure/Entra fleet Josh tagged that way is
-  warm **now**; do not wait 21 days from the 9/29 Smartlead import.
+  warm **now**; do not wait 14 days from the 9/29 Smartlead import.
   Their Azure cap stays **2 campaign + 5 warmup** (D219). Pre-warmed
   is a flag only Josh grants — generic-pool membership
   (`EXTRA_GENERIC_DOMAINS`, which also carries the GetIntroduced /
@@ -219,7 +228,7 @@ Caps ramp manually (35 on Oct 12).
   its **normal type cap** (Azure 2, M365 15, Google unchanged).
   Do not record a learned limit and do not lower the mpd after a
   bounce. In the same campaign and on-week POD, temporarily link
-  **one** extra warm (21+ days) generic from that **same client's**
+  **one** extra warm (14+ days) generic from that **same client's**
   generics, signature and sender name set for the client, so the
   POD runs at **41 linked / 40 sending**. Never retag named seats to
   staff a campaign; the only A↔B retag is the D316 15% rebalance.
@@ -412,7 +421,7 @@ have a name."
   sit in SalesGlider 345263. **Only the three bridge gabriel@
   seats** may be linked to all three `Gabe Calls |` campaigns
   today. Owned `gabe@` seats attach only to that client's Gabe
-  Calls campaign after 21 warm days — the reserved tag does not
+  Calls campaign after 14 warm days — the reserved tag does not
   skip those checks and does not allow cross-client attach.
   Unlisted reserved `gabe@` domains never attach. That class is
   the one-client exception: peel and campaign-check cross-client
@@ -444,7 +453,7 @@ have a name."
   gates every peel of a staffable same-client seat
   (D199/D207/D209). Exceptions that may still come off below
   40: disconnected / SMTP-fail, cross-client, HOLD/RETIRE-tagged,
-  warmDays < 21 (except seats tagged `WARMUP-GATE-EXEMPT`).
+  warmDays < 14 (except seats tagged `WARMUP-GATE-EXEMPT`).
   Generics are a **fleet-wide pool** (D221), not a POC-owned rotating
   set (D76's "belong to Goliath" read is retired). A generic belongs
   to a named client only while `assigned_client_id` is set to fill
@@ -542,6 +551,9 @@ have a name."
   mix on top. An ACTIVE campaign whose on-week staffable
   mix breaks that target is an `esp_mix` Canon finding (D217) —
   **except Insight, which is exempt (D314: mostly Microsoft by design).**
+  **D303 auto-rebalances it**: 1-for-1 swaps only, warm seats only,
+  same client only, generics only from the Generics Ledger (never
+  Insight), so POD-40 never drops.
   `/health` `canonFindings` counts **ACTIVE campaigns only**;
   campaign-check prunes STOPPED / COMPLETED / deleted leftover
   rows so they cannot keep flagging (D263).
@@ -891,8 +903,25 @@ have a name."
 
 - **Kill-only** (D51): placement %, bounce %, blacklists, and leftover
   HOLD-UNTIL tags do NOT pull a mailbox off an ACTIVE campaign (D128). The
-  only removals are Josh killing a mailbox / retiring its domain, and the
-  14-day warmup gate (D105/D306). Health backfills to the floor afterwards.
+  only removals are Josh killing a mailbox / retiring its domain, the
+  14-day warmup gate (D105/D306), and the **D303 rest-then-burn rule**. Health
+  backfills to the floor afterwards.
+- **Rest-then-burn** (D303, LOCKED): when isolation lands INFRA and a
+  mailbox's own same-ESP placement is under 80% (the mailbox, not the
+  copy, is the cause), it is pulled from its POD and campaigns with
+  warmup left ON and rests 28 days (D310; D303 first wrote 14). A free warm
+  ledger generic covers the seat (`covering_for` = the rested mailbox,
+  ready date = rest end, day 28) and stays until then. After 28 days the
+  mailbox goes back and the generic is released, warm-swap
+  style. `rest_count` + history per mailbox. Under 80% again after
+  returning, or `rest_count` > 3, = BURNED: pulled for good and a
+  retire/replace action is opened (spend still needs approval).
+- **Per-variant tests** (D303, LOCKED): each A/B variant of the tested
+  step gets its own placement test (`[variant X]` in the test name, its
+  own `sequence_mapping_id`) and its own canary-copy test.
+- **Mailbox summary** (D303): the monitor pages
+  `spam-test/report/mailboxes-summary` by limit/offset until every
+  mailbox is read.
 - 80% same-ESP live / 85% launch (promo tab = miss) are **readings** — the
   launch bar blocks QA-unpause of a new campaign (D46/D106), the live number
   never rotates (D32/D51). Never use the blended all-ESP score for anything

@@ -5,9 +5,10 @@
  * (`enable_ai_esp_matching: true`) and a 10-minute campaign gap
  * (`min_time_btw_emails: 10`). STOPPED campaigns are left alone.
  *
- * D306: live campaigns also converge the send window to Monday–Thursday
- * 08:00–19:00 America/New_York with `max_leads_per_day` 10000. Custom
- * windows are overwritten. Skips every cold-call campaign — any name
+ * D306 / D323: live campaigns also converge the send window to
+ * Monday–Thursday 07:00–19:00 America/Chicago with `max_leads_per_day`
+ * 10000. Custom windows are overwritten. Never write America/New_York.
+ * Skips every cold-call campaign — any name
  * containing `Calls |` (Gabe Calls, Cayden Calls, any future caller)
  * as well as D242 CALLER FOLLOW-UP detection — and every Booking
  * Follow Up campaign (windows left untouched). Also skips shells /
@@ -28,9 +29,9 @@ import { isCallerFollowUpCampaign } from "./callerFollowUp.js";
 import { isWordHuntShellCampaign } from "./wordHuntShell.js";
 
 export const SEND_CANON_GAP_MINS = 10;
-export const SEND_WINDOW_TIMEZONE = "America/New_York";
+export const SEND_WINDOW_TIMEZONE = "America/Chicago";
 export const SEND_WINDOW_DAYS = [1, 2, 3, 4] as const;
-export const SEND_WINDOW_START_HOUR = "08:00";
+export const SEND_WINDOW_START_HOUR = "07:00";
 export const SEND_WINDOW_END_HOUR = "19:00";
 export const SEND_WINDOW_MAX_LEADS = 10000;
 
@@ -190,7 +191,7 @@ export function sendWindowIsOff(campaign: SendCanonCampaign): boolean {
   return false;
 }
 
-/** D306 standing window. Always 10000 new leads / day. */
+/** D323 standing window. Always 10000 new leads / day. */
 export function standingSendWindowBody(): Record<string, unknown> {
   return {
     timezone: SEND_WINDOW_TIMEZONE,
@@ -266,7 +267,7 @@ export async function convergeSendCanon(
   }
   if (drift.windowOff || drift.gapOff) {
     const windowDetail = drift.windowOff
-      ? "custom window → Mon–Thu 08:00–19:00 America/New_York (D306)"
+      ? "custom window → Mon–Thu 07:00–19:00 America/Chicago (D323)"
       : null;
     const gapDetail = drift.gapOff
       ? `${String(drift.gapBefore ?? "unset")} → ${SEND_CANON_GAP_MINS}m`

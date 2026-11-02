@@ -13,8 +13,9 @@ import {
   type SendCanonCampaign,
 } from "./campaignSendCanon.js";
 
-const cron = { tz: "America/New_York", days: [1, 2, 3, 4], startHour: "08:00", endHour: "19:00" };
+const cron = { tz: "America/Chicago", days: [1, 2, 3, 4], startHour: "07:00", endHour: "19:00" };
 const chicago = { tz: "America/Chicago", days: [1, 2, 3, 4], startHour: "09:00", endHour: "18:00" };
+const et = { tz: "America/New_York", days: [1, 2, 3, 4], startHour: "08:00", endHour: "19:00" };
 
 function writer() {
   const calls: Array<[string, number, Record<string, unknown>]> = [];
@@ -86,9 +87,9 @@ describe("D304 send canon (ESP matching ON + 10m gap)", () => {
   it("schedule body echoes the current window and changes only the gap", () => {
     const body = sendCanonScheduleBody({ id: 5, scheduler_cron_value: cron, max_leads_per_day: 100 });
     assert.deepEqual(body, {
-      timezone: "America/New_York",
+      timezone: "America/Chicago",
       days_of_the_week: [1, 2, 3, 4],
-      start_hour: "08:00",
+      start_hour: "07:00",
       end_hour: "19:00",
       min_time_btw_emails: 10,
       max_new_leads_per_day: 100,
@@ -152,17 +153,40 @@ describe("D304 send canon (ESP matching ON + 10m gap)", () => {
 });
 
 describe("D306 send-window converge", () => {
-  it("standing body is Mon–Thu 08:00–19:00 ET at 10000 leads and never has status", () => {
+  it("standing body is Mon–Thu 07:00–19:00 America/Chicago at 10000 leads and never has status", () => {
     const body = standingSendWindowBody();
     assert.deepEqual(body, {
-      timezone: "America/New_York",
+      timezone: "America/Chicago",
       days_of_the_week: [1, 2, 3, 4],
-      start_hour: "08:00",
+      start_hour: "07:00",
       end_hour: "19:00",
       min_time_btw_emails: 10,
       max_new_leads_per_day: 10000,
     });
     assert.equal("status" in body, false);
+    assert.notEqual(body.timezone, "America/New_York");
+  });
+
+  it("overwrites the retired ET window and never writes America/New_York", async () => {
+    const w = writer();
+    const out = await convergeSendCanon(
+      {
+        id: 40,
+        name: "Goliath Education",
+        status: "ACTIVE",
+        enable_ai_esp_matching: true,
+        min_time_btwn_emails: 10,
+        scheduler_cron_value: et,
+        max_leads_per_day: 10000,
+      },
+      w,
+      { dryRun: false },
+    );
+    assert.deepEqual(out?.fixed, ["window"]);
+    assert.equal(w.calls.length, 1);
+    assert.deepEqual(w.calls[0]![2], standingSendWindowBody());
+    assert.equal(w.calls[0]![2].timezone, "America/Chicago");
+    assert.notEqual(w.calls[0]![2].timezone, "America/New_York");
   });
 
   it("overwrites a custom Chicago / Friday window", async () => {

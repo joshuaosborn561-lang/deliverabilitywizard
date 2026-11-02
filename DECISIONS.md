@@ -196,7 +196,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D179 | Live | A known-retired domain never opens a fresh actionable Retire ask or a second replacement buy when old / recurrent 5.1.8 evidence reappears; confirm is a fail-safe no-op |
 | D180 | Live | Merge tags / custom fields cannot silently send blank — campaign-check samples sequences vs lead `custom_fields` (multi-offset, ~80% fill) and cheap sent-body holes; `merge_tag_blank` is a core CANON finding and Slack miss; never auto-edits live copy or remaps leads |
 | D181 | Live — Cayden Retire/Buy CTA and strike Slack silence added by D190 | Goliath / Smartlead client 548611 burned domains follow the normal Retire ask — D174 never-retire / never-burn / cover-only convert is reversed |
-| D182 | Live — no-converge clause superseded by D306 | Standing send window is Monday–Thursday 08:00–19:00 America/New_York — no Friday; gap 10 and max_leads 10000 unchanged; custom windows are now overwritten (D306) |
+| D182 | Live — hours/tz superseded by D323; no-converge clause superseded by D306 | Standing send window was Monday–Thursday 08:00–19:00 America/New_York; D323 moved it to 07:00–19:00 America/Chicago. No Friday; gap 10 and max_leads 10000 unchanged; custom windows overwritten (D306) |
 | D183 | Live | Outlook / Microsoft Smartlead senders converge to 15 campaign emails/day; Gmail/SMTP stay at MESSAGE_PER_DAY=30 |
 | D184 | Superseded by D192 — exclusive-blank Insight staff inside 345263 is obsolete; never revive | Insight campaigns staff only seats not on ACTIVE SalesGlider; exclusive Insight may be empty-signed; NEVER blank ACTIVE SG staff; QA flags shared staff or SalesGlider-in-sig; no salesglider* fleet-empty |
 | D186 | Live — step-3 "don't touch" superseded for check purposes by D306 | Client campaign sequence step 2 waits 2 days (`seq_delay_details.delay_in_days = 2`); step 1 stays 0; shells / 1-step skipped; campaign-check flags `step2_delay` and auto-fixes via `sequencesForWrite`; D306 flags step 3 (check only, never writes) |
@@ -296,7 +296,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D300 | Live | Freeze/restart loop after D299 (2026-10-23): objects/arrays are never native-stringified; persist and indexAccountsByCampaign yield to timers; campaign-health snapshots use a campaign Map and yield. lastOk stamps unchanged. Thresholds not widened. LOCKED section unchanged. |
 | D301 | Live | POD ESP mix matches each client's InboxKit Google/Microsoft split (±max(2, 10% of the POD) of round(POD × Microsoft share)); 1/3 floor is fallback only when InboxKit has no row. SMTP smtp.gmail.com and type:google are Gmail; type:m365 / type:azure are Microsoft. min-40 / campaign top-up pick generics toward that split. Finding text shows the client's target. Parlay ~54%, EMCOR ~60%, Peterson ~35%. LOCKED section unchanged. |
 | D304 | Live — LOCKED; caller-follow-up 10m gap restored to 3 by D306 | Every Smartlead campaign: enable_ai_esp_matching ON and min_time_btw_emails 10. Campaign-check (hourly/all) flags and fixes drift on every non-STOPPED campaign: ESP via POST /settings, gap via POST /schedule. Never status. D306 restores D242's 3m gap on caller follow-ups and overwrites custom send windows. |
-| D306 | Live — LOCKED | Warmup is 14 days for every seat (named and generic). Breakup-step CHECK ONLY (`missing_breakup_step` if no seq_number 3 or step 3 delay is not 2). Send-window converge Mon–Thu 08:00–19:00 America/New_York; custom windows overwritten; skip Calls | / D242 / Booking Follow Up / shells / tests / STOPPED; never status. Josh: "Take [21] down to fourteen days. So that everything gets fourteen." |
+| D306 | Live — LOCKED; send-window hours/tz superseded by D323 | Warmup is 14 days for every seat (named and generic). Breakup-step CHECK ONLY (`missing_breakup_step` if no seq_number 3 or step 3 delay is not 2). Send-window converge (hours/tz now Mon–Thu 07:00–19:00 America/Chicago per D323); custom windows overwritten; skip Calls | / D242 / Booking Follow Up / shells / tests / STOPPED; never status. Josh: "Take [21] down to fourteen days. So that everything gets fourteen." |
 | D307 | Live | Tests that persist age-pruned ledgers (placement scores, copy suspects) stamp fixture times relative to now so D257's 14-day placement-score retention cannot drop a living row. Production prune windows and isolation sidecar persist are unchanged. LOCKED section unchanged. |
 | D308 | Live | Drain mode (A0): `POST /drain?action=on` skips every NEW cron tick, post-pass retry and manual `/run` while in-flight work finishes; `/health` reports `drain`, `activeJobs`, `idleNow` and `safeToDeploy` (drain on AND nothing running). Auto-expires (30m default, 120m max). Changes no campaigns, mailboxes, settings or WRITE_ENABLED. LOCKED section unchanged. |
 | D309 | Live | Copy-canary idempotent: one live "Canary copy" SmartDelivery test per campaign. Single-flight per campaign, a 3h create cooldown (also after a failed, maybe-landed create), stored test kept when the list hits the 5,000-test page cap, and each attach pass STOPS (never deletes) extra living canaries for a campaign, keeping the one with readings. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
@@ -310,6 +310,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D320 | Live | lead-runout budget: the 6-hour monitor chain's `lead-runout` walks every ACTIVE campaign serially (2-3 Smartlead reads each, normal lane) and timed out at 10m five times running (last ok 2:02am CT). Reads now retry once, the walk stops at 7 minutes and resumes where it stopped next pass (cursor in memory). No alert rule, threshold, campaign or WRITE_ENABLED change. LOCKED section unchanged. |
 | D321 | Live — LOCKED | Every inbox has a name (Josh, 2026-10-29: "Every inbox has a name. Canon that it can never have that again. If no name just send as the company. But everyone should have a name."). A blank or placeholder from_name / signature name (Pool User, Generic, Canary, test, one word, local part) is never written: a seat sends as its Generics Ledger / InboxKit persona, else as the client company name (signature = company). No assign is refused for a missing persona. A 10-minute sweep replaces any placeholder on a non-STOPPED campaign (name + signature only; write flag off until Josh merges); signature checks treat a blank/placeholder name as a mismatch; release restores the persona. Prod incident 2026-10-29: "Pool User Emcor" sent to a prospect. |
 | D322 | Live | Locked-canon CI passes canon-consistent PRs without Josh's approval. It fails when the LOCKED section, `docs/LOCKED-CANON.md`, or `src/lib/lockedCanon.ts` changes unless the PR has the `canon-change` label approved by Josh (`joshuaosborn561-lang` applied it, or he approved the PR while it is present). Josh stays CODEOWNER of those definition files. Implementation paths, including `src/guards/lockedCanon.test.ts`, are not Josh-only. Required checks stay `check` and `locked-canon`; code-owner review is not a merge gate. Unauthorized locked-canon edits never auto-merge. POD-40, Generics Ledger, and ESP matching unchanged. |
+| D323 | Live | Standing send window is Monday–Thursday 07:00–19:00 America/Chicago (days [1, 2, 3, 4]). D182/D306 ET 08:00–19:00 is retired. Calls | and Booking Follow Up keep their own windows. Campaign-check converges to Chicago and never writes America/New_York. Josh, 2026-11-01 7:48pm CT: "change the canon so sending always goes from 7-7 CST." |
 
 ---
 
@@ -11569,3 +11570,35 @@ the `locked-canon` job). Does not reverse the locked rules.
 
 **Guards.** `src/lib/lockedCanonGate.test.ts`,
 `src/guards/lockedCanon.test.ts`, `src/guards/canon.test.ts` D322.
+
+## D323 — Standing send window is Mon–Thu 07:00–19:00 America/Chicago
+
+**Decision (Josh, 2026-11-01 7:48pm CT, in his words):** "change
+the canon so sending always goes from 7-7 CST."
+
+**Rule.** Live campaigns send Monday–Thursday 07:00–19:00
+America/Chicago. Days are `[1, 2, 3, 4]`. No Friday. No
+weekends. `min_time_btw_emails` stays 10 and
+`max_leads_per_day` stays 10000. Campaign-check POSTs
+`/campaigns/{id}/schedule` to this window and never writes
+`America/New_York`. The build skill writes this on setup.
+
+**Exceptions (unchanged).** Campaigns named `Calls |` and
+Booking Follow Up keep their own windows (D306 / D242).
+Shells, canaries, word-hunt, test campaigns, and STOPPED
+are still skipped. D306 converge, overwrite, and never-status
+stay.
+
+**Why.** Josh approved the CST window himself on
+2026-11-01 at 7:48pm CT. Smartlead already holds the new
+window on all 644 campaigns. The wizard must not converge
+them back to Eastern.
+
+**Supersedes / amends.** Supersedes D182 / D306 hours and
+timezone (ET 08:00–19:00 → Chicago 07:00–19:00). Does not
+reverse D306 converge, the Calls | / Booking Follow Up
+exemptions, the 10-minute gap, max_leads 10000, or
+never-status.
+
+**Guards.** `src/lib/campaignSendCanon.test.ts`;
+`src/guards/canon.test.ts` D182 / D323.

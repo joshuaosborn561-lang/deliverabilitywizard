@@ -208,7 +208,7 @@ const FINDING_LABEL: Record<string, string> = {
   inbox_missing_known_good: "inbox missing known-good test",
   merge_tag_blank: "merge tags sending blank",
   missing_breakup_step: "breakup step missing or not 2 days",
-  send_window: "send window off the Mon–Thu 8am–7pm ET canon",
+  send_window: "send window off the Mon–Thu 7am–7pm CT canon",
   generic_idle: "generic assigned but not needed for POD 40",
   generic_multi_client: "generic assigned to more than one client",
   generic_outside_ledger: "generic on a live campaign without a ledger row",

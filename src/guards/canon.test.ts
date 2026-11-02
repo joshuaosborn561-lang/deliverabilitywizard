@@ -7322,8 +7322,8 @@ describe("owner intent — D181 Goliath retires like any other client", () => {
   });
 });
 
-describe("owner intent — D182 standing send window is Mon–Thu 8am–7pm ET", () => {
-  it("D182: skill + CANON ship ET 08:00–19:00 Mon–Thu; no Chicago 9–18; no Friday; no window overwrite", async () => {
+describe("owner intent — D182 / D323 standing send window is Mon–Thu 7am–7pm CT", () => {
+  it("D323: skill + CANON ship Chicago 07:00–19:00 Mon–Thu; no ET; no Chicago 9–18; no Friday", async () => {
     const { readFile } = await import("node:fs/promises");
     const skill = await readFile(
       new URL("../ops/smartlead-campaign-settings.SKILL.md", import.meta.url),
@@ -7331,6 +7331,10 @@ describe("owner intent — D182 standing send window is Mon–Thu 8am–7pm ET",
     );
     const check = await readFile(
       new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    const send = await readFile(
+      new URL("../lib/campaignSendCanon.ts", import.meta.url),
       "utf8",
     );
     const canon = await readFile(
@@ -7344,25 +7348,25 @@ describe("owner intent — D182 standing send window is Mon–Thu 8am–7pm ET",
 
     assert.match(
       skill,
-      /"timezone": "America\/New_York"/,
+      /"timezone": "America\/Chicago"/,
       stop(
-        "The build skill writes America/New_York (D182).",
-        "smartlead-campaign-settings.SKILL.md lost the Eastern timezone.",
+        "The build skill writes America/Chicago (D323).",
+        "smartlead-campaign-settings.SKILL.md lost the Chicago timezone.",
       ),
     );
     assert.match(
       skill,
-      /"start_hour": "08:00"/,
+      /"start_hour": "07:00"/,
       stop(
-        "The build skill starts the window at 08:00 ET (D182).",
-        "smartlead-campaign-settings.SKILL.md lost start_hour 08:00.",
+        "The build skill starts the window at 07:00 CT (D323).",
+        "smartlead-campaign-settings.SKILL.md lost start_hour 07:00.",
       ),
     );
     assert.match(
       skill,
       /"end_hour": "19:00"/,
       stop(
-        "The build skill ends the window at 19:00 ET (D182).",
+        "The build skill ends the window at 19:00 CT (D323).",
         "smartlead-campaign-settings.SKILL.md lost end_hour 19:00.",
       ),
     );
@@ -7370,7 +7374,7 @@ describe("owner intent — D182 standing send window is Mon–Thu 8am–7pm ET",
       skill,
       /"days_of_the_week": \[1, 2, 3, 4\]/,
       stop(
-        "The build skill sends Monday–Thursday only (D182).",
+        "The build skill sends Monday–Thursday only (D182/D323).",
         "smartlead-campaign-settings.SKILL.md lost days_of_the_week [1, 2, 3, 4].",
       ),
     );
@@ -7392,10 +7396,18 @@ describe("owner intent — D182 standing send window is Mon–Thu 8am–7pm ET",
     );
     assert.doesNotMatch(
       skill,
-      /"timezone": "America\/Chicago"/,
+      /"timezone": "America\/New_York"/,
       stop(
-        "The Chicago standing default is retired (D182).",
-        "smartlead-campaign-settings.SKILL.md still ships America/Chicago as the schedule timezone.",
+        "The Eastern standing default is retired (D323).",
+        "smartlead-campaign-settings.SKILL.md still ships America/New_York as the schedule timezone.",
+      ),
+    );
+    assert.doesNotMatch(
+      skill,
+      /"start_hour": "08:00"/,
+      stop(
+        "The 08:00 ET standing start is retired (D323).",
+        "smartlead-campaign-settings.SKILL.md still ships start_hour 08:00.",
       ),
     );
     assert.doesNotMatch(
@@ -7423,6 +7435,30 @@ describe("owner intent — D182 standing send window is Mon–Thu 8am–7pm ET",
       ),
     );
     assert.match(
+      send,
+      /SEND_WINDOW_TIMEZONE = "America\/Chicago"/,
+      stop(
+        "Campaign-check converges to America/Chicago (D323).",
+        "campaignSendCanon.ts still targets America/New_York.",
+      ),
+    );
+    assert.match(
+      send,
+      /SEND_WINDOW_START_HOUR = "07:00"/,
+      stop(
+        "Campaign-check starts the standing window at 07:00 CT (D323).",
+        "campaignSendCanon.ts lost start hour 07:00.",
+      ),
+    );
+    assert.doesNotMatch(
+      send,
+      /SEND_WINDOW_TIMEZONE = "America\/New_York"/,
+      stop(
+        "The wizard must never write America/New_York as the standing window (D323).",
+        "campaignSendCanon.ts still sets SEND_WINDOW_TIMEZONE to America/New_York.",
+      ),
+    );
+    assert.match(
       check,
       /convergeSendCanon\(/,
       stop(
@@ -7432,10 +7468,10 @@ describe("owner intent — D182 standing send window is Mon–Thu 8am–7pm ET",
     );
     assert.match(
       canon,
-      /Monday–Thursday\s+08:00–19:00 America\/New_York/,
+      /Monday–Thursday\s+07:00–19:00 America\/Chicago/,
       stop(
-        "CANON states the ET Mon–Thu 8am–7pm send window (D182).",
-        "CANON.md lost the D182 send window.",
+        "CANON states the CT Mon–Thu 7am–7pm send window (D323).",
+        "CANON.md lost the D323 send window.",
       ),
     );
     assert.match(
@@ -7471,11 +7507,27 @@ describe("owner intent — D182 standing send window is Mon–Thu 8am–7pm ET",
       ),
     );
     assert.match(
+      canon,
+      /D323/,
+      stop(
+        "CANON names D323.",
+        "CANON.md dropped D323.",
+      ),
+    );
+    assert.match(
       decisions,
       /## D182 — Standing send window is Mon–Thu 8am–7pm ET/,
       stop(
         "The send-window rule is in the ledger (D182).",
         "DECISIONS.md no longer has D182.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D323 — Standing send window is Mon–Thu 07:00–19:00 America\/Chicago/,
+      stop(
+        "The Chicago send-window rule is in the ledger (D323).",
+        "DECISIONS.md no longer has D323.",
       ),
     );
   });
@@ -19039,7 +19091,6 @@ describe("owner intent — D322 canon-consistent merge gate", () => {
     const canon = readFileSync("CANON.md", "utf8");
     const decisions = readFileSync("DECISIONS.md", "utf8");
     const gate = readFileSync("src/lib/lockedCanonGate.ts", "utf8");
-    assert.match(canon, /Canon as of \*\*D322\*\*/, "CANON.md is not dated D322");
     assert.match(canon, /\*\*D322\.\*\*/, "CANON.md lost the D322 blurb");
     assert.match(decisions, /## D322 — /, "DECISIONS.md has no D322 entry");
     assert.match(decisions, /^\| D322 \|/m, "status index has no D322 row (D127)");
@@ -19154,5 +19205,32 @@ describe("owner intent — D321 LOCKED every inbox has a name", () => {
       /removeEmailAccountsFromCampaign|updateCampaignStatus|\/status/,
       "the D321 sweep replaces names; it never unlinks or touches status.",
     );
+  });
+});
+
+describe("owner intent — D323 standing send window is Mon–Thu 07:00–19:00 CT", () => {
+  it("D323: Chicago 07:00–19:00 is current truth; ET is retired; exceptions stay", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const canon = await read("../../CANON.md");
+    const decisions = await read("../../DECISIONS.md");
+    const send = await read("../lib/campaignSendCanon.ts");
+    const alerts = await read("../services/opsAlerts.ts");
+    assert.match(canon, /Canon as of \*\*D323\*\*/, "CANON.md is not dated D323");
+    assert.match(canon, /\*\*D323\.\*\*/, "CANON.md lost the D323 blurb");
+    assert.match(canon, /07:00–19:00 America\/Chicago/, "CANON.md lost the Chicago send window");
+    assert.match(canon, /never America\/New_York/, "CANON.md lost the never-ET converge rule");
+    assert.match(canon, /Calls \|/, "CANON.md lost the Calls | exception");
+    assert.match(canon, /Booking Follow Up/, "CANON.md lost the Booking Follow Up exception");
+    assert.match(decisions, /## D323 — /, "DECISIONS.md has no D323 entry");
+    assert.match(decisions, /^\| D323 \|/m, "status index has no D323 row (D127)");
+    assert.match(decisions, /7:48pm CT/, "D323 must cite Josh, Nov 1 2026 7:48pm CT");
+    assert.match(decisions, /change the canon so sending always goes from 7-7 CST/);
+    assert.match(send, /SEND_WINDOW_TIMEZONE = "America\/Chicago"/);
+    assert.match(send, /SEND_WINDOW_START_HOUR = "07:00"/);
+    assert.match(send, /SEND_WINDOW_END_HOUR = "19:00"/);
+    assert.match(send, /SEND_WINDOW_DAYS = \[1, 2, 3, 4\]/);
+    assert.doesNotMatch(send, /SEND_WINDOW_TIMEZONE = "America\/New_York"/);
+    assert.match(alerts, /Mon–Thu 7am–7pm CT/, "opsAlerts lost the CT send-window copy");
   });
 });

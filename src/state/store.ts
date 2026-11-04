@@ -179,6 +179,16 @@ export interface ActiveSwapRecord {
   poolPlatform: "GOOGLE" | "MICROSOFT";
 }
 
+/** Counts from the lead-runout walk. No addresses and no lead rows. */
+export interface LeadRunwayRecord {
+  campaignId: number;
+  name: string;
+  clientId: number | null;
+  remaining: number;
+  total: number;
+  recordedAt: string;
+}
+
 export interface OpsAuditRecord {
   id: string;
   at: string;
@@ -393,6 +403,11 @@ export interface AppState {
   genericSeats: Record<string, GenericSeatRecord>;
   /** D221 — latest generic-pool canon findings (`generic_idle` / `generic_multi_client`). */
   genericPoolFindings: string[];
+  /**
+   * Lead-runout counts for the /ops Watchdog. Remaining and total only —
+   * never a lead list.
+   */
+  leadRunway: Record<string, LeadRunwayRecord>;
   /** D286 — one-time generics-ledger cleanup stamp (idempotent). */
   genericLedgerCleanup: GenericLedgerCleanupStamp | null;
   /**
@@ -609,6 +624,34 @@ function parseTenantOutboundBlocks(
       alertedAt: typeof row.alertedAt === "string" ? row.alertedAt : null,
       seededAt: typeof row.seededAt === "string" ? row.seededAt : "",
     };
+  }
+  return out;
+}
+
+function parseLeadRunway(raw: unknown): Record<string, LeadRunwayRecord> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, LeadRunwayRecord> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== "object") continue;
+    const row = value as Partial<LeadRunwayRecord>;
+    const campaignId = Number(row.campaignId);
+    const remaining = Number(row.remaining);
+    const total = Number(row.total);
+    if (!Number.isFinite(campaignId) || campaignId <= 0) continue;
+    if (!Number.isFinite(remaining) || remaining < 0) continue;
+    if (!Number.isFinite(total) || total < 0) continue;
+    const name = String(row.name ?? "").slice(0, 120);
+    const clientId =
+      typeof row.clientId === "number" && row.clientId > 0 ? row.clientId : null;
+    out[String(campaignId)] = {
+      campaignId,
+      name,
+      clientId,
+      remaining,
+      total,
+      recordedAt: typeof row.recordedAt === "string" ? row.recordedAt : "",
+    };
+    if (Object.keys(out).length >= 500) break;
   }
   return out;
 }
@@ -842,6 +885,7 @@ const EMPTY_STATE: AppState = {
   tenantOutboundBlocks: {},
   genericSeats: {},
   genericPoolFindings: [],
+  leadRunway: {},
   genericLedgerCleanup: null,
   endedPocClientIds: [],
   tenantTerlHolds: {},
@@ -985,6 +1029,7 @@ export class StateStore {
               .map((line) => String(line))
               .filter((line) => line.trim().length > 0)
           : [],
+        leadRunway: parseLeadRunway(parsed.leadRunway),
         tenantTerlHolds: parseTenantTerlHolds(parsed.tenantTerlHolds),
         terlPausedDays: parseTerlPausedDays(parsed.terlPausedDays),
         terlSubstitutions: parseTerlSubstitutions(parsed.terlSubstitutions),
@@ -1705,6 +1750,24 @@ export class StateStore {
 
   listCampaignChecks(): CampaignCheckRecord[] {
     return Object.values(this.state.campaignChecks);
+  }
+
+  upsertLeadRunway(record: LeadRunwayRecord): void {
+    this.state.leadRunway[String(record.campaignId)] = {
+      campaignId: record.campaignId,
+      name: String(record.name ?? "").slice(0, 120),
+      clientId:
+        typeof record.clientId === "number" && record.clientId > 0
+          ? record.clientId
+          : null,
+      remaining: record.remaining,
+      total: record.total,
+      recordedAt: record.recordedAt,
+    };
+  }
+
+  listLeadRunway(): LeadRunwayRecord[] {
+    return Object.values(this.state.leadRunway);
   }
 
   removeCampaignCheck(campaignId: number): void {

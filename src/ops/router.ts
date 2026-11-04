@@ -9,6 +9,21 @@ import type { CursorAssistantService } from "./cursorAssistant.js";
 import type { IsolationExecuteService } from "../services/isolationExecute.js";
 import { canDecideIsolationAction } from "../lib/isolationActors.js";
 import { restRolloverSnapshot } from "../lib/restCohort.js";
+import type { SmartleadClientRecord } from "../clients/smartlead.js";
+import { buildFixQueue } from "./fixQueue.js";
+import {
+  copyChangeText,
+  scoreSpamAssassin,
+  spamAssassinBlocksApproval,
+} from "./spamAssassin.js";
+import { buildTodayBoard, type TodayCampaignRef, type TodayPlacementRow } from "./todayBoard.js";
+import { buildWatchdogBoard, type WatchdogAccount } from "./watchdogBoard.js";
+
+export interface OpsInventoryPeek {
+  campaigns: TodayCampaignRef[];
+  accounts: WatchdogAccount[];
+  clients: SmartleadClientRecord[];
+}
 
 export interface OpsRuntime {
   deliverability: () => Promise<{
@@ -38,6 +53,8 @@ export function createOpsRouter(opts: {
   runtime: OpsRuntime;
   cursorAssistant?: CursorAssistantService | null;
   isolationExecute?: IsolationExecuteService;
+  /** Last accepted inventory book. Never fetches. */
+  inventoryPeek?: () => OpsInventoryPeek | null;
 }): express.Router {
   const router = express.Router();
   const loginAttempts = new Map<string, { count: number; resetAt: number }>();
@@ -271,6 +288,104 @@ export function createOpsRouter(opts: {
     }
   });
 
+  const peekInventory = (): OpsInventoryPeek | null => {
+    try {
+      return opts.inventoryPeek?.() ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  router.get("/today", (req: AuthenticatedRequest, res) => {
+    const inventory = peekInventory();
+    const state = opts.state.get();
+    const statusById = new Map(
+      (inventory?.campaigns ?? []).map((row) => [row.id, String(row.status ?? "")]),
+    );
+    const suspects = opts.state.listCopySuspects();
+    const scores = opts.state.listPlacementScores();
+    const openSuspects = new Set(
+      suspects.filter((row) => !row.evaluatedAt).map((row) => row.campaignId),
+    );
+    const isolation = scores
+      .filter(
+        (row) =>
+          row.inboxPercent < opts.config.remediationInboxThreshold &&
+          openSuspects.has(row.campaignId),
+      )
+      .map((row) => ({
+        campaignId: row.campaignId,
+        campaignName: row.campaignName,
+        text: `${row.campaignName || `Campaign ${row.campaignId}`}: same-ESP ${row.inboxPercent}% — isolation queued`,
+      }));
+    const placements = (state.placementResults?.rows ?? []) as TodayPlacementRow[];
+    res.json(
+      buildTodayBoard({
+        hourlySweepEnabled: opts.config.enableCampaignCheck,
+        cronHealth: opts.config.cronHealth,
+        checks: opts.state.listCampaignChecks(),
+        genericFindings: opts.state.listGenericPoolFindings(),
+        campaigns: inventory?.campaigns ?? [],
+        clients: inventory?.clients ?? [],
+        placements,
+        isolation,
+        restRollover: restRolloverSnapshot(),
+        statusById: statusById.size ? statusById : undefined,
+      }),
+    );
+  });
+
+  router.get("/watchdog", (_req: AuthenticatedRequest, res) => {
+    const inventory = peekInventory();
+    res.json(
+      buildWatchdogBoard({
+        accounts: inventory?.accounts ?? [],
+        clients: inventory?.clients ?? [],
+        runway: opts.state.listLeadRunway(),
+        messagePerDay: opts.config.messagePerDay,
+      }),
+    );
+  });
+
+  router.get("/fix-queue", (req: AuthenticatedRequest, res) => {
+    res.json(
+      buildFixQueue({
+        role: req.opsSession!.role,
+        approvals: opts.state.listSpendApprovals(),
+        isolation: opts.state.listIsolationActions(),
+        checks: opts.state.listCampaignChecks(),
+        audit: opts.state.listOpsAudit(200),
+      }),
+    );
+  });
+
+  router.post(
+    "/fix-queue/:id/reject",
+    async (req: AuthenticatedRequest, res) => {
+      const id = String(req.params.id || "");
+      if (!id.startsWith("audit:")) {
+        res.status(400).json({ error: "Only an audit finding can be dismissed here" });
+        return;
+      }
+      if (req.body?.confirm !== true) {
+        res.status(400).json({ error: "Explicit confirmation is required" });
+        return;
+      }
+      try {
+        await audit(
+          req.opsSession!,
+          "finding-reject",
+          "success",
+          id,
+          "Noted from the fix queue. The sweep finding stays until the next clean pass.",
+        );
+        res.json({ ok: true });
+      } catch (error) {
+        res.status(503).json({ error: safeMessage(error) });
+      }
+    },
+  );
+
   router.get("/placements", async (req: AuthenticatedRequest, res) => {
     try {
       const force = String(req.query.force ?? "") === "1";
@@ -377,6 +492,20 @@ export function createOpsRouter(opts: {
         return;
       }
       const action = opts.state.getIsolationAction(String(req.params.id));
+      if (
+        action &&
+        decision === "approve" &&
+        action.kind === "swap_copy" &&
+        spamAssassinBlocksApproval(
+          scoreSpamAssassin(copyChangeText(action.detail)).score,
+        )
+      ) {
+        const scored = scoreSpamAssassin(copyChangeText(action.detail));
+        res.status(409).json({
+          error: `SpamAssassin ${scored.score} must be 0`,
+        });
+        return;
+      }
       if (!action || action.status !== "pending") {
         res.status(409).json({ error: "That request is no longer waiting." });
         return;

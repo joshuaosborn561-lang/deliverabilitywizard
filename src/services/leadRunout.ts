@@ -123,6 +123,18 @@ export class LeadRunoutService {
           continue;
         }
 
+        this.state.upsertLeadRunway({
+          campaignId: campaign.id,
+          name: campaign.name,
+          clientId:
+            typeof campaign.client_id === "number" && campaign.client_id > 0
+              ? campaign.client_id
+              : null,
+          remaining: stats.remaining,
+          total: stats.total,
+          recordedAt: new Date().toISOString(),
+        });
+
         const stage = runoutStage(consumedPercent(stats));
         if (!stage) continue;
 

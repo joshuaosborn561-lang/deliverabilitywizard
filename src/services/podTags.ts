@@ -22,7 +22,10 @@ import { campaignIdsOf } from "../clients/smartlead.js";
 import { senderEspBucket } from "../lib/canonStaffable.js";
 import { weekendWriterIdleReason } from "../lib/canonOpsHours.js";
 import { isGabeVmReserved, isLockedCanarySeat } from "../lib/canaryLock.js";
-import { callerFollowUpMustSkipPodTags } from "../lib/callerFollowUp.js";
+import {
+  callerFollowUpMustSkipPodTags,
+  isCaydenSgSeat,
+} from "../lib/callerFollowUp.js";
 import { pocEngagementClientIds } from "../lib/pocClient.js";
 
 export const POD_TAG_A = "POD-A";
@@ -114,6 +117,9 @@ export class PodTagService {
           (email && isLockedCanarySeat(account, email, this.state)) ||
           callerFollowUpMustSkipPodTags(account, email) ||
           isGabeVmReserved(account) ||
+          // D324 — lock only. The first-tag pass below must not strip
+          // POD-A off these seats (they are not D242 class senders).
+          isCaydenSgSeat(account) ||
           hasDualPodTags(account.tags) ||
           isPodRotationSkippedClient(pod.clientId, pocSkipIds) ||
           existingPodTag(account.tags) !== pod.pool;

@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D322** (2026-10-31). One page of current truth. When a new
+Canon as of **D324** (2026-11-04). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -9,6 +9,8 @@ guard in `src/guards/meta.test.ts` enforces both).
 and every reversal, and most of it is **superseded**. Do not derive behaviour
 from it. Derive behaviour from this file; use the ledger only to understand
 *why* a rule here exists (each rule cites its decision numbers).
+
+**D324.** Seats tagged `CAYDEN-SG` (SalesGlider 345263, also `POD-A` and `WARMUP-GATE-EXEMPT`) sit only on `Booking Follow Up - <Client>` campaigns. That membership does not confer the other client's membership, and the seats are not fanned onto that client's other campaigns or onto ordinary SalesGlider campaigns. Booking Follow Up is a caller follow-up for membership only: it is not a D242 class campaign, so it keeps the D304 10-minute gap and the send window D306 already leaves alone, and pod-tags does not strip `POD-A`. The D316 rebalance does not retag these seats. A `HOLD-UNTIL-2099-12-31` tag on them today is a stopgap that blocks attaches; the rules above hold after it is removed. LOCKED section unchanged.
 
 **D322.** The `locked-canon` CI job passes a canon-consistent PR (LOCKED section, `docs/LOCKED-CANON.md`, and `src/lib/lockedCanon.ts` unchanged) without Josh's approval. It fails a PR that changes those locked canon files or rules unless the PR has the `canon-change` label approved by Josh. Canon edits still need Josh. Unauthorized locked-canon edits must never auto-merge. POD-40, the Generics Ledger, and ESP matching are unchanged.
 
@@ -332,7 +334,8 @@ Caps ramp manually (35 on Oct 12).
   Cayden Calls, any future caller) keep their windows and the
   3-minute gap (D306 restores D242's gap; do not overwrite that
   class). **Booking Follow Up** campaigns keep their windows
-  (D304 10m gap still applies). Everything else is overwritten,
+  (D304 10m gap still applies). D324 does not move them into the
+  D242 3-minute class. Everything else is overwritten,
   including SG Nurture, Referral Hosts, and SG Subs 1019.
   Shells, canaries (`isAnyShellCampaign`), word-hunt, test
   campaigns, and STOPPED are skipped.
@@ -618,7 +621,12 @@ have a name."
   sit under floor meanwhile (D139).   **Attach-blocked** senders
   (AS(42004) / `sender_blocked` / restricted / bounce-isolation unlink)
   are skipped the same way — fan-out, top-up, client-rest, and one-client
-  restore must not put them back (D176). INFRA isolation stamps the
+  restore must not put them back (D176). **D324:** a `Booking Follow Up`
+  membership does not confer that campaign's client, and a `CAYDEN-SG`
+  seat is never fan-out supply (not onto another client's campaigns,
+  not onto ordinary SalesGlider). One-client does not peel the seat
+  off Booking Follow Up; client-rest does not unlink it from those
+  campaigns on the off week. INFRA isolation stamps the
   block when known-good condemns a sender domain (`bounce_isolation`);
   a retire unlink writes `burned`; boot heals live asks plus known
   missing blocks so a deploy does not wait for another sample.
@@ -633,7 +641,8 @@ have a name."
   stay within 15% of each other** (gap ÷ the larger POD), and pod-tags
   retags idle named seats larger → smaller to fix it (never a seat on an
   ACTIVE campaign; ESP balance kept; ≤10 per pass; canaries, reserved,
-  POC and dual-tagged seats never move). No other job (min40, rest,
+  POC, dual-tagged, and `CAYDEN-SG` seats never move — D324 locks
+  those seats without stripping the POD tag). No other job (min40, rest,
   rotation, ESP-balance) may change A to B or B to A. Weekend writers
   (pod-tags, client-rest) idle Sat/Sun except Josh-live `/run`.
   **D235:** a generic carries a client and POD tag only while

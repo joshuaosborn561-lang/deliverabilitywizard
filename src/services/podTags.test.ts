@@ -405,4 +405,77 @@ describe("PodTagService D316 — named seats within 15%", () => {
     assert.equal(result.rebalanced ?? 0, 0);
     assert.deepEqual([assigns, removes], [[], []]);
   });
+
+  it("D324: does not retag an idle CAYDEN-SG seat and does not strip POD-A", async () => {
+    const state = new StateStore(
+      `/tmp/dw-d324-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const accounts = [
+      ...[1, 2, 3, 4].map((id) => ({
+        id,
+        from_email: `a${id}@acme.test`,
+        client_id: 9,
+        type: "GMAIL",
+        campaign_ids: [50],
+        tags: [{ tag_name: POD_TAG_A }],
+      })),
+      {
+        id: 5,
+        from_email: "b5@acme.test",
+        client_id: 9,
+        type: "GMAIL",
+        campaign_ids: [50],
+        tags: [{ tag_name: POD_TAG_B }],
+      },
+      {
+        id: 6,
+        from_email: "cayden@salesglidermail.test",
+        client_id: 9,
+        type: "GMAIL",
+        campaign_ids: [],
+        tags: [
+          { tag_name: "CAYDEN-SG" },
+          { tag_name: POD_TAG_A },
+          { tag_name: "WARMUP-GATE-EXEMPT" },
+        ],
+      },
+      {
+        id: 7,
+        from_email: "zidle@acme.test",
+        client_id: 9,
+        type: "GMAIL",
+        campaign_ids: [],
+        tags: [{ tag_name: POD_TAG_A }],
+      },
+    ];
+    state.markRestingInbox({
+      email: "cayden@salesglidermail.test",
+      clientId: 9,
+    } as never);
+    state.markRestingInbox({
+      email: "zidle@acme.test",
+      clientId: 9,
+    } as never);
+    const assigns: Array<[number[], number[]]> = [];
+    const removes: Array<[number[], number[]]> = [];
+    const smartlead = {
+      ensureTag: async (name: string) => ({ id: name === POD_TAG_A ? 71 : 72, name }),
+      assignTags: async (ids: number[], tags: number[]) => void assigns.push([ids, tags]),
+      removeTags: async (ids: number[], tags: number[]) => void removes.push([ids, tags]),
+    };
+    const service = new PodTagService(
+      loadConfig({ DRY_RUN: "false" } as NodeJS.ProcessEnv),
+      smartlead as never,
+      state,
+      bookWith([{ id: 50, name: "Acme", status: "ACTIVE", client_id: 9 }], accounts),
+      async () => {},
+    );
+    const result = await service.run({ now: weekday });
+    const touched = [...assigns, ...removes].flatMap(([ids]) => ids);
+    assert.equal(result.removed, 0, "POD-A is not stripped off CAYDEN-SG");
+    assert.ok((result.rebalanced ?? 0) > 0, "an unlocked idle seat still moves");
+    assert.ok(touched.includes(7));
+    assert.ok(!touched.includes(6), "CAYDEN-SG POD-A must stay");
+  });
 });

@@ -69,6 +69,7 @@ import {
   callerFollowUpSkipsCanonMinGap,
   callerFollowUpStrayAttachAlert,
   callerFollowUpStrayAttachAlertKey,
+  isBookingFollowUpCampaign,
   isCallerFollowUpCampaign,
   isCallerFollowUpSender,
 } from "../lib/callerFollowUp.js";
@@ -1352,7 +1353,9 @@ export class CampaignCheckService {
           campaignId: id,
           clientId: typeof other?.client_id === "number" ? other.client_id : null,
           shell: other ? isAnyShellCampaign(other) : false,
-          protected: other ? isGabeFollowUpCampaign(other) : false,
+          protected: other
+            ? isGabeFollowUpCampaign(other) || isBookingFollowUpCampaign(other)
+            : false,
         };
       });
       const dedicatedClientId = generic

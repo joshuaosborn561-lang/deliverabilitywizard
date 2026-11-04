@@ -19,6 +19,7 @@ import {
   callerFollowUpExemptFromSenderTopUp,
   callerFollowUpMayAttach,
   callerFollowUpPolicyFromConfig,
+  caydenSgRestMayDetach,
 } from "../lib/callerFollowUp.js";
 import { pocClientId, pocEngagementClientIds } from "../lib/pocClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
@@ -430,12 +431,19 @@ export class ClientRestService {
       }
 
       // D207 — detachable = ACTIVE only. PAUSED/STOPPED keep their senders.
-      const detachable = campaignIdsOf(account).filter((id) =>
-        isRestDetachableCampaign(
-          campaignById.get(id),
-          this.config.topUpExcludeCampaigns,
-        ),
-      );
+      // D324 — CAYDEN-SG stays on Booking Follow Up through the off week.
+      const detachable = campaignIdsOf(account).filter((id) => {
+        const campaign = campaignById.get(id);
+        if (
+          !isRestDetachableCampaign(
+            campaign,
+            this.config.topUpExcludeCampaigns,
+          )
+        ) {
+          return false;
+        }
+        return caydenSgRestMayDetach(account, campaign);
+      });
       // ACTIVE memberships the box already has. Using detachable-only
       // here would re-POST every already-on attach every on-week pass.
       const alreadyOnActive = campaignIdsOf(account).filter((id) => {

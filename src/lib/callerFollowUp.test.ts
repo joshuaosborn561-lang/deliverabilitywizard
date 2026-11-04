@@ -42,13 +42,22 @@ import {
   callerFollowUpExemptFromSenderTopUp,
   callerFollowUpStrayAttachAlert,
   callerFollowUpStrayAttachAlertKey,
+  caydenSgRestMayDetach,
+  isBookingFollowUpCampaign,
   isCallerFollowUpBridgeSender,
   isCallerFollowUpCampaign,
   isCallerFollowUpCanonGapValue,
+  isCallerFollowUpMembershipCampaign,
   isCallerFollowUpOwnedSeat,
   isCallerFollowUpSender,
   isCallerFollowUpSupplyBlocked,
+  isCaydenSgSeat,
 } from "./callerFollowUp.js";
+import {
+  campaignHasSendGapRule,
+  campaignHasSendWindowRule,
+  isCallsCampaign,
+} from "./campaignSendCanon.js";
 
 const tagged = { tags: [{ tag_name: "GABE-VM-RESERVED" }] };
 const gabeCallsDeepRoots = {
@@ -488,6 +497,76 @@ describe("CALLER FOLLOW-UP class (D242)", () => {
         },
       ]),
       [4085158, 4085159, 4085160],
+    );
+  });
+});
+
+describe("CAYDEN-SG and Booking Follow Up membership (D324)", () => {
+  const booking = {
+    id: 88001,
+    name: "Booking Follow Up - Bolder Cyber Partners",
+  };
+  const cayden = {
+    from_email: "cayden@salesglidermail.test",
+    tags: [
+      { tag_name: "CAYDEN-SG" },
+      { tag_name: "POD-A" },
+      { tag_name: "WARMUP-GATE-EXEMPT" },
+    ],
+  };
+
+  it("recognizes Booking Follow Up for membership and not as a D242 class campaign", () => {
+    assert.equal(isBookingFollowUpCampaign(booking), true);
+    assert.equal(isCallerFollowUpMembershipCampaign(booking), true);
+    assert.equal(isCallerFollowUpCampaign(booking), false);
+    assert.equal(isCallsCampaign(booking), false);
+    assert.equal(callerFollowUpSkipsCanonMinGap(booking), false);
+    assert.equal(callerFollowUpSkipsStaffingFloor(booking), false);
+    assert.equal(callerFollowUpForbidsStatusWrite(booking), false);
+    assert.equal(callerFollowUpExemptFromSenderTopUp(booking), false);
+    assert.equal(
+      campaignHasSendGapRule({ ...booking, status: "ACTIVE" }),
+      true,
+      "Booking Follow Up keeps the D304 10-minute gap",
+    );
+    assert.equal(
+      campaignHasSendWindowRule({ ...booking, status: "ACTIVE" }),
+      false,
+      "D306 already leaves the Booking Follow Up window alone",
+    );
+    assert.equal(isCallerFollowUpCampaign(gabeCallsDeepRoots), true);
+    assert.equal(callerFollowUpSkipsCanonMinGap(gabeCallsDeepRoots), true);
+  });
+
+  it("does not treat CAYDEN-SG as a class sender, so POD-A is not stripped", () => {
+    assert.equal(isCaydenSgSeat(cayden), true);
+    assert.equal(isCaydenSgSeat({ tags: [{ tag_name: "POD-A" }] }), false);
+    assert.equal(isCallerFollowUpSender(cayden), false);
+    assert.equal(isCallerFollowUpSupplyBlocked(cayden), false);
+    assert.equal(callerFollowUpMustSkipPodTags(cayden), false);
+    assert.equal(callerFollowUpMustKeepEmptySignature(cayden), false);
+    assert.equal(callerFollowUpMustKeepFromName(cayden), false);
+    assert.equal(callerFollowUpSkipsRestCycle(cayden), false);
+  });
+
+  it("allows CAYDEN-SG only on Booking Follow Up and never fans it out", () => {
+    assert.equal(
+      callerFollowUpMayAttach({ account: cayden, campaign: booking }).ok,
+      true,
+    );
+    assert.equal(
+      callerFollowUpMayAttach({ account: cayden, campaign: regular }).ok,
+      false,
+    );
+    assert.equal(
+      callerFollowUpMayAttach({ account: cayden, campaign: gabeCallsDeepRoots }).ok,
+      false,
+    );
+    assert.equal(caydenSgRestMayDetach(cayden, booking), false);
+    assert.equal(caydenSgRestMayDetach(cayden, regular), true);
+    assert.equal(
+      caydenSgRestMayDetach({ tags: [{ tag_name: "POD-A" }] }, booking),
+      true,
     );
   });
 });

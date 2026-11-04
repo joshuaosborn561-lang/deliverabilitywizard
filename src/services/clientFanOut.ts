@@ -18,8 +18,10 @@ import {
   callerFollowUpMayAttach,
   callerFollowUpPolicyFromConfig,
   isCallerFollowUpCampaign,
+  isCallerFollowUpMembershipCampaign,
   isCallerFollowUpSender,
   isCallerFollowUpSupplyBlocked,
+  isCaydenSgSeat,
 } from "../lib/callerFollowUp.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
@@ -108,6 +110,14 @@ export class ClientFanOutService {
     );
 
     const classPolicy = callerFollowUpPolicyFromConfig(this.config);
+    // D324 — a Booking Follow Up (or Gabe Calls) link does not make
+    // the seat a member of that campaign's client.
+    const membershipExemptIds = new Set<number>();
+    for (const campaign of campaigns as SmartleadCampaign[]) {
+      if (isCallerFollowUpMembershipCampaign(campaign, classPolicy)) {
+        membershipExemptIds.add(campaign.id);
+      }
+    }
     const activeByGroup = new Map<string, SmartleadCampaign[]>();
     for (const campaign of campaigns as SmartleadCampaign[]) {
       if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") continue;
@@ -177,6 +187,12 @@ export class ClientFanOutService {
           result.skipped.push(`${email}: canary fleet lock (D54/D238)`);
           continue;
         }
+        // D324 — before HOLD-UNTIL. The 2099 hold is a stopgap; the
+        // seat still must not fan out once that tag is gone.
+        if (isCaydenSgSeat(account)) {
+          result.skipped.push(`${email}: CAYDEN-SG never fans out (D324)`);
+          continue;
+        }
         // CALLER FOLLOW-UP senders (D242/D244) never fan out onto
         // regular client campaigns. Class attach is dedicated below.
 
@@ -225,6 +241,7 @@ export class ClientFanOutService {
           campaignClientById,
           clientsById,
           groupIsBcp,
+          membershipExemptIds,
         );
         if (!belongs) continue;
         if (isOffWeekPodSeat(account, now)) {
@@ -580,9 +597,13 @@ export class ClientFanOutService {
     campaignClientById: Map<number, number | null | undefined>,
     clientsById: Map<number, SmartleadClientRecord>,
     groupIsBcp = false,
+    membershipExemptIds: ReadonlySet<number> = new Set(),
   ): boolean {
     const email = accountEmail(account)?.toLowerCase() ?? "";
     const domain = email.split("@")[1] ?? "";
+    const conferringIds = campaignIdsOf(account).filter(
+      (id) => !membershipExemptIds.has(id),
+    );
 
     // D99 — a BCP-owned domain belongs on BCP campaigns even when the
     // mailbox has no client_id (or the campaigns are tagged id:N).
@@ -591,14 +612,17 @@ export class ClientFanOutService {
     if (groupKey === "bcp") {
       return (
         isBcpOwnedDomain(domain) ||
-        campaignIdsOf(account).some((id) => groupIds.has(id))
+        conferringIds.some((id) => groupIds.has(id))
       );
     }
 
     if (groupKey.startsWith("id:")) {
       const clientId = Number(groupKey.slice(3));
+      // D324 — Booking Follow Up / Gabe Calls memberships are not a
+      // client. Drop them before resolve so a seat with no client_id
+      // is not adopted by the follow-up campaign's client.
       const resolved = resolveAccountClient(
-        account,
+        { ...account, campaign_ids: conferringIds, campaigns: undefined },
         campaignClientById,
         clientsById,
       );
@@ -616,7 +640,7 @@ export class ClientFanOutService {
         assignedReason: seat?.reason,
       });
       if (preferred === clientId) return true;
-      return campaignIdsOf(account).some(
+      return conferringIds.some(
         (id) => campaignClientById.get(id) === clientId,
       );
     }

@@ -19039,7 +19039,6 @@ describe("owner intent — D322 canon-consistent merge gate", () => {
     const canon = readFileSync("CANON.md", "utf8");
     const decisions = readFileSync("DECISIONS.md", "utf8");
     const gate = readFileSync("src/lib/lockedCanonGate.ts", "utf8");
-    assert.match(canon, /Canon as of \*\*D322\*\*/, "CANON.md is not dated D322");
     assert.match(canon, /\*\*D322\.\*\*/, "CANON.md lost the D322 blurb");
     assert.match(decisions, /## D322 — /, "DECISIONS.md has no D322 entry");
     assert.match(decisions, /^\| D322 \|/m, "status index has no D322 row (D127)");
@@ -19154,5 +19153,42 @@ describe("owner intent — D321 LOCKED every inbox has a name", () => {
       /removeEmailAccountsFromCampaign|updateCampaignStatus|\/status/,
       "the D321 sweep replaces names; it never unlinks or touches status.",
     );
+  });
+});
+
+describe("owner intent — D324 CAYDEN-SG stays on Booking Follow Up", () => {
+  it("D324: membership only, no D242 gap or POD strip, rebalance locks the tag", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const [canon, decisions, follow, fanout, pods, rest] = await Promise.all([
+      read("../../CANON.md"),
+      read("../../DECISIONS.md"),
+      read("../lib/callerFollowUp.ts"),
+      read("../services/clientFanOut.ts"),
+      read("../services/podTags.ts"),
+      read("../services/clientRest.ts"),
+    ]);
+    const {
+      callerFollowUpMustSkipPodTags,
+      callerFollowUpSkipsCanonMinGap,
+      isCallerFollowUpCampaign,
+      isCallerFollowUpMembershipCampaign,
+      isCaydenSgSeat,
+    } = await import("../lib/callerFollowUp.js");
+    const booking = { id: 1, name: "Booking Follow Up - Bolder Cyber Partners" };
+    const cayden = { tags: [{ tag_name: "CAYDEN-SG" }, { tag_name: "POD-A" }] };
+    assert.equal(isCallerFollowUpMembershipCampaign(booking), true);
+    assert.equal(isCallerFollowUpCampaign(booking), false);
+    assert.equal(callerFollowUpSkipsCanonMinGap(booking), false);
+    assert.equal(isCaydenSgSeat(cayden), true);
+    assert.equal(callerFollowUpMustSkipPodTags(cayden), false);
+    assert.match(canon, /Canon as of \*\*D324\*\*/);
+    assert.match(canon, /CAYDEN-SG/);
+    assert.match(decisions, /## D324 — /);
+    assert.match(decisions, /^\| D324 \|/m);
+    assert.match(follow, /isCallerFollowUpMembershipCampaign/);
+    assert.match(fanout, /CAYDEN-SG never fans out/);
+    assert.match(pods, /isCaydenSgSeat/);
+    assert.match(rest, /caydenSgRestMayDetach/);
   });
 });

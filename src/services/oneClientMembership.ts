@@ -27,6 +27,7 @@ import {
   callerFollowUpMayAttach,
   callerFollowUpPolicyFromConfig,
   isCallerFollowUpCampaign,
+  isCallerFollowUpMembershipCampaign,
 } from "../lib/callerFollowUp.js";
 import { isGabeFollowUpCampaign, pocClientId } from "../lib/pocClient.js";
 import { senderIsAttachBlocked } from "../lib/attachBlock.js";
@@ -239,7 +240,7 @@ export class OneClientMembershipService {
           shell: campaign ? isAnyShellCampaign(campaign) : false,
           protected: campaign
             ? isGabeFollowUpCampaign(campaign) ||
-              isCallerFollowUpCampaign(
+              isCallerFollowUpMembershipCampaign(
                 campaign,
                 callerFollowUpPolicyFromConfig(this.config),
               )

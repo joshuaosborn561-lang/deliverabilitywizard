@@ -16,7 +16,7 @@ import { isGabeVmReserved, isLockedCanarySeat } from "./canaryLock.js";
 import { isAnyShellCampaign } from "./canaryShell.js";
 import {
   callerFollowUpPolicyFromConfig,
-  isCallerFollowUpCampaign,
+  isCallerFollowUpMembershipCampaign,
 } from "./callerFollowUp.js";
 import { isGenericMailbox } from "./clientInbox.js";
 import { clientNamedOwnerForDomain } from "./clientNamedDomain.js";
@@ -79,7 +79,12 @@ export function seatSitsOnForeignNamedCampaign(input: {
     const campaign = input.campaignById.get(id);
     if (!campaign) continue;
     if (isAnyShellCampaign(campaign)) continue;
-    if (isCallerFollowUpCampaign(campaign, callerFollowUpPolicyFromConfig())) {
+    if (
+      isCallerFollowUpMembershipCampaign(
+        campaign,
+        callerFollowUpPolicyFromConfig(),
+      )
+    ) {
       continue;
     }
     const cid = campaign.client_id;

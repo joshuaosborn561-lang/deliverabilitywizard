@@ -310,6 +310,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D320 | Live | lead-runout budget: the 6-hour monitor chain's `lead-runout` walks every ACTIVE campaign serially (2-3 Smartlead reads each, normal lane) and timed out at 10m five times running (last ok 2:02am CT). Reads now retry once, the walk stops at 7 minutes and resumes where it stopped next pass (cursor in memory). No alert rule, threshold, campaign or WRITE_ENABLED change. LOCKED section unchanged. |
 | D321 | Live — LOCKED | Every inbox has a name (Josh, 2026-10-29: "Every inbox has a name. Canon that it can never have that again. If no name just send as the company. But everyone should have a name."). A blank or placeholder from_name / signature name (Pool User, Generic, Canary, test, one word, local part) is never written: a seat sends as its Generics Ledger / InboxKit persona, else as the client company name (signature = company). No assign is refused for a missing persona. A 10-minute sweep replaces any placeholder on a non-STOPPED campaign (name + signature only; write flag off until Josh merges); signature checks treat a blank/placeholder name as a mismatch; release restores the persona. Prod incident 2026-10-29: "Pool User Emcor" sent to a prospect. |
 | D322 | Live | Locked-canon CI passes canon-consistent PRs without Josh's approval. It fails when the LOCKED section, `docs/LOCKED-CANON.md`, or `src/lib/lockedCanon.ts` changes unless the PR has the `canon-change` label approved by Josh (`joshuaosborn561-lang` applied it, or he approved the PR while it is present). Josh stays CODEOWNER of those definition files. Implementation paths, including `src/guards/lockedCanon.test.ts`, are not Josh-only. Required checks stay `check` and `locked-canon`; code-owner review is not a merge gate. Unauthorized locked-canon edits never auto-merge. POD-40, Generics Ledger, and ESP matching unchanged. |
+| D324 | Live | CAYDEN-SG seats stay on Booking Follow Up campaigns only. That membership does not confer client membership, so fan-out does not spread them. They are not D242 class senders: POD-A stays, and Booking Follow Up keeps the 10-minute gap and its current window. D316 does not retag them. LOCKED section unchanged. |
 
 ---
 
@@ -11569,3 +11570,50 @@ the `locked-canon` job). Does not reverse the locked rules.
 
 **Guards.** `src/lib/lockedCanonGate.test.ts`,
 `src/guards/lockedCanon.test.ts`, `src/guards/canon.test.ts` D322.
+
+## D324 — CAYDEN-SG stays on Booking Follow Up
+
+**Date.** 2026-11-04.
+
+**Decision.** Cayden's named SalesGlider sender seats, tagged
+`CAYDEN-SG` (client 345263, also `POD-A` and `WARMUP-GATE-EXEMPT`),
+sit only on campaigns named `Booking Follow Up - <Client>`. They are
+not fanned onto another client's campaigns or onto ordinary
+SalesGlider campaigns, and they are not retagged between POD-A and
+POD-B.
+
+**Rule.**
+
+1. A Booking Follow Up membership does not confer that campaign's
+   client. `accountBelongsToGroup` ignores those campaign ids (and
+   D242 caller follow-up ids) when it decides a seat belongs to a
+   client. One-client marks the membership protected, so it does not
+   peel the seat off Booking Follow Up. A foreign regular campaign is
+   still peeled. `seatSitsOnForeignNamedCampaign` ignores the same
+   membership, so the seat still counts for its real client.
+2. A `CAYDEN-SG` seat never fans out, including after the
+   `HOLD-UNTIL-2099-12-31` stopgap is removed. `callerFollowUpMayAttach`
+   allows it only onto a Booking Follow Up campaign. Client-rest does
+   not unlink it from those campaigns on the off week. It may still
+   unlink the seat from an ordinary campaign once the hold tag is gone.
+3. The D316 named-seat rebalance locks `CAYDEN-SG`. The first-tag pass
+   does not strip `POD-A` / `POD-B` from it.
+
+**Not a D242 class.** Booking Follow Up is recognized for membership
+only. `isCallerFollowUpCampaign` stays the Gabe Calls ids and
+`Gabe Calls |` prefix. That keeps the D304 10-minute gap, the D306
+window exemption already in place, the stray-sender peel, the bridge
+attach path, signature converge, and the breakup-step check off these
+campaigns. `CAYDEN-SG` is not the caller-follow-up sender tag, so
+pod-tags does not strip its POD tag and mailbox settings are not
+frozen the way `GABE-VM-RESERVED` is.
+
+**Amends.** D316's lock list (adds `CAYDEN-SG`; does not amend the 15%
+rule or `mayWritePodTag`). Does not amend D242, D244, D304, or D306.
+
+**Guards.** `src/lib/callerFollowUp.test.ts` (D324),
+`src/services/clientFanOut.test.ts` (D324),
+`src/services/oneClientMembership.test.ts` (D324),
+`src/services/podTags.test.ts` (D324),
+`src/lib/podOwnedInventory.test.ts` (D324),
+`src/guards/canon.test.ts` D324.

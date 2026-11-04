@@ -857,3 +857,114 @@ describe("D139 — staffing never hands the gate its next pull", () => {
     assert.ok(ticks > 0, "fan-out must yield during the skip walk");
   });
 });
+
+describe("ClientFanOutService D324 — CAYDEN-SG and Booking Follow Up", () => {
+  const state = {
+    getPoolMailbox: () => undefined,
+    isCopyCanary: () => false,
+    getRestingInbox: () => undefined,
+    getDomainHistory: () => undefined,
+    listGenericBackfillApprovals: () => ({}),
+  } as unknown as StateStore;
+
+  function service(smartlead: Partial<SmartleadClient>) {
+    return new ClientFanOutService(
+      loadConfig({}),
+      {
+        updateEmailAccount: async () => undefined,
+        ...smartlead,
+      } as unknown as SmartleadClient,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+  }
+
+  it("does not fan a CAYDEN-SG seat onto Parlay or ordinary SalesGlider campaigns", async () => {
+    const adds: Array<[number, number[]]> = [];
+    const result = await service({
+      listCampaigns: async () => [
+        { id: 60, name: "SalesGlider Engagers", status: "ACTIVE", client_id: 345263 },
+        {
+          id: 70,
+          name: "Booking Follow Up - Parlay",
+          status: "ACTIVE",
+          client_id: 80,
+        },
+        { id: 71, name: "Parlay SEG", status: "ACTIVE", client_id: 80 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 200,
+          from_email: "cayden@salesglidermail.test",
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 345263,
+          campaign_ids: [70],
+          tags: [
+            { tag_name: "CAYDEN-SG" },
+            { tag_name: "POD-A" },
+            { tag_name: "WARMUP-GATE-EXEMPT" },
+          ],
+        },
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider" },
+        { id: 80, name: "Parlay" },
+      ],
+      addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+        adds.push([campaignId, [...ids]]);
+      },
+    }).run({ dryRun: false });
+
+    assert.deepEqual(adds, []);
+    assert.equal(result.attached.length, 0);
+    assert.ok(
+      result.skipped.some((line) => line.includes("CAYDEN-SG never fans out")),
+    );
+  });
+
+  it("a Booking Follow Up membership does not confer that client's other campaigns", async () => {
+    const adds: Array<[number, number[]]> = [];
+    await service({
+      listCampaigns: async () => [
+        { id: 60, name: "SalesGlider Engagers", status: "ACTIVE", client_id: 345263 },
+        {
+          id: 70,
+          name: "Booking Follow Up - Parlay",
+          status: "ACTIVE",
+          client_id: 80,
+        },
+        { id: 71, name: "Parlay SEG", status: "ACTIVE", client_id: 80 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 100,
+          from_email: "pat@salesglidermail.test",
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 345263,
+          campaign_ids: [70],
+        },
+        {
+          id: 300,
+          from_email: "nomailboxclient@salesglidermail.test",
+          created_at: "2026-06-01T00:00:00Z",
+          campaign_ids: [70],
+        },
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider" },
+        { id: 80, name: "Parlay" },
+      ],
+      addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+        adds.push([campaignId, [...ids]]);
+      },
+    }).run({ dryRun: false });
+
+    const targets = adds.map(([id]) => id);
+    assert.ok(targets.includes(60), "the SalesGlider seat still reaches its own client");
+    assert.ok(!targets.includes(71), "Booking Follow Up must not confer Parlay");
+    assert.ok(
+      adds.every(([, ids]) => !ids.includes(300)),
+      "a follow-up-only seat with no client_id is not adopted by Parlay",
+    );
+  });
+});

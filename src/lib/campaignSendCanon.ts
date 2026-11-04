@@ -24,7 +24,12 @@
  */
 
 import { isAnyShellCampaign } from "./canaryShell.js";
-import { isCallerFollowUpCampaign } from "./callerFollowUp.js";
+import {
+  isBookingFollowUpCampaign,
+  isCallerFollowUpCampaign,
+} from "./callerFollowUp.js";
+
+export { isBookingFollowUpCampaign };
 import { isWordHuntShellCampaign } from "./wordHuntShell.js";
 
 export const SEND_CANON_GAP_MINS = 10;
@@ -80,13 +85,6 @@ export function isCallsCampaign(campaign: {
 }): boolean {
   if (isCallerFollowUpCampaign(campaign)) return true;
   return String(campaign.name ?? "").includes("Calls |");
-}
-
-/** D306: Booking Follow Up campaigns keep their own send window. */
-export function isBookingFollowUpCampaign(campaign: {
-  name?: string | null;
-}): boolean {
-  return String(campaign.name ?? "").includes("Booking Follow Up");
 }
 
 /** D304 gap applies everywhere except STOPPED and Calls | / D242. */

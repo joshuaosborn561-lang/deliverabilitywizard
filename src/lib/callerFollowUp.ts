@@ -69,6 +69,20 @@ export const CALLER_FOLLOWUP_OWNED_DOMAINS_BY_CAMPAIGN: Readonly<
 
 export const CALLER_FOLLOWUP_OWNED_LOCAL_PART = "gabe";
 
+/**
+ * D324 — Cayden's named SalesGlider seats. Not a D242 class sender:
+ * the tag does not strip POD-A/POD-B, empty the signature, or apply
+ * the 3-minute gap. It only keeps the seat off fan-out / rebalance.
+ */
+export const CAYDEN_SG_SENDER_TAG = "CAYDEN-SG";
+
+/**
+ * D306 already matches this substring so the send window stays put.
+ * D324 uses the same set for membership. The live names are
+ * `Booking Follow Up - <Client>`.
+ */
+export const BOOKING_FOLLOW_UP_NAME_MARK = "Booking Follow Up";
+
 export interface CallerFollowUpPolicy {
   campaignIds: readonly number[];
   namePrefix: string;
@@ -152,6 +166,65 @@ export function isCallerFollowUpCampaign(
   const prefix = policy.namePrefix.trim();
   if (!prefix) return false;
   return String(campaign.name ?? "").startsWith(prefix);
+}
+
+/** D306 / D324 — Booking Follow Up campaigns (window left alone; 10m gap stays). */
+export function isBookingFollowUpCampaign(
+  campaign: { name?: string | null } | null | undefined,
+): boolean {
+  return String(campaign?.name ?? "").includes(BOOKING_FOLLOW_UP_NAME_MARK);
+}
+
+export function isCaydenSgSeat(
+  account:
+    | {
+        tags?: Array<{ tag_name?: unknown; name?: unknown }> | null;
+      }
+    | null
+    | undefined,
+): boolean {
+  if (!account) return false;
+  return mailboxTagNames({ tags: account.tags ?? [] }).some(
+    (name) => name.toUpperCase() === CAYDEN_SG_SENDER_TAG,
+  );
+}
+
+/**
+ * D324 — Gabe Calls (D242) or Booking Follow Up, for membership only.
+ *
+ * Schedule, the 3-minute gap, stray-sender peel, signature lock, and
+ * POD-tag strip stay on `isCallerFollowUpCampaign` / the D242 sender
+ * tag. Booking Follow Up must not pick those up: it keeps the D304
+ * 10-minute gap, and CAYDEN-SG seats keep POD-A.
+ */
+export function isCallerFollowUpMembershipCampaign(
+  campaign:
+    | {
+        id?: number | null;
+        name?: string | null;
+      }
+    | null
+    | undefined,
+  policy: CallerFollowUpPolicy = DEFAULT_CALLER_FOLLOWUP_POLICY,
+): boolean {
+  return (
+    isCallerFollowUpCampaign(campaign, policy) ||
+    isBookingFollowUpCampaign(campaign)
+  );
+}
+
+/**
+ * D324 — client-rest may take a CAYDEN-SG seat off an ordinary
+ * campaign. It may not take one off Booking Follow Up.
+ */
+export function caydenSgRestMayDetach(
+  account: {
+    tags?: Array<{ tag_name?: unknown; name?: unknown }> | null;
+  },
+  campaign: { name?: string | null } | null | undefined,
+): boolean {
+  if (!isCaydenSgSeat(account)) return true;
+  return !isBookingFollowUpCampaign(campaign);
 }
 
 export function isCallerFollowUpSenderTag(
@@ -295,6 +368,15 @@ export function callerFollowUpMayAttach(input: {
   const email = normalizeEmail(
     input.email ?? input.account.from_email ?? input.account.email,
   );
+  // D324 — before the D242 owned/bridge checks. CAYDEN-SG is not a
+  // class sender, so it must not inherit the 3-minute gap or the
+  // POD strip. It also must not be fanned onto a normal campaign.
+  if (isCaydenSgSeat(input.account)) {
+    if (isBookingFollowUpCampaign(input.campaign)) {
+      return { ok: true, reason: "CAYDEN-SG on Booking Follow Up (D324)" };
+    }
+    return { ok: false, reason: "CAYDEN-SG never fans out (D324)" };
+  }
   const classCampaign = isCallerFollowUpCampaign(input.campaign, policy);
   const tagged = isCallerFollowUpSenderTag(input.account, policy);
   const bridge = isCallerFollowUpBridgeSender(input.account);

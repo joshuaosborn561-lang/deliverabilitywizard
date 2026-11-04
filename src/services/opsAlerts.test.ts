@@ -145,7 +145,7 @@ describe("D149 — the stage watchdog pages Slack, once per episode", () => {
   });
 });
 
-describe("D163 — CANON misses page Slack, once per campaign per incident", () => {
+describe("D325 — CANON misses land on the dashboard, once per campaign per incident", () => {
   async function seeded() {
     const s = store();
     await s.load();
@@ -165,14 +165,14 @@ describe("D163 — CANON misses page Slack, once per campaign per incident", () 
     const r = recorder();
     const first = await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
     assert.deepEqual(first.alerted, ["3847794:ugly"]);
-    assert.equal(r.sends.length, 1);
-    assert.equal(r.sends[0].kind, "canon_miss");
-    assert.match(r.sends[0].text, /CANON miss/);
-    assert.match(r.sends[0].text, /TechEvo/);
+    assert.equal(r.sends.length, 0);
+    assert.equal(s.listDeliverabilityAlerts().length, 1);
+    assert.match(s.listDeliverabilityAlerts()[0]!.text, /CANON miss/);
+    assert.match(s.listDeliverabilityAlerts()[0]!.text, /TechEvo/);
 
     const second = await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
     assert.deepEqual(second.alerted, []);
-    assert.equal(r.sends.length, 1, "one page per incident, not one per 15m");
+    assert.equal(s.listDeliverabilityAlerts().length, 1, "one note per incident, not one per 15m");
   });
 
   it("pages again when isolation evaluates INCONCLUSIVE (transition)", async () => {
@@ -192,8 +192,9 @@ describe("D163 — CANON misses page Slack, once per campaign per incident", () 
     });
     const next = await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
     assert.deepEqual(next.alerted, ["3847794:INCONCLUSIVE"]);
-    assert.equal(r.sends.length, 2);
-    assert.match(r.sends[1].text, /INCONCLUSIVE/);
+    assert.equal(r.sends.length, 0);
+    assert.equal(s.listDeliverabilityAlerts().length, 2);
+    assert.match(s.listDeliverabilityAlerts()[1]!.text, /INCONCLUSIVE/);
   });
 
   it("clears the stamp when inbox recovers so a later miss can page", async () => {
@@ -211,7 +212,7 @@ describe("D163 — CANON misses page Slack, once per campaign per incident", () 
     const rec = await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
     assert.deepEqual(rec.recovered, [3847794]);
     assert.equal(s.getCanonMissAlert(3847794), undefined);
-    assert.equal(r.sends.length, 1, "recovery is silent");
+    assert.equal(r.sends.length, 0, "recovery does not page Slack");
   });
 
   it("does not page stale INCONCLUSIVE on any COMPLETED sibling (D165)", async () => {
@@ -269,9 +270,9 @@ describe("D163 — CANON misses page Slack, once per campaign per incident", () 
       ["3847794:INCONCLUSIVE"],
       "skip is by ACTIVE status — both BCP siblings stay quiet",
     );
-    assert.equal(r.sends.length, 1);
-    assert.match(r.sends[0].text, /INCONCLUSIVE/);
-    assert.match(r.sends[0].text, /#3847794/);
+    assert.equal(r.sends.length, 0);
+    assert.match(s.listDeliverabilityAlerts()[0]!.text, /INCONCLUSIVE/);
+    assert.match(s.listDeliverabilityAlerts()[0]!.text, /#3847794/);
     assert.deepEqual(out.recovered.sort(), [3763805, 3763806]);
     assert.equal(s.getCanonMissAlert(3763805), undefined);
     assert.equal(s.getCanonMissAlert(3763806), undefined);
@@ -324,8 +325,8 @@ describe("D163 — CANON misses page Slack, once per campaign per incident", () 
       campaigns: [{ id: 3847794, status: "ACTIVE" }],
     });
     assert.deepEqual(out.alerted, ["3847794:INCONCLUSIVE"]);
-    assert.equal(r.sends.length, 1);
-    assert.match(r.sends[0].text, /INCONCLUSIVE/);
+    assert.equal(r.sends.length, 0);
+    assert.match(s.listDeliverabilityAlerts()[0]!.text, /INCONCLUSIVE/);
   });
 
   it("pages a first-open core checklist hole once", async () => {
@@ -344,12 +345,12 @@ describe("D163 — CANON misses page Slack, once per campaign per incident", () 
     const r = recorder();
     const first = await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
     assert.ok(first.alerted.includes("3847794:findings"));
-    assert.equal(r.sends.length, 1);
-    assert.match(r.sends[0].text, /not sending healthy/);
-    assert.match(r.sends[0].text, /no canary/);
+    assert.equal(r.sends.length, 0);
+    assert.match(s.listDeliverabilityAlerts()[0]!.text, /not sending healthy/);
+    assert.match(s.listDeliverabilityAlerts()[0]!.text, /no canary/);
     const second = await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
     assert.equal(second.alerted.includes("3847794:findings"), false);
-    assert.equal(r.sends.length, 1);
+    assert.equal(s.listDeliverabilityAlerts().length, 1);
   });
 
   it("D180: pages a merge-tag fill miss once with fill rates, then stays silent", async () => {
@@ -370,16 +371,16 @@ describe("D163 — CANON misses page Slack, once per campaign per incident", () 
     const r = recorder();
     const first = await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
     assert.ok(first.alerted.includes("3921647:merge_tag_blank"));
-    assert.equal(r.sends.length, 1);
-    assert.equal(r.sends[0].kind, "ops_alert");
-    assert.match(r.sends[0].text, /merge tags sending blank/);
-    assert.match(r.sends[0].text, /3921647/);
-    assert.match(r.sends[0].text, /gateway_provider/);
-    assert.match(r.sends[0].text, /0\/160/);
-    assert.match(r.sends[0].text, /Do not auto-edit live copy/);
+    assert.equal(r.sends.length, 0);
+    const note = s.listDeliverabilityAlerts()[0]!.text;
+    assert.match(note, /merge tags sending blank/);
+    assert.match(note, /3921647/);
+    assert.match(note, /gateway_provider/);
+    assert.match(note, /0\/160/);
+    assert.match(note, /Do not auto-edit live copy/);
     const second = await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
     assert.equal(second.alerted.includes("3921647:merge_tag_blank"), false);
-    assert.equal(r.sends.length, 1, "one page per incident, not one per 15m");
+    assert.equal(s.listDeliverabilityAlerts().length, 1, "one note per incident, not one per 15m");
   });
 
   it("dry-run pages nothing and stamps nothing", async () => {

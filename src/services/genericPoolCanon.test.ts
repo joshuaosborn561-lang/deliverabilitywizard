@@ -74,10 +74,11 @@ describe("D221 generic-pool canon service", () => {
     assert.equal(state.listGenericSeats().length, 1);
     assert.equal(state.getGenericSeat("ada@getintroduced.info")?.assignedClientId, 77);
     assert.equal(state.getGenericSeat("ada@getintroduced.info")?.reason, GENERIC_ASSIGN_REASON_POD_TOP_UP);
-    assert.equal(sends.length, 1);
-    assert.equal(sends[0]!.kind, "canon_miss");
-    assert.match(sends[0]!.text, /generic pool assignment is wrong/);
-    assert.doesNotMatch(sends[0]!.text, /—/);
+    assert.equal(sends.length, 0);
+    const notes = state.listDeliverabilityAlerts();
+    assert.equal(notes.length, 1);
+    assert.match(notes[0]!.text, /generic pool assignment is wrong/);
+    assert.doesNotMatch(notes[0]!.text, /—/);
 
     const second = await service.run({
       inventory: {
@@ -100,7 +101,8 @@ describe("D221 generic-pool canon service", () => {
       } as never,
     });
     assert.equal(second.alerted.length, 0);
-    assert.equal(sends.length, 1);
+    assert.equal(sends.length, 0);
+    assert.equal(state.listDeliverabilityAlerts().length, 1);
 
     const cleared = await service.run({
       inventory: {
@@ -165,8 +167,9 @@ describe("D221 generic-pool canon service", () => {
       } as never,
     });
     assert.ok(result.findings.some((line) => line.startsWith("generic_multi_client:")));
-    assert.equal(sends.length, 1);
-    assert.match(genericPoolFindingAlertText(result.findings), /D221/);
+    assert.equal(sends.length, 0);
+    assert.equal(state.listDeliverabilityAlerts().length, 1);
+    assert.match(state.listDeliverabilityAlerts()[0]!.text, /D221/);
     await rm(dir, { recursive: true, force: true });
   });
 });

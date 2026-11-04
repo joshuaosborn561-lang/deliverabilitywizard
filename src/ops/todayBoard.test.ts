@@ -64,9 +64,9 @@ describe("today board", () => {
     assert.equal(board.rows[0]?.cells.placement.failures.length, 2);
     assert.equal(board.hourlySweep, "on");
     assert.equal(board.canonCheck, "every 15 min");
-    assert.equal(board.alertsLabel, "Slack");
+    assert.equal(board.alertsLabel, "Dashboard");
     assert.match(campaignSettingsHint(), /Mon–Thu 8a–7p ET/);
-    assert.match(board.columns.find((column) => column.id === "isolation")?.hint ?? "", /queues isolation/);
+    assert.match(board.columns.find((column) => column.id === "isolation")?.hint ?? "", /rests 4 weeks, then burn/);
     assert.equal(board.lastSweepAt, "2026-11-04T17:00:00.000Z");
   });
 

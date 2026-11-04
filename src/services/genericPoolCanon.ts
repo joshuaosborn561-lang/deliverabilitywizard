@@ -230,17 +230,15 @@ export class GenericPoolCanonService {
         );
         const poolFresh = fresh.filter((line) => !line.startsWith("canary_"));
         if (canaryFresh.length) {
-          await this.slack.send(
+          this.state.noteDeliverabilityAlert(
+            "generic-pool:canary",
             canaryLockAlertText(canaryFresh),
-            undefined,
-            "canon_miss",
           );
         }
         if (poolFresh.length) {
-          await this.slack.send(
+          this.state.noteDeliverabilityAlert(
+            "generic-pool:findings",
             genericPoolFindingAlertText(poolFresh),
-            undefined,
-            "canon_miss",
           );
         }
         const keys = findingKeys(fresh);

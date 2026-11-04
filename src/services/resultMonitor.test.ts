@@ -87,11 +87,13 @@ describe("ResultMonitor queues isolation from ugly same-ESP (D158)", () => {
     );
     const result = await monitor.run();
 
-    const suspect = state.listCopySuspects()[0];
-    assert.ok(suspect, "expected a copy suspect");
-    assert.equal(pages.length, 1, "first same-ESP under 80% pages Slack");
-    assert.equal(suspect.campaignId, AIRPODS.id);
-    assert.match(String(suspect.reason), /Canary-copy same-ESP/);
+    const rest = state.listPlacementRestBurns()[0];
+    assert.ok(rest, "expected a four-week rest");
+    assert.equal(rest.campaignId, AIRPODS.id);
+    assert.equal(rest.phase, "rest");
+    assert.equal(pages.length, 0, "under 80% does not page Slack");
+    assert.equal(state.listCopySuspects().length, 0);
+    assert.match(state.listDeliverabilityAlerts()[0]?.text ?? "", /rest 4 weeks, then burn/);
     assert.equal(result.lowDeliverabilityAlerts, 1);
     assert.equal(result.errors.length, 0);
   });
@@ -132,7 +134,8 @@ describe("ResultMonitor queues isolation from ugly same-ESP (D158)", () => {
       state,
     );
     const result = await monitor.run();
-    assert.equal(result.lowDeliverabilityAlerts, 0);
+    assert.equal(result.lowDeliverabilityAlerts, 1);
+    assert.equal(state.listPlacementRestBurns()[0]?.campaignId, AIRPODS.id);
     assert.equal(state.listCopySuspects().length, 1);
     assert.ok(state.listCopySuspects()[0]?.evaluatedAt);
   });
@@ -185,8 +188,8 @@ describe("ResultMonitor queues isolation from ugly same-ESP (D158)", () => {
     );
     const result = await monitor.run();
     assert.equal(result.lowDeliverabilityAlerts, 1);
-    const suspect = state.listCopySuspects()[0];
-    assert.equal(suspect?.evaluatedAt, undefined);
+    assert.equal(state.listPlacementRestBurns()[0]?.phase, "rest");
+    assert.equal(state.listCopySuspects()[0]?.evaluatedAt, "2026-08-26T12:05:00.000Z");
   });
 
   it("does not re-queue INCONCLUSIVE on a COMPLETED campaign (D165)", async () => {
@@ -306,9 +309,9 @@ describe("ResultMonitor queues isolation from ugly same-ESP (D158)", () => {
     );
     const result = await monitor.run();
     assert.ok(fetched.includes("526826"), "copy-canary id must be fetched");
-    const suspect = state.listCopySuspects().find((row) => row.campaignId === AIRPODS.id);
-    assert.ok(suspect, "0% canary under copyCanaries must queue isolation");
-    assert.match(String(suspect.reason), /Canary-copy same-ESP/);
+    const rest = state.listPlacementRestBurns().find((row) => row.campaignId === AIRPODS.id);
+    assert.ok(rest, "0% canary under copyCanaries starts the rest");
+    assert.equal(rest.phase, "rest");
     assert.equal(result.lowDeliverabilityAlerts, 1);
   });
 

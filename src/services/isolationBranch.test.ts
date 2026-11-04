@@ -189,19 +189,19 @@ describe("IsolationBranchService placement queue (D158)", () => {
 
     const result = await branch.run();
 
-    const suspect = state.listCopySuspects().find((row) => row.campaignId === AIRPODS.id);
-    assert.ok(suspect, "canary 0% must mark the live campaign as a copy suspect");
-    assert.match(String(suspect.reason), /Canary-copy same-ESP/);
-    assert.deepEqual(evaluated, [AIRPODS.id]);
-    assert.equal(result.copy, 1);
-    assert.deepEqual(teardowns, [AIRPODS.id], "COPY starts the word hunt");
-    assert.ok(suspect.evaluatedAt, "terminal COPY stamps evaluatedAt");
+    const rest = state.listPlacementRestBurns().find((row) => row.campaignId === AIRPODS.id);
+    assert.ok(rest, "canary 0% starts a four-week rest");
+    assert.equal(rest.phase, "rest");
+    assert.deepEqual(evaluated, []);
+    assert.equal(result.copy, 0);
+    assert.deepEqual(teardowns, []);
     const score = state.listPlacementScores().find((row) => row.campaignId === AIRPODS.id);
     assert.ok(score, "15-minute on-ramp persists the same-ESP reading");
     assert.equal(score.source, "canary-copy");
     assert.equal(score.inboxPercent, 0);
-    assert.ok(placementPages.length >= 1, "first under-bar reading pages Slack");
-    assert.ok(isolationPages.includes("COPY"), "COPY isolation pages Slack (D163)");
+    assert.equal(placementPages.length, 0, "under 80% does not page Slack");
+    assert.equal(isolationPages.includes("COPY"), false);
+    assert.match(state.listDeliverabilityAlerts()[0]?.text ?? "", /rest 4 weeks, then burn/);
   });
 
   it("does not re-hunt on the next tick after a terminal verdict", async () => {
@@ -216,16 +216,14 @@ describe("IsolationBranchService placement queue (D158)", () => {
     assert.equal(second.evaluated, 0);
   });
 
-  it("re-queues after COPY when the latest run is INCONCLUSIVE (D164)", async () => {
+  it("does not restart the rest or open a word hunt when the latest run is INCONCLUSIVE", async () => {
     const { branch, state, evaluated } = await buildBranch({
       knownGoodInbox: 95,
       canaryInbox: 0,
     });
     await branch.run();
-    const afterCopy = state
-      .listCopySuspects()
-      .find((row) => row.campaignId === AIRPODS.id);
-    assert.ok(afterCopy?.evaluatedAt, "COPY stamps evaluatedAt");
+    const first = state.listPlacementRestBurns().find((row) => row.campaignId === AIRPODS.id);
+    assert.ok(first);
 
     state.upsertIsolationRun({
       id: "later-inconclusive",
@@ -240,15 +238,11 @@ describe("IsolationBranchService placement queue (D158)", () => {
     });
 
     evaluated.length = 0;
-    const second = await branch.run();
-    assert.deepEqual(evaluated, [AIRPODS.id], "Goliath Education hole: must re-evaluate");
-    assert.ok(second.evaluated >= 1);
-    const after = state
-      .listCopySuspects()
-      .find((row) => row.campaignId === AIRPODS.id);
-    assert.ok(
-      after && (after.evaluatedAt === undefined || after.evaluatedAt),
-      "re-queue cleared the sticky evaluatedAt long enough to evaluate",
+    await branch.run();
+    assert.deepEqual(evaluated, []);
+    assert.equal(
+      state.listPlacementRestBurns().find((row) => row.campaignId === AIRPODS.id)?.startedAt,
+      first.startedAt,
     );
   });
 
@@ -445,17 +439,31 @@ describe("IsolationBranchService placement queue (D158)", () => {
   it("does not blindly re-eval COPY/INFRA when hasOpenIsolation says owned", async () => {
     const { branch, state, evaluated } = await buildBranch({
       knownGoodInbox: 95,
-      canaryInbox: 0,
+      canaryInbox: 95,
     });
-    await branch.run();
-    evaluated.length = 0;
-    const owned = state.listCopySuspects().find((row) => row.campaignId === AIRPODS.id);
-    assert.ok(owned?.evaluatedAt);
-    assert.equal(state.latestIsolationRunForCampaign(AIRPODS.id)?.verdict, "COPY");
-
+    state.markCopySuspect({
+      campaignId: AIRPODS.id,
+      campaignName: AIRPODS.name,
+      at: "2026-08-26T12:00:00.000Z",
+      evaluatedAt: "2026-08-26T12:05:00.000Z",
+      reason: "copy",
+    });
+    state.upsertIsolationRun({
+      id: "owned-copy",
+      campaignId: AIRPODS.id,
+      campaignName: AIRPODS.name,
+      startedAt: "2026-08-26T12:00:00.000Z",
+      updatedAt: "2026-08-26T12:05:00.000Z",
+      control: "CLEAN",
+      verdict: "COPY",
+      campaignInSpam: true,
+      reason: "copy",
+      teardownStarted: true,
+    });
     const second = await branch.run();
     assert.deepEqual(evaluated, []);
     assert.equal(second.evaluated, 0);
+    assert.ok(state.listCopySuspects().find((row) => row.campaignId === AIRPODS.id)?.evaluatedAt);
   });
 
   it("D261: prunes a deleted campaign score instead of counting it as a hole", async () => {
@@ -578,13 +586,13 @@ describe("IsolationBranchService placement queue (D158)", () => {
       "isolation-branch must never hold-pause a campaign",
     );
     const result = await branch.run();
+    assert.equal(evaluated.includes(campaign.id), false);
     assert.ok(
-      evaluated.includes(campaign.id),
-      `0% stored score must start isolation: evaluated=${evaluated.join(",")}`,
+      state.listPlacementRestBurns().some((row) => row.campaignId === campaign.id),
+      "0% stored score starts the four-week rest",
     );
-    assert.ok(state.listCopySuspects().some((row) => row.campaignId === campaign.id));
-    assert.ok(state.latestIsolationRunForCampaign(campaign.id));
-    assert.ok(result.evaluated >= 1);
+    assert.equal(result.evaluated, 0);
+    assert.equal(state.latestIsolationRunForCampaign(campaign.id), undefined);
   });
 
   it("heals a missing copy-canary testId so unwarmed scoring can finish", async () => {

@@ -9,7 +9,9 @@ import { findingKind } from "../lib/canonCompliance.js";
 import { canDecideIsolationAction } from "../lib/isolationActors.js";
 import type { CampaignCheckRecord } from "../lib/campaignCheck.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
-import type { OpsAuditRecord, SpendApprovalRecord } from "../state/store.js";
+import type { PlacementRestBurn } from "../lib/placementRestBurn.js";
+import { placementRestText } from "../lib/placementRestBurn.js";
+import type { DeliverabilityAlertRecord, OpsAuditRecord, SpendApprovalRecord } from "../state/store.js";
 import {
   copyChangeText,
   scoreSpamAssassin,
@@ -58,6 +60,8 @@ export function buildFixQueue(input: {
   isolation: IsolationActionRecord[];
   checks: CampaignCheckRecord[];
   audit: OpsAuditRecord[];
+  alerts?: DeliverabilityAlertRecord[];
+  restBurns?: PlacementRestBurn[];
 }): FixQueue {
   const items: FixQueueItem[] = [];
   const hidden = rejectedIds(input.audit);
@@ -102,6 +106,36 @@ export function buildFixQueue(input: {
       spamAssassin: scored,
       approveLabel: "Approve",
       approveDisabled: !roleOk || blocked,
+      rejectLabel: "Reject",
+    });
+  }
+
+  for (const burn of input.restBurns ?? []) {
+    items.push({
+      id: `rest:${burn.campaignId}`,
+      filter: "audit",
+      title: placementRestText(burn),
+      subtitle: burn.phase === "burn" ? "Burn due" : "Resting",
+      clientName: clientFromText(burn.campaignName),
+      spamAssassin: null,
+      approveLabel: "Fix",
+      approveDisabled: true,
+      rejectLabel: "Reject",
+    });
+  }
+
+  for (const alert of input.alerts ?? []) {
+    const id = `alert:${alert.key}`;
+    if (items.some((item) => item.id === id)) continue;
+    items.push({
+      id,
+      filter: "audit",
+      title: alert.text.split("\n")[0]?.slice(0, 180) || "Deliverability alert",
+      subtitle: "Dashboard only",
+      clientName: "",
+      spamAssassin: null,
+      approveLabel: "Fix",
+      approveDisabled: true,
       rejectLabel: "Reject",
     });
   }

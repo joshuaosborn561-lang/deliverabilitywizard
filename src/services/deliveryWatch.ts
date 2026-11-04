@@ -3,7 +3,6 @@ import type { SlackClient } from "../clients/slack.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import {
   addUtcDays,
-  nyDateLabel,
   oooFromStatistics,
   statsFromAnalytics,
   ymdUtc,
@@ -111,18 +110,10 @@ export class DeliveryWatchService {
               run.verdict === "INCONCLUSIVE") &&
             this.state.getCanonMissAlert(campaign.id) !== run.verdict
           ) {
-            await this.slack.notifyIsolationVerdict({
-              campaignName: campaign.name,
-              dateLabel: nyDateLabel(),
-              verdict: run.verdict,
-              reason: run.reason,
-              repliesFrom: watch.repliesFrom,
-              repliesTo: watch.repliesTo,
-              oooFrom: watch.oooFrom,
-              oooTo: watch.oooTo,
-              bounceFlat: true,
-              teardownStarted: run.teardownStarted,
-            });
+            this.state.noteDeliverabilityAlert(
+              `verdict:${campaign.id}:${run.verdict}`,
+              `${campaign.name} #${campaign.id}: ${run.verdict} — ${run.reason}`.slice(0, 500),
+            );
             this.state.setCanonMissAlert(campaign.id, run.verdict);
           }
         }

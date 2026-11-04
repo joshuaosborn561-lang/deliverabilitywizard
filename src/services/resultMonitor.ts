@@ -19,10 +19,9 @@ import {
 } from "../lib/blacklistDiagnosis.js";
 import {
   liveCampaignForPlacementTrigger,
-  placementSuspectReason,
   sameEspInboxUgly,
-  shouldRequeueIsolation,
 } from "../lib/placementSuspect.js";
+import { planPlacementRestBurn } from "../lib/placementRestBurn.js";
 import { prioritizeTestIdsForReports } from "../lib/testIdPriority.js";
 import type { StateStore } from "../state/store.js";
 import type {
@@ -346,43 +345,23 @@ export class ResultMonitor {
       return 0;
     }
 
-    const existing = this.state
-      .listCopySuspects()
-      .find((row) => row.campaignId === target.campaignId);
-    const openRun = this.state.latestIsolationRunForCampaign(target.campaignId);
-    if (
-      !shouldRequeueIsolation({
-        existing,
-        openRun,
-        status: campaign?.status,
-      })
-    ) {
-      return 0;
-    }
-
-    this.state.markCopySuspect({
-      campaignId: target.campaignId,
-      campaignName: target.campaignName,
-      at: new Date().toISOString(),
-      reason: placementSuspectReason(
-        target.source,
-        providers,
-        this.config.remediationInboxThreshold,
-      ),
-      evaluatedAt: undefined,
-    });
-    if (this.state.getCanonMissAlert(target.campaignId) !== "ugly") {
-      await this.slack.notifyPlacementResult({
-        testName: test?.test_name,
-        testId,
-        threshold: this.config.remediationInboxThreshold,
-        providers,
-        remediationThreshold: this.config.remediationInboxThreshold,
-      });
-      this.state.setCanonMissAlert(target.campaignId, "ugly");
-    }
+    if (String(campaign?.status ?? "").toUpperCase() !== "ACTIVE") return 0;
+    const at = new Date().toISOString();
+    const started = this.state.notePlacementRestBurn(
+      planPlacementRestBurn({
+        campaignId: target.campaignId,
+        campaignName: target.campaignName || `Campaign ${target.campaignId}`,
+        at,
+      }),
+    );
+    if (!started) return 0;
+    this.state.noteDeliverabilityAlert(
+      `rest:${target.campaignId}`,
+      `${target.campaignName} #${target.campaignId}: same-ESP under ${this.config.remediationInboxThreshold}% — rest 4 weeks, then burn`,
+      at,
+    );
     console.log(
-      `[monitor] Queued isolation for #${target.campaignId} from ${target.source}: ${providers
+      `[monitor] Rest then burn for #${target.campaignId} from ${target.source}: ${providers
         .filter((p) => p.inboxPercent < this.config.remediationInboxThreshold)
         .map((p) => `${p.name} ${p.inboxPercent.toFixed(1)}%`)
         .join(", ")}`,

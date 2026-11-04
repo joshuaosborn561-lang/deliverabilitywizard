@@ -22,7 +22,7 @@ import {
   type ProviderInboxSplit,
 } from "../lib/copySignal.js";
 import { campaignProof } from "../lib/isolationProof.js";
-import { nyDateLabel } from "../lib/campaignDayStats.js";
+import { planPlacementRestBurn } from "../lib/placementRestBurn.js";
 import type { IsolationRunRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
@@ -36,7 +36,6 @@ import {
   isTerminalIsolationVerdict,
   liveCampaignForPlacementTrigger,
   minSameEspInbox,
-  placementSuspectReason,
   sameEspInboxUgly,
   shouldRequeueIsolation,
 } from "../lib/placementSuspect.js";
@@ -502,16 +501,10 @@ export class IsolationBranchService {
         pageInconclusive) &&
       this.state.getCanonMissAlert(campaignId) !== decided.verdict
     ) {
-      await this.slack.notifyIsolationVerdict({
-        campaignName: campaign.name,
-        clientName: campaign.name,
-        dateLabel: nyDateLabel(),
-        verdict: decided.verdict,
-        reason: decided.reason,
-        teardownStarted: run.teardownStarted,
-        infraSummary: summarizeInfra(infraCheck),
-        proof,
-      });
+      this.state.noteDeliverabilityAlert(
+        `verdict:${campaignId}:${decided.verdict}`,
+        `${campaign.name} #${campaignId}: ${decided.verdict} — ${decided.reason}`.slice(0, 500),
+      );
       this.state.setCanonMissAlert(campaignId, decided.verdict);
     }
     if (opts.persist !== false) await this.state.save();
@@ -588,33 +581,16 @@ export class IsolationBranchService {
         Number.isFinite(scoreAgeMs) &&
         scoreAgeMs < PLACEMENT_SCORE_FRESH_MS
       ) {
-        if (
-          existingScore.inboxPercent < this.config.remediationInboxThreshold &&
-          shouldRequeueIsolation({
-            existing: this.state
-              .listCopySuspects()
-              .find((row) => row.campaignId === target.campaignId),
-            openRun: this.state.latestIsolationRunForCampaign(target.campaignId),
-            status: campaign.status,
-          })
-        ) {
-          this.state.markCopySuspect({
-            campaignId: target.campaignId,
-            campaignName: target.campaignName ?? campaign.name,
-            at: new Date().toISOString(),
-            reason: placementSuspectReason(
-              existingScore.source,
-              [
-                {
-                  name: existingScore.source,
-                  inboxPercent: existingScore.inboxPercent,
-                },
-              ],
-              this.config.remediationInboxThreshold,
-            ),
-            evaluatedAt: undefined,
-          });
-          queued += 1;
+        if (existingScore.inboxPercent < this.config.remediationInboxThreshold) {
+          const at = new Date().toISOString();
+          const started = this.state.notePlacementRestBurn(
+            planPlacementRestBurn({
+              campaignId: target.campaignId,
+              campaignName: target.campaignName ?? campaign.name,
+              at,
+            }),
+          );
+          if (started) queued += 1;
         }
         continue;
       }
@@ -641,45 +617,25 @@ export class IsolationBranchService {
       if (!sameEspInboxUgly(splits, this.config.remediationInboxThreshold)) {
         continue;
       }
-      if (
-        !shouldRequeueIsolation({
-          existing: this.state
-            .listCopySuspects()
-            .find((row) => row.campaignId === target.campaignId),
-          openRun: this.state.latestIsolationRunForCampaign(target.campaignId),
-          status: campaign.status,
-        })
-      ) {
-        continue;
-      }
-
-      this.state.markCopySuspect({
-        campaignId: target.campaignId,
-        campaignName: target.campaignName ?? campaign.name,
-        at: new Date().toISOString(),
-        reason: placementSuspectReason(
-          target.source,
-          splits,
-          this.config.remediationInboxThreshold,
-        ),
-        evaluatedAt: undefined,
-      });
+      const at = new Date().toISOString();
+      const started = this.state.notePlacementRestBurn(
+        planPlacementRestBurn({
+          campaignId: target.campaignId,
+          campaignName: target.campaignName ?? campaign.name,
+          at,
+        }),
+      );
+      if (!started) continue;
       queued += 1;
-      if (
-        !this.config.dryRun &&
-        this.state.getCanonMissAlert(target.campaignId) !== "ugly"
-      ) {
-        await this.slack.notifyPlacementResult({
-          testName: test.test_name,
-          testId: tid,
-          threshold: this.config.remediationInboxThreshold,
-          providers: splits,
-          remediationThreshold: this.config.remediationInboxThreshold,
-        });
-        this.state.setCanonMissAlert(target.campaignId, "ugly");
+      if (!this.config.dryRun) {
+        this.state.noteDeliverabilityAlert(
+          `rest:${target.campaignId}`,
+          `${target.campaignName ?? campaign.name} #${target.campaignId}: same-ESP under ${this.config.remediationInboxThreshold}% — rest 4 weeks, then burn`,
+          at,
+        );
       }
       console.log(
-        `[isolation-branch] queued #${target.campaignId} from ${target.source}: ${splits
+        `[isolation-branch] rest then burn #${target.campaignId} from ${target.source}: ${splits
           .map((row) => `${row.name} ${row.inboxPercent.toFixed(0)}%`)
           .join(", ")}`,
       );
@@ -712,31 +668,18 @@ export class IsolationBranchService {
       ) {
         continue;
       }
-      if (
-        !shouldRequeueIsolation({
-          existing: this.state
-            .listCopySuspects()
-            .find((row) => row.campaignId === score.campaignId),
-          openRun: this.state.latestIsolationRunForCampaign(score.campaignId),
-          status: campaign.status,
-        })
-      ) {
-        continue;
-      }
-      this.state.markCopySuspect({
-        campaignId: score.campaignId,
-        campaignName: score.campaignName ?? campaign.name,
-        at: new Date().toISOString(),
-        reason: placementSuspectReason(
-          score.source,
-          [{ name: score.source, inboxPercent: score.inboxPercent }],
-          this.config.remediationInboxThreshold,
-        ),
-        evaluatedAt: undefined,
-      });
+      const at = new Date().toISOString();
+      const started = this.state.notePlacementRestBurn(
+        planPlacementRestBurn({
+          campaignId: score.campaignId,
+          campaignName: score.campaignName ?? campaign.name,
+          at,
+        }),
+      );
+      if (!started) continue;
       queued += 1;
       console.log(
-        `[isolation-branch] queued #${score.campaignId} from stored ${score.source} ${score.inboxPercent.toFixed(0)}% (D287)`,
+        `[isolation-branch] rest then burn #${score.campaignId} from stored ${score.source} ${score.inboxPercent.toFixed(0)}% (D325)`,
       );
     }
     return queued;

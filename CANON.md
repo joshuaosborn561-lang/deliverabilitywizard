@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D324** (2026-11-04). One page of current truth. When a new
+Canon as of **D325** (2026-11-04). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -9,6 +9,8 @@ guard in `src/guards/meta.test.ts` enforces both).
 and every reversal, and most of it is **superseded**. Do not derive behaviour
 from it. Derive behaviour from this file; use the ledger only to understand
 *why* a rule here exists (each rule cites its decision numbers).
+
+**D325.** A live or canary-copy same-ESP reading under 80% on an ACTIVE campaign starts a 4-week rest, then is burn-due. The /ops dashboard shows that schedule. It does not open a copy-suspect word hunt for that reading and it does not page Slack. Deliverability canon-miss alerts (placement under 80%, checklist holes, merge-tag and breakup misses, generic-pool findings, isolation verdicts) are dashboard notes only. Spend asks, one-tap approvals, the needs-you digest, and stage-overdue pages still use Slack. Burn-due means Josh kills the mailbox; this rule does not auto-delete a domain. Send window stays D306. LOCKED section unchanged.
 
 **D324.** Seats tagged `CAYDEN-SG` (SalesGlider 345263, also `POD-A` and `WARMUP-GATE-EXEMPT`) sit only on `Booking Follow Up - <Client>` campaigns. That membership does not confer the other client's membership, and the seats are not fanned onto that client's other campaigns or onto ordinary SalesGlider campaigns. Booking Follow Up is a caller follow-up for membership only: it is not a D242 class campaign, so it keeps the D304 10-minute gap and the send window D306 already leaves alone, and pod-tags does not strip `POD-A`. The D316 rebalance does not retag these seats. A `HOLD-UNTIL-2099-12-31` tag on them today is a stopgap that blocks attaches; the rules above hold after it is removed. LOCKED section unchanged.
 
@@ -51,8 +53,9 @@ Changes to this section require Josh's explicit approval. PRs that alter it must
 
 Client campaigns send every day, land in inboxes not spam, nothing sits
 silently broken, and clients book meetings. Automation does the babysitting;
-Slack speaks when CANON is out of compliance, a human decision is needed,
-or the day is done. Silent findings are a bug (D163).
+The /ops dashboard speaks when CANON is out of compliance (D325). Slack
+still speaks when a human decision is needed or the day is done.
+Silent findings are a bug (D163, dashboard since D325).
 
 ## Campaign classes
 
@@ -906,27 +909,17 @@ have a name."
   launch bar blocks QA-unpause of a new campaign (D46/D106), the live number
   never rotates (D32/D51). Never use the blended all-ESP score for anything
   (D32). A live or canary-copy same-ESP reading under 80% on an ACTIVE
-  campaign **queues isolation** (copy suspect → COPY word hunt / INFRA
-  sender-domain path), and so does a dominant bounce `content_block`
-  (D158). The score→suspect→evaluate pass runs on the **15-minute
-  health sweep** (D159) so a send-day miss is remediating within one
-  cycle — live % still never rotates (D51). **D287:** a stored 0%
-  canary-copy score queues isolation even when the provider-split
-  pull is skipped as fresh; isolation starts within 30 minutes and
-  never hold-pauses the campaign.   A still-ugly **ACTIVE** campaign whose
-  latest isolation run is INCONCLUSIVE, or whose `evaluatedAt` is set
-  but the latest run is not COPY/INFRA/HEALTHY covering the ugly,
-  **re-queues** (D164). The isolation-branch sweep re-evaluates those
-  existing suspects on the 15-minute loop even when `evaluatedAt` is
-  set and even when the live campaign is PAUSED — placement *new*
-  queue stays ACTIVE-gated. A copy-canary row with emails but no
-  `testId` is healed so `unwarmedCopyFineAcrossEsps` can return a
-  reading. COMPLETED / STOPPED / PAUSED do **not** get
-  isolation INCONCLUSIVE Slack pages or D164 re-queue — they are not
-  sending; PAUSED Slack/re-queue is skipped because D40 never auto-resumes (D165).
-  First detect / mark-suspect and each isolation
-  verdict transition **pages Slack once per campaign per incident**
-  (D163) — not every 15 minutes.
+  campaign **rests 4 weeks, then is burn-due** (D325). It does not open
+  a copy-suspect word hunt for that reading. A dominant bounce
+  `content_block` still queues isolation (D158). The score is read on
+  the **15-minute health sweep** (D159). Live % still never rotates a
+  seat by itself (D51). **D325** replaces the D287 under-80 suspect
+  queue: a stored under-80 canary-copy score starts the same rest, and
+  it never hold-pauses the campaign. The rest clock starts once and is
+  not reset by a later INCONCLUSIVE run (D164's re-queue does not apply
+  to this reading). COMPLETED / STOPPED / PAUSED do not start the rest
+  (D165). CANON / healthy-sending misses** (D163) are noted once per
+  campaign per incident on the dashboard (D325), not Slack.
 - There is **no per-sender bounce pull** (D79 retired D5), **no campaign
   bounce band** (D88 retired D78/D80), **no paused-campaign bounce hunt**
   (D91 retired D29). The D90 bounce loop above is the only bounce actor.

@@ -1,4 +1,6 @@
 import { copyFile, mkdir, rename } from "node:fs/promises";
+import type { PlacementRestBurn } from "../lib/placementRestBurn.js";
+import { placementRestPhase } from "../lib/placementRestBurn.js";
 import path from "node:path";
 import type { CallingSnapshot } from "../ops/callingBoard.js";
 import type { LinkedInSnapshot } from "../ops/linkedinBoard.js";
@@ -371,6 +373,13 @@ export interface AppState {
    */
   canonMissAlerted: Record<string, string>;
   /**
+   * D325 — same-ESP under 80% rests four weeks, then is burn-due.
+   * Dashboard schedule only. No automatic domain deletion.
+   */
+  placementRestBurns: Record<string, PlacementRestBurn>;
+  /** D325 — deliverability alerts for /ops. Not a Slack page. */
+  deliverabilityAlerts: Record<string, DeliverabilityAlertRecord>;
+  /**
    * D85 — zero connected unwarmed-canary mailboxes, reported once instead of
    * as a finding on every ACTIVE campaign. Null when the fleet has at least
    * one connected mailbox.
@@ -458,6 +467,12 @@ export interface AppState {
 }
 
 /** D85 — the single fleet-level fact behind the old 48x canary_inactive. */
+export interface DeliverabilityAlertRecord {
+  key: string;
+  at: string;
+  text: string;
+}
+
 export interface CanaryFleetDownRecord {
   since: string;
   fleetSize: number;
@@ -638,6 +653,47 @@ function parseTenantOutboundBlocks(
       alertedAt: typeof row.alertedAt === "string" ? row.alertedAt : null,
       seededAt: typeof row.seededAt === "string" ? row.seededAt : "",
     };
+  }
+  return out;
+}
+
+function parsePlacementRestBurns(raw: unknown): Record<string, PlacementRestBurn> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, PlacementRestBurn> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== "object") continue;
+    const row = value as Record<string, unknown>;
+    const campaignId = Number(row.campaignId ?? key);
+    const startedAt = typeof row.startedAt === "string" ? row.startedAt : "";
+    const restUntil = typeof row.restUntil === "string" ? row.restUntil : "";
+    const campaignName = String(row.campaignName ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+    if (!Number.isFinite(campaignId) || campaignId <= 0 || !startedAt || !restUntil || !campaignName) {
+      continue;
+    }
+    if (campaignName.includes("@")) continue;
+    out[String(campaignId)] = {
+      campaignId,
+      campaignName,
+      startedAt,
+      restUntil,
+      phase: row.phase === "burn" ? "burn" : "rest",
+    };
+  }
+  return out;
+}
+
+function parseDeliverabilityAlerts(raw: unknown): Record<string, DeliverabilityAlertRecord> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, DeliverabilityAlertRecord> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== "object") continue;
+    const row = value as Record<string, unknown>;
+    const text = String(row.text ?? "")
+      .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted]")
+      .slice(0, 500);
+    const at = typeof row.at === "string" ? row.at : "";
+    if (!text || !at || text.includes("@")) continue;
+    out[key.slice(0, 80)] = { key: key.slice(0, 80), at, text };
   }
   return out;
 }
@@ -888,6 +944,8 @@ const EMPTY_STATE: AppState = {
   stageHealth: {},
   stageAlertedAt: {},
   canonMissAlerted: {},
+  placementRestBurns: {},
+  deliverabilityAlerts: {},
   canaryFleetDown: null,
   campaignStandingPrefs: {},
   deliverabilityDecisions: {},
@@ -1006,6 +1064,8 @@ export class StateStore {
         stageHealth: parsed.stageHealth ?? {},
         stageAlertedAt: parsed.stageAlertedAt ?? {},
         canonMissAlerted: parsed.canonMissAlerted ?? {},
+        placementRestBurns: parsePlacementRestBurns(parsed.placementRestBurns),
+        deliverabilityAlerts: parseDeliverabilityAlerts(parsed.deliverabilityAlerts),
         canaryFleetDown: parsed.canaryFleetDown ?? null,
         campaignStandingPrefs: parsed.campaignStandingPrefs ?? {},
         deliverabilityDecisions: parsed.deliverabilityDecisions ?? {},
@@ -1992,6 +2052,34 @@ export class StateStore {
 
   clearCanonMissStamp(key: string): void {
     delete this.state.canonMissAlerted[key];
+  }
+
+  /**
+   * D325 — start the four-week rest once. A later reading does not
+   * reset the clock. Returns the record when this call started it.
+   */
+  notePlacementRestBurn(record: PlacementRestBurn): PlacementRestBurn | null {
+    const key = String(record.campaignId);
+    if (this.state.placementRestBurns[key]) return null;
+    this.state.placementRestBurns[key] = record;
+    return record;
+  }
+
+  listPlacementRestBurns(now = new Date()): PlacementRestBurn[] {
+    const rows = Object.values(this.state.placementRestBurns);
+    for (const row of rows) {
+      row.phase = placementRestPhase(row, now);
+    }
+    return rows;
+  }
+
+  noteDeliverabilityAlert(key: string, text: string, at = new Date().toISOString()): void {
+    const cleaned = text.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted]").slice(0, 500);
+    this.state.deliverabilityAlerts[key] = { key, at, text: cleaned };
+  }
+
+  listDeliverabilityAlerts(): DeliverabilityAlertRecord[] {
+    return Object.values(this.state.deliverabilityAlerts);
   }
 
   /** D85 — one fleet-level fact instead of a finding per campaign. */

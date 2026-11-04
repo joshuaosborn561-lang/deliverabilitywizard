@@ -175,7 +175,10 @@ export async function alertCanonMisses(input: {
 
   for (const row of fresh) {
     try {
-      await input.slack.send(canonMissText(row), undefined, "canon_miss");
+      input.store.noteDeliverabilityAlert(
+        `miss:${row.campaignId}:${row.kind}`,
+        canonMissText(row),
+      );
       input.store.setCanonMissAlert(row.campaignId, row.kind);
       result.alerted.push(`${row.campaignId}:${row.kind as CanonMissKind}`);
     } catch (error) {
@@ -268,7 +271,7 @@ async function pageFirstOpenCanonFindings(
       "Investigate in-thread. The checklist keeps remediating; this page is the first alert.",
     ].join("\n");
     try {
-      await input.slack.send(text, undefined, "canon_miss");
+      input.store.noteDeliverabilityAlert(key, text);
       input.store.setCanonMissStamp(key, "open");
       result.alerted.push(`${row.campaignId}:findings`);
     } catch (error) {
@@ -337,7 +340,7 @@ async function pageMergeTagMisses(
     const key = `merge_tag:${row.campaignId}`;
     if (input.store.getCanonMissStamp(key) === "open") continue;
     try {
-      await input.slack.send(mergeTagMissText(row), undefined, "ops_alert");
+      input.store.noteDeliverabilityAlert(key, mergeTagMissText(row));
       input.store.setCanonMissStamp(key, "open");
       result.alerted.push(`${row.campaignId}:merge_tag_blank`);
     } catch (error) {
@@ -405,7 +408,7 @@ async function pageBreakupMisses(
     const key = `breakup:${row.campaignId}`;
     if (input.store.getCanonMissStamp(key) === "open") continue;
     try {
-      await input.slack.send(breakupMissText(row), undefined, "ops_alert");
+      input.store.noteDeliverabilityAlert(key, breakupMissText(row));
       input.store.setCanonMissStamp(key, "open");
       result.alerted.push(`${row.campaignId}:missing_breakup_step`);
     } catch (error) {

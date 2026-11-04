@@ -7,10 +7,10 @@
  * counts. `CLIENT_DAILY_SEND_PACE` stays null until CANON names one.
  */
 
-export const OPS_ALERTS_LABEL = "Slack";
+export const OPS_ALERTS_LABEL = "Dashboard";
 
-/** D158 — under 80% same-ESP queues isolation. Not a rest-then-burn. */
-export const OPS_ISOLATION_HINT = "under 80% same-ESP queues isolation";
+/** D325 — under 80% same-ESP rests four weeks, then is burn-due. */
+export const OPS_ISOLATION_HINT = "under 80% rests 4 weeks, then burn";
 
 /** Approved watchdog display thresholds. Not a sweep-cadence change. */
 export const OPS_TOP_UP_LEADS = 5_000;

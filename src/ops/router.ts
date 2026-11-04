@@ -400,6 +400,8 @@ export function createOpsRouter(opts: {
         isolation: opts.state.listIsolationActions(),
         checks: opts.state.listCampaignChecks(),
         audit: opts.state.listOpsAudit(200),
+        alerts: opts.state.listDeliverabilityAlerts(),
+        restBurns: opts.state.listPlacementRestBurns(),
       }),
     );
   });

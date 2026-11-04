@@ -311,6 +311,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D321 | Live — LOCKED | Every inbox has a name (Josh, 2026-10-29: "Every inbox has a name. Canon that it can never have that again. If no name just send as the company. But everyone should have a name."). A blank or placeholder from_name / signature name (Pool User, Generic, Canary, test, one word, local part) is never written: a seat sends as its Generics Ledger / InboxKit persona, else as the client company name (signature = company). No assign is refused for a missing persona. A 10-minute sweep replaces any placeholder on a non-STOPPED campaign (name + signature only; write flag off until Josh merges); signature checks treat a blank/placeholder name as a mismatch; release restores the persona. Prod incident 2026-10-29: "Pool User Emcor" sent to a prospect. |
 | D322 | Live | Locked-canon CI passes canon-consistent PRs without Josh's approval. It fails when the LOCKED section, `docs/LOCKED-CANON.md`, or `src/lib/lockedCanon.ts` changes unless the PR has the `canon-change` label approved by Josh (`joshuaosborn561-lang` applied it, or he approved the PR while it is present). Josh stays CODEOWNER of those definition files. Implementation paths, including `src/guards/lockedCanon.test.ts`, are not Josh-only. Required checks stay `check` and `locked-canon`; code-owner review is not a merge gate. Unauthorized locked-canon edits never auto-merge. POD-40, Generics Ledger, and ESP matching unchanged. |
 | D324 | Live | CAYDEN-SG seats stay on Booking Follow Up campaigns only. That membership does not confer client membership, so fan-out does not spread them. They are not D242 class senders: POD-A stays, and Booking Follow Up keeps the 10-minute gap and its current window. D316 does not retag them. LOCKED section unchanged. |
+| D325 | Live | Same-ESP under 80% on an ACTIVE campaign rests 4 weeks, then is burn-due on the /ops dashboard. No copy-suspect word hunt for that reading and no Slack page. Deliverability canon-miss alerts are dashboard-only. Spend, one-tap, needs-you, and stage-overdue Slack stay. Burn-due is Josh's kill, not an automatic domain delete. Send window unchanged (D306; D323 is #375). LOCKED section unchanged. |
 
 ---
 
@@ -11617,3 +11618,38 @@ rule or `mayWritePodTag`). Does not amend D242, D244, D304, or D306.
 `src/services/podTags.test.ts` (D324),
 `src/lib/podOwnedInventory.test.ts` (D324),
 `src/guards/canon.test.ts` D324.
+
+## D325 — under 80% rests four weeks, then burn; alerts stay on the dashboard
+
+**Date.** 2026-11-04.
+
+**Decision.** A live or canary-copy same-ESP reading under 80% on an
+ACTIVE campaign starts a 4-week rest. When that rest ends, the /ops
+dashboard marks the campaign burn-due. Josh kills the mailbox. The
+wizard does not delete the domain by itself.
+
+That reading does not open a copy-suspect word hunt and does not page
+Slack. Deliverability canon-miss alerts — the under-80 reading,
+checklist holes, merge-tag and breakup misses, generic-pool findings,
+and isolation verdicts — are notes on the dashboard, once per campaign
+per incident. Spend asks, one-tap approvals, the needs-you digest, and
+stage-overdue pages still use Slack.
+
+**Why.** Josh's /ops mockup: isolation under 80, then rest 4 weeks,
+then burn, and deliverability alerts on the dashboard only. The send
+window change is already D323 on PR #375 and is not part of this
+decision. D310–D313 stay on PR #374.
+
+**Amends.** D158 and D287 for the under-80 path only (content_block
+still queues isolation). D163's Slack destination for those
+deliverability alerts. D164 re-queue does not restart this rest.
+D165 still keeps COMPLETED / STOPPED / PAUSED off the rest. D51 still
+owns the actual mailbox kill.
+
+**Not changed.** Send window (D306). LOCKED section. `WRITE_ENABLED`.
+
+**Guards.** `src/lib/placementRestBurn.test.ts`,
+`src/services/resultMonitor.test.ts`,
+`src/services/isolationBranch.test.ts`,
+`src/services/opsAlerts.test.ts`,
+`src/guards/canon.test.ts` D325.

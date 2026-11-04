@@ -3283,9 +3283,9 @@ describe("owner intent — D149 alerts and watches live on Railway", () => {
     const ops = await read("../services/opsAlerts.ts");
     assert.match(
       ops,
-      /"ops_alert"/,
+      /"stage_overdue"/,
       stop(
-        "Stage pages carry the ops_alert kind (D149).",
+        "Stage pages carry the stage_overdue kind (D149).",
         "opsAlerts.ts sends unclassified — slack-quiet drops it silently.",
       ),
     );
@@ -5323,10 +5323,18 @@ describe("owner intent — D158 ugly same-ESP starts isolation", () => {
     );
     assert.match(
       monitor,
-      /markCopySuspect/,
+      /notePlacementRestBurn/,
       stop(
-        "ResultMonitor queues copy suspects from ugly same-ESP scores (D158).",
-        "resultMonitor.ts no longer marks copy suspects.",
+        "ResultMonitor starts a four-week rest from ugly same-ESP scores (D325).",
+        "resultMonitor.ts no longer notes the rest-then-burn.",
+      ),
+    );
+    assert.doesNotMatch(
+      monitor,
+      /notifyPlacementResult/,
+      stop(
+        "Under 80% does not page Slack (D325).",
+        "resultMonitor.ts still calls notifyPlacementResult.",
       ),
     );
     assert.match(
@@ -5339,10 +5347,10 @@ describe("owner intent — D158 ugly same-ESP starts isolation", () => {
     );
     assert.match(
       monitor,
-      /notifyPlacementResult/,
+      /noteDeliverabilityAlert/,
       stop(
-        "First same-ESP under 80% pages Slack via notifyPlacementResult (D163).",
-        "resultMonitor.ts no longer calls notifyPlacementResult.",
+        "The under-80 reading is a dashboard alert (D325).",
+        "resultMonitor.ts no longer records a dashboard alert.",
       ),
     );
     const bounce = await readFile(
@@ -5710,10 +5718,18 @@ describe("owner intent — D163 CANON misses page Slack", () => {
     );
     assert.match(
       ops,
-      /"ops_alert"/,
+      /noteDeliverabilityAlert/,
       stop(
-        "CANON-miss pages use the existing ops_alert lane (D163).",
-        "opsAlerts.ts no longer sends ops_alert.",
+        "CANON misses are recorded for the dashboard (D325).",
+        "opsAlerts.ts no longer records dashboard alerts.",
+      ),
+    );
+    assert.doesNotMatch(
+      ops,
+      /"canon_miss"/,
+      stop(
+        "CANON misses do not page Slack (D325).",
+        "opsAlerts.ts still sends canon_miss.",
       ),
     );
     assert.match(
@@ -5766,10 +5782,18 @@ describe("owner intent — D163 CANON misses page Slack", () => {
     );
     assert.match(
       branch,
+      /notePlacementRestBurn/,
+      stop(
+        "Under 80% on the isolation branch starts the four-week rest (D325).",
+        "isolationBranch.ts no longer notes the rest-then-burn.",
+      ),
+    );
+    assert.doesNotMatch(
+      branch,
       /notifyPlacementResult/,
       stop(
-        "Isolation start / first under-bar reading pages via notifyPlacementResult (D163).",
-        "isolationBranch.ts no longer calls notifyPlacementResult.",
+        "The isolation branch does not page Slack for an under-80 reading (D325).",
+        "isolationBranch.ts still calls notifyPlacementResult.",
       ),
     );
     const canon = await readFile(
@@ -5889,12 +5913,12 @@ describe("owner intent — D164 re-queue after INCONCLUSIVE", () => {
       new URL("../services/resultMonitor.ts", import.meta.url),
       "utf8",
     );
-    assert.match(
+    assert.doesNotMatch(
       monitor,
       /evaluatedAt: undefined/,
       stop(
-        "ResultMonitor re-queue also clears evaluatedAt (D164).",
-        "resultMonitor.ts no longer clears evaluatedAt.",
+        "Under 80% does not clear evaluatedAt to re-queue a word hunt (D325).",
+        "resultMonitor.ts still clears evaluatedAt.",
       ),
     );
     const canon = await readFile(
@@ -5903,10 +5927,10 @@ describe("owner intent — D164 re-queue after INCONCLUSIVE", () => {
     );
     assert.match(
       canon,
-      /re-queues?\*\* \(D164\)/,
+      /D164's re-queue does not apply/,
       stop(
-        "CANON names the INCONCLUSIVE re-queue (D164).",
-        "CANON.md lost D164.",
+        "CANON says the under-80 rest is not reset by an INCONCLUSIVE run (D325).",
+        "CANON.md lost the D164 rest-clock note.",
       ),
     );
     assert.match(
@@ -8629,10 +8653,10 @@ describe("owner intent — D180 merge tags cannot silently send blank", () => {
     );
     assert.match(
       alerts,
-      /"ops_alert"/,
+      /noteDeliverabilityAlert/,
       stop(
-        "Merge-tag pages use the ops_alert lane (D180/D163).",
-        "opsAlerts.ts no longer sends ops_alert.",
+        "Merge-tag misses are dashboard alerts (D325).",
+        "opsAlerts.ts no longer records the merge-tag alert.",
       ),
     );
     assert.match(
@@ -19182,7 +19206,7 @@ describe("owner intent — D324 CAYDEN-SG stays on Booking Follow Up", () => {
     assert.equal(callerFollowUpSkipsCanonMinGap(booking), false);
     assert.equal(isCaydenSgSeat(cayden), true);
     assert.equal(callerFollowUpMustSkipPodTags(cayden), false);
-    assert.match(canon, /Canon as of \*\*D324\*\*/);
+    assert.match(canon, /\*\*D324\.\*\* Seats tagged `CAYDEN-SG`/);
     assert.match(canon, /CAYDEN-SG/);
     assert.match(decisions, /## D324 — /);
     assert.match(decisions, /^\| D324 \|/m);

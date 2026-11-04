@@ -1,5 +1,14 @@
 import { copyFile, mkdir, rename } from "node:fs/promises";
 import path from "node:path";
+import type { CallingSnapshot } from "../ops/callingBoard.js";
+import type { LinkedInSnapshot } from "../ops/linkedinBoard.js";
+import type { WatchdogSnapshot } from "../ops/watchdogBoard.js";
+import {
+  emptyOpsBoard,
+  parseOpsBoard,
+  type OpsBoardState,
+  type OpsChecklist,
+} from "../ops/opsBoardState.js";
 import {
   clearFreezeStrike as clearFreezeStrikeFile,
   noteFreezeStrike as noteFreezeStrikeFile,
@@ -408,6 +417,11 @@ export interface AppState {
    * never a lead list.
    */
   leadRunway: Record<string, LeadRunwayRecord>;
+  /**
+   * Hourly /ops readings. Counts and client labels only.
+   * HeyReach keys never land here.
+   */
+  opsBoard: OpsBoardState;
   /** D286 — one-time generics-ledger cleanup stamp (idempotent). */
   genericLedgerCleanup: GenericLedgerCleanupStamp | null;
   /**
@@ -886,6 +900,7 @@ const EMPTY_STATE: AppState = {
   genericSeats: {},
   genericPoolFindings: [],
   leadRunway: {},
+  opsBoard: emptyOpsBoard(),
   genericLedgerCleanup: null,
   endedPocClientIds: [],
   tenantTerlHolds: {},
@@ -1030,6 +1045,7 @@ export class StateStore {
               .filter((line) => line.trim().length > 0)
           : [],
         leadRunway: parseLeadRunway(parsed.leadRunway),
+        opsBoard: parseOpsBoard(parsed.opsBoard),
         tenantTerlHolds: parseTenantTerlHolds(parsed.tenantTerlHolds),
         terlPausedDays: parseTerlPausedDays(parsed.terlPausedDays),
         terlSubstitutions: parseTerlSubstitutions(parsed.terlSubstitutions),
@@ -1768,6 +1784,34 @@ export class StateStore {
 
   listLeadRunway(): LeadRunwayRecord[] {
     return Object.values(this.state.leadRunway);
+  }
+
+  getOpsBoard(): OpsBoardState {
+    return this.state.opsBoard ?? emptyOpsBoard();
+  }
+
+  replaceOpsWatchdog(snapshot: WatchdogSnapshot): void {
+    this.state.opsBoard = this.state.opsBoard ?? emptyOpsBoard();
+    this.state.opsBoard.watchdog = snapshot;
+  }
+
+  replaceOpsCalling(snapshot: CallingSnapshot): void {
+    this.state.opsBoard = this.state.opsBoard ?? emptyOpsBoard();
+    this.state.opsBoard.calling = snapshot;
+  }
+
+  replaceOpsLinkedin(snapshot: LinkedInSnapshot): void {
+    this.state.opsBoard = this.state.opsBoard ?? emptyOpsBoard();
+    this.state.opsBoard.linkedin = snapshot;
+  }
+
+  setOpsChecklist(patch: Partial<OpsChecklist>): OpsChecklist {
+    this.state.opsBoard = this.state.opsBoard ?? emptyOpsBoard();
+    this.state.opsBoard.checklist = {
+      ...this.state.opsBoard.checklist,
+      ...patch,
+    };
+    return this.state.opsBoard.checklist;
   }
 
   removeCampaignCheck(campaignId: number): void {

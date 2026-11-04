@@ -63,6 +63,16 @@
               Fix queue
               <span id="fix-badge" class="nav-count">0</span>
             </button>
+            <button class="nav-item" data-panel="calling">
+              <span class="nav-ico">☎</span>
+              Calling
+              <span id="calling-badge" class="nav-count">0</span>
+            </button>
+            <button class="nav-item" data-panel="linkedin">
+              <span class="nav-ico">in</span>
+              LinkedIn
+              <span id="linkedin-badge" class="nav-count">0</span>
+            </button>
           </nav>
         </div>
         <div class="sidebar-footer">
@@ -97,8 +107,24 @@
 
         <section id="watchdog-panel" class="panel">
           <div id="watchdog-cards" class="summary-grid"></div>
+          <p id="watchdog-stamp" class="stamp"></p>
           <div id="watchdog-grid" class="watch-grid"></div>
           <p id="watchdog-empty" class="muted empty hidden">No send reading yet.</p>
+        </section>
+
+        <section id="calling-panel" class="panel">
+          <div id="calling-cards" class="summary-grid"></div>
+          <p id="calling-stamp" class="stamp"></p>
+          <div id="calling-grid" class="watch-grid"></div>
+          <div id="calling-checklist" class="board checklist"></div>
+          <p id="calling-empty" class="muted empty hidden">No calling reading yet.</p>
+        </section>
+
+        <section id="linkedin-panel" class="panel">
+          <div id="linkedin-cards" class="summary-grid"></div>
+          <p id="linkedin-stamp" class="stamp"></p>
+          <div id="linkedin-grid" class="watch-grid"></div>
+          <p id="linkedin-empty" class="muted empty hidden">No LinkedIn reading yet.</p>
         </section>
 
         <section id="fix-panel" class="panel">

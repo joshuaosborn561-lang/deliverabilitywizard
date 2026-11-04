@@ -135,7 +135,9 @@ async function loadToday() {
     for (const column of data.columns) {
       const cell = client.cells[column.id];
       const td = document.createElement("td");
-      if (cell.ok) {
+      if (cell.idle) {
+        td.append(make("span", "mark idle", "—"));
+      } else if (cell.ok) {
         td.append(make("span", "mark ok", "✓"));
       } else {
         const button = make("button", "mark bad", "✕");
@@ -199,7 +201,8 @@ function loadTodayFromCache() {
     for (const column of data.columns) {
       const cell = client.cells[column.id];
       const td = document.createElement("td");
-      if (cell.ok) td.append(make("span", "mark ok", "✓"));
+      if (cell.idle) td.append(make("span", "mark idle", "—"));
+      else if (cell.ok) td.append(make("span", "mark ok", "✓"));
       else {
         const button = make("button", "mark bad", "✕");
         button.type = "button";
@@ -306,7 +309,152 @@ async function loadWatchdog() {
       return card;
     }),
   );
+  $("#watchdog-stamp").textContent = stampText(data.updatedAt, data.source);
   $("#watchdog-empty").classList.toggle("hidden", (data.clients || []).length > 0);
+}
+
+function stampText(updatedAt, extra) {
+  if (!updatedAt) return "No hourly reading yet";
+  return `Updated ${formatCt(updatedAt)}${extra ? ` · ${extra}` : ""}`;
+}
+
+async function loadCalling() {
+  const data = await api("/calling");
+  state.calling = data;
+  const failing = (data.clients || []).filter((client) => !client.ok).length;
+  setBadge("#calling-badge", failing);
+  const gabe = data.gabeDialsTarget
+    ? `${comma(data.gabeDialsYesterday)} / ${comma(data.gabeDialsTarget)}`
+    : comma(data.gabeDialsYesterday);
+  $("#calling-cards").replaceChildren(
+    summaryCard("QUEUES FULL", `${data.queuesFull} / ${data.queuesTracked}`, `target ${data.queueTarget}`, data.queuesFull ? "bad" : ""),
+    summaryCard("VOICEMAILS YDAY", comma(data.voicemailsYesterday), `${comma(data.emailsYesterday)} emails`, ""),
+    summaryCard("ROUTER / DNC", comma(data.routerOrDncErrors), data.edgeLogs === "unchecked" ? "edge logs unchecked" : "", data.routerOrDncErrors || data.edgeLogs === "unchecked" ? "warn" : ""),
+    summaryCard("GABE DIALS", gabe, data.gabeDialsTarget ? "yesterday" : "target unset", ""),
+  );
+  $("#calling-stamp").textContent = stampText(data.updatedAt, "hourly");
+  $("#calling-grid").replaceChildren(...(data.clients || []).map(callingCard));
+  renderChecklist(data.checklist || {}, data.actionsEnabled === true);
+  $("#calling-empty").classList.toggle("hidden", (data.clients || []).length > 0);
+}
+
+function callingCard(client) {
+  const card = make("article", `watch-card ${client.ok ? "healthy" : client.bringToJosh ? "josh" : "amber"}`);
+  const header = document.createElement("header");
+  header.append(make("h3", "", client.clientName), make("span", `pill ${client.ok ? "healthy" : "josh"}`, client.ok ? "Clear" : "Needs work"));
+  card.append(header);
+  card.append(make("p", "muted", `Queue ${comma(client.queueContacts)} / ${comma(client.queueTarget)} · ${client.queues} queue${client.queues === 1 ? "" : "s"}`));
+  card.append(make("p", "", `Missing email: ${comma(client.missingEmail)}`));
+  card.append(make("p", "", client.buildNextList ? "Build next list" : "No queue at 3×"));
+  card.append(make("p", "", `Yesterday ${comma(client.voicemailsYesterday)} voicemails · ${comma(client.emailsYesterday)} emails`));
+  if (client.mismatchReason) card.append(make("div", "note", client.mismatchReason));
+  if (client.bringToJosh) card.append(make("div", "note josh", "Bring to Josh"));
+  const actions = make("div", "fix-actions");
+  actions.append(actionButton("Remove", "remove", client.clientName));
+  actions.append(actionButton("Send now", "send-now", client.clientName));
+  card.append(actions);
+  return card;
+}
+
+function actionButton(label, action, clientName) {
+  const button = make("button", "", label);
+  button.type = "button";
+  button.addEventListener("click", async () => {
+    try {
+      await api("/calling/action", {
+        method: "POST",
+        body: JSON.stringify({ action, clientName, confirm: true }),
+      });
+      toast(`${label} stayed off`);
+    } catch (error) {
+      toast(error.message);
+    }
+  });
+  return button;
+}
+
+function renderChecklist(checklist, actionsEnabled) {
+  const box = $("#calling-checklist");
+  box.replaceChildren(make("h3", "", "Manual checklist"));
+  const rows = [
+    ["onScript", "Caller is on script"],
+    ["opener", "Caller used the opener"],
+    ["caydenFriday", "Cayden's Friday calls"],
+  ];
+  for (const [key, label] of rows) {
+    const line = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = Boolean(checklist[key]);
+    input.addEventListener("change", async () => {
+      try {
+        const saved = await api("/calling/checklist", {
+          method: "POST",
+          body: JSON.stringify({ [key]: input.checked }),
+        });
+        if (state.calling) state.calling.checklist = saved.checklist;
+      } catch (error) {
+        input.checked = !input.checked;
+        toast(error.message);
+      }
+    });
+    line.append(input, document.createTextNode(label));
+    box.append(line);
+  }
+  const numbers = (state.calling?.numbers || []).map((row) =>
+    `${row.label} ····${row.last4} · ${row.daysSinceRotation == null ? "rotation unknown" : `${row.daysSinceRotation}d since rotation`}${row.spamLikely ? " · spam-likely" : row.spamLikely === false ? "" : " · spam-likely unchecked"}`,
+  );
+  if (numbers.length) {
+    const list = make("ul", "lane-list");
+    for (const line of numbers) list.append(make("li", "", line));
+    box.append(make("p", "muted", "Allo numbers"), list);
+    box.append(actionButton("Rotate", "rotate", ""));
+  }
+  const suppression = state.calling?.suppression;
+  if (suppression) {
+    box.append(make("p", "", `DNC removed from calls: ${comma(suppression.dnc)} · still queued ${comma(suppression.dncStillQueued)}`));
+    box.append(make("p", "", `Unsubscribes removed from both: ${comma(suppression.unsub)} · still queued ${comma(suppression.unsubStillQueued)} · still emailed ${comma(suppression.unsubStillEmailed)}`));
+  }
+  const tagging = state.calling?.tagging;
+  if (tagging) {
+    box.append(make("p", "", `Voicemail left tagged ${comma(tagging.voicemailTagged)} of ${comma(tagging.voicemailCalls)}`));
+  }
+  if (!actionsEnabled) box.append(make("p", "muted", "Remove, Send now, and Rotate stay off."));
+}
+
+async function loadLinkedin() {
+  const data = await api("/linkedin");
+  state.linkedin = data;
+  setBadge("#linkedin-badge", (data.broken || 0) + (data.unchecked || 0));
+  $("#linkedin-cards").replaceChildren(
+    summaryCard("ON TARGET", comma(data.onTarget), data.targetLabel || "30–35", "good"),
+    summaryCard("LOW", comma(data.low), "amber", data.low ? "warn" : ""),
+    summaryCard("BROKEN", comma(data.broken), "tag Josh", data.broken ? "bad" : ""),
+    summaryCard("REPLIES TODAY", data.repliesToday == null ? "—" : comma(data.repliesToday), "count only", ""),
+  );
+  $("#linkedin-stamp").textContent = stampText(data.updatedAt, "hourly");
+  $("#linkedin-grid").replaceChildren(...(data.clients || []).map(linkedinCard));
+  $("#linkedin-empty").classList.toggle("hidden", (data.clients || []).length > 0);
+}
+
+function linkedinCard(client) {
+  const card = make("article", `watch-card ${client.tone || "unchecked"}`);
+  const header = document.createElement("header");
+  const label = client.tone === "green" ? "On target" : client.tone === "red" ? "Broken, tag Josh" : client.tone === "amber" ? "Low" : "Can't check";
+  header.append(make("h3", "", client.clientName), make("span", `pill ${client.tone === "red" ? "josh" : client.tone === "amber" ? "topup" : ""}`, label));
+  card.append(header);
+  card.append(make("strong", "", client.sentToday == null ? "—" : `${comma(client.sentToday)} today`));
+  if (client.reason) card.append(make("div", client.tone === "red" ? "note josh" : "note", client.reason));
+  const trend = (client.trend || []).map((value) => comma(value)).join(" · ");
+  if (trend) card.append(make("p", "muted", `3-day ${trend}`));
+  if ((client.lanes || []).length) {
+    const list = make("ul", "lane-list");
+    for (const lane of client.lanes) {
+      list.append(make("li", "", `${lane.label} · ${lane.sentToday == null ? "—" : comma(lane.sentToday)}${lane.reason ? ` · ${lane.reason}` : ""}`));
+    }
+    card.append(list);
+  }
+  return card;
 }
 
 function renderFix() {
@@ -411,9 +559,11 @@ async function decideFix(item, decision) {
 function switchPanel(name) {
   $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.panel === name));
   $$(".panel").forEach((panel) => panel.classList.toggle("active", panel.id === `${name}-panel`));
-  const title = { today: "Today", watchdog: "Watchdog", fix: "Fix queue" };
+  const title = { today: "Today", watchdog: "Watchdog", fix: "Fix queue", calling: "Calling", linkedin: "LinkedIn" };
   $("#panel-title").textContent = title[name] || name;
   if (name === "watchdog" && !state.watchdog) loadWatchdog().catch((error) => toast(error.message));
+  if (name === "calling" && !state.calling) loadCalling().catch((error) => toast(error.message));
+  if (name === "linkedin" && !state.linkedin) loadLinkedin().catch((error) => toast(error.message));
   if (name === "fix") loadFix().catch((error) => toast(error.message));
 }
 
@@ -557,7 +707,7 @@ $("#login-form").addEventListener("submit", async (event) => {
     state.csrf = response.csrf;
     $("#access-key").value = "";
     showApp();
-    await Promise.all([loadToday(), loadWatchdog(), loadFix()]);
+    await Promise.all([loadToday(), loadWatchdog(), loadFix(), loadCalling(), loadLinkedin()]);
     addMessage("assistant", "Signed in. The grid is the last hourly sweep.");
   } catch (error) {
     $("#login-error").textContent = error.message;
@@ -597,7 +747,7 @@ $$(".nav-item").forEach((button) => button.addEventListener("click", () => switc
     state.user = session.user;
     state.csrf = session.csrf;
     showApp();
-    await Promise.all([loadToday(), loadWatchdog(), loadFix()]);
+    await Promise.all([loadToday(), loadWatchdog(), loadFix(), loadCalling(), loadLinkedin()]);
   } catch {
     showLogin();
   }

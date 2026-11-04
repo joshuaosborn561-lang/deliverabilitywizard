@@ -18,6 +18,9 @@ import {
 } from "./spamAssassin.js";
 import { buildTodayBoard, type TodayCampaignRef, type TodayPlacementRow } from "./todayBoard.js";
 import { buildWatchdogBoard, type WatchdogAccount } from "./watchdogBoard.js";
+import { buildCallingBoard, callingLanes } from "./callingBoard.js";
+import { buildLinkedInBoard, linkedInLanes } from "./linkedinBoard.js";
+import { callingActionsEnabled } from "../services/opsBoardRefresh.js";
 
 export interface OpsInventoryPeek {
   campaigns: TodayCampaignRef[];
@@ -319,6 +322,7 @@ export function createOpsRouter(opts: {
         text: `${row.campaignName || `Campaign ${row.campaignId}`}: same-ESP ${row.inboxPercent}% — isolation queued`,
       }));
     const placements = (state.placementResults?.rows ?? []) as TodayPlacementRow[];
+    const board = opts.state.getOpsBoard();
     res.json(
       buildTodayBoard({
         hourlySweepEnabled: opts.config.enableCampaignCheck,
@@ -329,6 +333,8 @@ export function createOpsRouter(opts: {
         clients: inventory?.clients ?? [],
         placements,
         isolation,
+        callingLanes: board.calling ? callingLanes(board.calling) : undefined,
+        linkedinLanes: board.linkedin ? linkedInLanes(board.linkedin) : undefined,
         restRollover: restRolloverSnapshot(),
         statusById: statusById.size ? statusById : undefined,
       }),
@@ -336,15 +342,54 @@ export function createOpsRouter(opts: {
   });
 
   router.get("/watchdog", (_req: AuthenticatedRequest, res) => {
-    const inventory = peekInventory();
-    res.json(
-      buildWatchdogBoard({
-        accounts: inventory?.accounts ?? [],
-        clients: inventory?.clients ?? [],
-        runway: opts.state.listLeadRunway(),
-        messagePerDay: opts.config.messagePerDay,
-      }),
-    );
+    res.json(buildWatchdogBoard({ snapshot: opts.state.getOpsBoard().watchdog }));
+  });
+
+  router.get("/calling", (_req: AuthenticatedRequest, res) => {
+    const board = opts.state.getOpsBoard();
+    res.json({
+      ...buildCallingBoard({ snapshot: board.calling }),
+      checklist: board.checklist,
+      actionsEnabled: callingActionsEnabled(),
+    });
+  });
+
+  router.get("/linkedin", (_req: AuthenticatedRequest, res) => {
+    res.json(buildLinkedInBoard({ snapshot: opts.state.getOpsBoard().linkedin }));
+  });
+
+  router.post("/calling/checklist", async (req: AuthenticatedRequest, res) => {
+    const body = req.body ?? {};
+    const patch: { onScript?: boolean; opener?: boolean; caydenFriday?: boolean } = {};
+    if (typeof body.onScript === "boolean") patch.onScript = body.onScript;
+    if (typeof body.opener === "boolean") patch.opener = body.opener;
+    if (typeof body.caydenFriday === "boolean") patch.caydenFriday = body.caydenFriday;
+    const checklist = opts.state.setOpsChecklist(patch);
+    try {
+      await opts.state.save();
+      res.json({ ok: true, checklist });
+    } catch (error) {
+      res.status(503).json({ error: safeMessage(error) });
+    }
+  });
+
+  router.post("/calling/action", async (req: AuthenticatedRequest, res) => {
+    const action = String(req.body?.action ?? "");
+    if (!["remove", "send-now", "rotate"].includes(action)) {
+      res.status(400).json({ error: "Action must be remove, send-now, or rotate" });
+      return;
+    }
+    if (req.body?.confirm !== true) {
+      res.status(400).json({ error: "Explicit confirmation is required" });
+      return;
+    }
+    if (!callingActionsEnabled()) {
+      res.status(409).json({
+        error: "Calling actions stay off. Remove, Send now, and Rotate were not fired.",
+      });
+      return;
+    }
+    res.status(409).json({ error: "Calling writes are not armed on this build" });
   });
 
   router.get("/fix-queue", (req: AuthenticatedRequest, res) => {

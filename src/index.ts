@@ -128,6 +128,8 @@ import { CursorCloudClient } from "./clients/cursorCloud.js";
 import { OpsAuth } from "./ops/auth.js";
 import { CursorAssistantService } from "./ops/cursorAssistant.js";
 import { createOpsRouter } from "./ops/router.js";
+import { gabeDialsTargetFromEnv, OpsBoardRefresh } from "./services/opsBoardRefresh.js";
+import { readGenericLedgerSupabaseEnv } from "./lib/genericLedgerSupabase.js";
 import { BugRemediator } from "./services/bugRemediator.js";
 import { MutationQueue } from "./lib/mutationQueue.js";
 import {
@@ -1977,6 +1979,29 @@ async function main(): Promise<void> {
     );
   }
 
+  const opsBoardRefresh = new OpsBoardRefresh({
+    state,
+    campaigns: () => inventoryBook.peek()?.campaigns ?? [],
+    clients: () => inventoryBook.peek()?.clients ?? [],
+    analyticsByDate: (campaignId, day, signal) =>
+      smartlead.getCampaignAnalyticsByDate(campaignId, day, day, { signal }),
+    analytics: (campaignId, signal) => smartlead.getCampaignAnalytics(campaignId, { signal }),
+    supabase: () => readGenericLedgerSupabaseEnv(),
+    slackToken: () => config.slackBotToken || config.deliverabilitySlackBotToken || "",
+    gabeDialsTarget: () => gabeDialsTargetFromEnv(),
+  });
+  // Same hourly expression as the campaign sweep. Not a boot kick (D122).
+  scheduleJob("ops-board-hourly", config.cronCampaignCheck, () => {
+    if (healthLock.isLive()) {
+      console.log("[ops-board] Health pass running — skipping overlapping hourly reading");
+      return;
+    }
+    return opsBoardRefresh.run().catch((error) => {
+      const message = error instanceof Error ? error.message : "failed";
+      console.error("[ops-board] Unhandled hourly error", message.slice(0, 180));
+    });
+  });
+
   if (config.enableCampaignCheck) {
     scheduleJob("campaign-check-hourly", config.cronCampaignCheck, () => {
       if (healthLock.isLive()) {
@@ -3459,6 +3484,15 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
           pauseWhile: () => healthLock.isLive(),
         });
         res.json({ ok: true, mode: "campaign-audit", result });
+        return;
+      }
+      if (mode === "ops-board") {
+        if (healthLock.isLive()) {
+          res.status(409).json({ error: "Health pass is running" });
+          return;
+        }
+        const result = await opsBoardRefresh.run();
+        res.json({ ok: true, mode: "ops-board", result });
         return;
       }
       if (mode === "campaign-check" || mode === "new-campaign-check") {

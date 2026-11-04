@@ -259,14 +259,23 @@ export class SmartleadClient {
     campaignId: number,
     startDate: string,
     endDate: string,
-    opts: { retries?: number } = {},
+    opts: { retries?: number; signal?: AbortSignal } = {},
   ): Promise<SmartleadCampaignAnalytics> {
     return this.request<SmartleadCampaignAnalytics>(`campaigns/${campaignId}/analytics-by-date`,
       {
         query: { start_date: startDate, end_date: endDate },
         ...(opts.retries !== undefined ? { retries: opts.retries } : {}),
+        signal: opts.signal,
       },
     );
+  }
+
+  /** Lifetime analytics, including campaign_lead_stats. Not today's sends. */
+  getCampaignAnalytics(
+    campaignId: number,
+    opts: { signal?: AbortSignal } = {},
+  ): Promise<unknown> {
+    return this.request(`campaigns/${campaignId}/analytics`, { signal: opts.signal });
   }
 
   getCampaignSequences(

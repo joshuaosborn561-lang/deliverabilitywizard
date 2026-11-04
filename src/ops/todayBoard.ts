@@ -17,6 +17,7 @@ import {
   SEND_WINDOW_START_HOUR,
 } from "../lib/campaignSendCanon.js";
 import { clientDisplayName, type SmartleadClientRecord } from "../clients/smartlead.js";
+import { callingClientKey } from "./callingBoard.js";
 import { OPS_ALERTS_LABEL, OPS_ISOLATION_HINT } from "./canonSurface.js";
 
 export interface TodayFailure {
@@ -28,6 +29,8 @@ export interface TodayFailure {
 
 export interface TodayCell {
   ok: boolean;
+  /** No calling or LinkedIn lane for this client. Not a pass and not a fail. */
+  idle?: boolean;
   failures: TodayFailure[];
 }
 
@@ -45,7 +48,9 @@ export type TodayColumnId =
   | "signatures"
   | "placement"
   | "copy"
-  | "isolation";
+  | "isolation"
+  | "calling"
+  | "linkedin";
 
 export interface TodayClientRow {
   clientId: string;
@@ -93,6 +98,12 @@ export interface TodayIsolationHit {
   campaignId: number;
   campaignName?: string;
   text: string;
+}
+
+export interface TodayLaneHit {
+  clientName: string;
+  ok: boolean;
+  failures: Array<{ id: string; text: string }>;
 }
 
 interface ClientBucket {
@@ -143,7 +154,18 @@ const COLUMN_KINDS: Record<TodayColumnId, readonly string[]> = {
   ],
   copy: ["merge_tag_blank"],
   isolation: ["isolation_open"],
+  calling: [],
+  linkedin: [],
 };
+
+function sameClient(left: string, right: string): boolean {
+  const a = callingClientKey(left);
+  const b = callingClientKey(right);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  return shorter.length >= 5 && longer.startsWith(shorter);
+}
 
 function hourClock(hhmm: string): string {
   const hour = Number(hhmm.slice(0, 2));
@@ -185,6 +207,16 @@ export function todayColumns(): TodayColumn[] {
       hint: "merge tags · spintax · QA · NBA only",
     },
     { id: "isolation", label: "Isolation", hint: OPS_ISOLATION_HINT },
+    {
+      id: "calling",
+      label: "Calling",
+      hint: "queue 300 · voicemail match · router",
+    },
+    {
+      id: "linkedin",
+      label: "LinkedIn",
+      hint: "30–35 connects · replies counted",
+    },
   ];
 }
 
@@ -257,6 +289,8 @@ export function buildTodayBoard(input: {
   clients?: SmartleadClientRecord[];
   placements?: TodayPlacementRow[];
   isolation?: TodayIsolationHit[];
+  callingLanes?: TodayLaneHit[];
+  linkedinLanes?: TodayLaneHit[];
   restRollover: TodayBoard["restRollover"];
   statusById?: Map<number, string>;
 }): TodayBoard {
@@ -384,6 +418,44 @@ export function buildTodayBoard(input: {
     });
   }
 
+  const laneHits = { calling: new Set<string>(), linkedin: new Set<string>() };
+  const applyLane = (column: "calling" | "linkedin", lanes: TodayLaneHit[] | undefined) => {
+    if (!lanes) return;
+    const claimed = new Set<string>();
+    for (const bucket of buckets.values()) {
+      const hit = lanes.find((lane) => sameClient(lane.clientName, bucket.clientName));
+      if (!hit) continue;
+      laneHits[column].add(bucket.clientId);
+      claimed.add(callingClientKey(hit.clientName));
+      if (hit.ok) continue;
+      for (const failure of hit.failures) {
+        pushFailure(bucket.clientId, bucket.clientName, column, {
+          id: `${column}:${failure.id}`,
+          text: failure.text,
+          actionId: "open-fix",
+          actionLabel: "Open in Fix queue",
+        });
+      }
+    }
+    for (const hit of lanes) {
+      if ([...claimed].some((key) => sameClient(key, hit.clientName))) continue;
+      const clientId = `name:${callingClientKey(hit.clientName)}`;
+      bucketFor(clientId, hit.clientName);
+      laneHits[column].add(clientId);
+      if (hit.ok) continue;
+      for (const failure of hit.failures) {
+        pushFailure(clientId, hit.clientName, column, {
+          id: `${column}:${failure.id}`,
+          text: failure.text,
+          actionId: "open-fix",
+          actionLabel: "Open in Fix queue",
+        });
+      }
+    }
+  };
+  applyLane("calling", input.callingLanes);
+  applyLane("linkedin", input.linkedinLanes);
+
   for (const hit of input.isolation ?? []) {
     const who = resolveCampaign(
       hit.campaignId,
@@ -404,7 +476,10 @@ export function buildTodayBoard(input: {
       const cells = {} as Record<TodayColumnId, TodayCell>;
       for (const column of columns) {
         const failures = bucket.failures.get(column.id) ?? [];
-        cells[column.id] = { ok: failures.length === 0, failures };
+        const laneBacked = column.id === "calling" || column.id === "linkedin";
+        const supplied = laneBacked && (column.id === "calling" ? input.callingLanes : input.linkedinLanes);
+        const idle = Boolean(supplied && !laneHits[column.id as "calling" | "linkedin"].has(bucket.clientId) && failures.length === 0);
+        cells[column.id] = { ok: failures.length === 0, idle, failures };
       }
       return {
         clientId: bucket.clientId,
@@ -420,7 +495,9 @@ export function buildTodayBoard(input: {
   for (const row of rows) {
     let green = true;
     for (const column of columns) {
-      if (row.cells[column.id].ok) checksPassing += 1;
+      const cell = row.cells[column.id];
+      if (cell.idle) continue;
+      if (cell.ok) checksPassing += 1;
       else {
         checksFailing += 1;
         green = false;

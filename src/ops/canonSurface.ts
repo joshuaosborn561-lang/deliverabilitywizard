@@ -2,8 +2,9 @@
  * Strings the /ops board shows for rules that are still current canon.
  * Send-window hours come from `campaignSendCanon` so a later canon edit
  * to the standing window shows up here without a second copy.
- * A fixed 1,000/day client pace is not canon; Watchdog sums mailbox caps
- * until CANON names one (`CLIENT_DAILY_SEND_PACE`).
+ * A fixed 1,000/day client pace is not canon. Watchdog shows the
+ * campaign-watchdog volume target with that service's send and lead
+ * counts. `CLIENT_DAILY_SEND_PACE` stays null until CANON names one.
  */
 
 export const OPS_ALERTS_LABEL = "Dashboard";

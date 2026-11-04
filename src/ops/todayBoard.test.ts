@@ -58,7 +58,7 @@ describe("today board", () => {
     assert.equal(board.clientsTotal, 2);
     assert.equal(board.clientsAllGreen, 1);
     assert.equal(board.checksFailing, 1);
-    assert.equal(board.checksPassing, 15);
+    assert.equal(board.checksPassing, 19);
     assert.equal(board.rows[1]?.clientName, "Vector");
     assert.equal(board.rows[0]?.cells.placement.ok, false);
     assert.equal(board.rows[0]?.cells.placement.failures.length, 2);

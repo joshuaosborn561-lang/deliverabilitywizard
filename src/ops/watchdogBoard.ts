@@ -1,20 +1,13 @@
 /**
- * Per-client sends today against the current canon pace.
- * Pace is the sum of type-aware mailbox caps unless CANON sets
- * `CLIENT_DAILY_SEND_PACE`. Leads left come from the lead-runout
- * snapshot (counts only). No Smartlead fetch.
+ * Per-client sends today and leads left from the campaign-watchdog reading.
+ * The hourly job stores that snapshot. This board does not sum
+ * `daily_sent_count` and does not read lead-runout.
  */
 
-import type { SmartleadClientRecord } from "../clients/smartlead.js";
-import { clientDisplayName } from "../clients/smartlead.js";
-import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import {
-  mailboxMessagePerDayTarget,
-  type SendCeilingAccount,
-} from "../lib/sendCeiling.js";
-import type { LeadRunwayRecord } from "../state/store.js";
+  WATCHDOG_DAILY_TARGET,
+} from "./campaignWatchdogVolume.js";
 import {
-  CLIENT_DAILY_SEND_PACE,
   OPS_BRING_TO_JOSH_LEADS,
   OPS_TOP_UP_LEADS,
 } from "./canonSurface.js";
@@ -26,14 +19,20 @@ export type WatchdogStatus =
   | "josh"
   | "unread";
 
-export interface WatchdogAccount {
-  client_id?: number | null;
-  daily_sent_count?: number;
-  message_per_day?: number;
-  type?: string | null;
-  from_email?: string | null;
-  email?: string | null;
-  campaigns?: Array<{ status?: string | null }>;
+export interface WatchdogSnapshotClient {
+  clientId: string;
+  clientName: string;
+  sendsToday: number;
+  leadsLeft: number | null;
+}
+
+export interface WatchdogSnapshot {
+  updatedAt: string;
+  partial: boolean;
+  day: string;
+  paceTarget: number;
+  source: "campaign-watchdog-analytics";
+  clients: WatchdogSnapshotClient[];
 }
 
 export interface WatchdogClient {
@@ -45,7 +44,22 @@ export interface WatchdogClient {
   status: WatchdogStatus;
 }
 
+/** Inventory shape the hourly job does not read. Kept so the peek type stays stable. */
+export interface WatchdogAccount {
+  client_id?: number | null;
+  daily_sent_count?: number;
+  message_per_day?: number;
+  type?: string | null;
+  from_email?: string | null;
+  email?: string | null;
+  campaigns?: Array<{ status?: string | null }>;
+}
+
 export interface WatchdogBoard {
+  updatedAt: string | null;
+  partial: boolean;
+  day: string | null;
+  source: string;
   paceLabel: string;
   sendsToday: number;
   onPace: number;
@@ -55,18 +69,6 @@ export interface WatchdogBoard {
   topUpBelow: number;
   joshBelow: number;
   clients: WatchdogClient[];
-}
-
-function named(client: SmartleadClientRecord): string {
-  return brandFromClientDisplayName(clientDisplayName(client));
-}
-
-function onActiveCampaign(account: WatchdogAccount): boolean {
-  const campaigns = account.campaigns ?? [];
-  if (!campaigns.length) return true;
-  return campaigns.some(
-    (campaign) => String(campaign.status ?? "").toUpperCase() === "ACTIVE",
-  );
 }
 
 function statusFor(
@@ -82,82 +84,28 @@ function statusFor(
 }
 
 export function buildWatchdogBoard(input: {
-  accounts?: WatchdogAccount[];
-  clients?: SmartleadClientRecord[];
-  runway?: LeadRunwayRecord[];
-  messagePerDay: number;
+  snapshot?: WatchdogSnapshot | null;
 }): WatchdogBoard {
-  const fixed = CLIENT_DAILY_SEND_PACE;
-  const paceLabel =
-    fixed == null ? "mailbox caps" : `${fixed.toLocaleString("en-US")}/day`;
-  const byClient = new Map<
-    string,
-    { name: string; sends: number; sawSent: boolean; target: number; leads: number | null }
-  >();
-
-  const ensure = (id: string, name: string) => {
-    const existing = byClient.get(id);
-    if (existing) {
-      if (!existing.name && name) existing.name = name;
-      return existing;
-    }
-    const created = {
-      name,
-      sends: 0,
-      sawSent: false,
-      target: fixed ?? 0,
-      leads: null as number | null,
-    };
-    byClient.set(id, created);
-    return created;
-  };
-
-  for (const client of input.clients ?? []) {
-    const name = named(client);
-    if (!name) continue;
-    ensure(String(client.id), name);
-  }
-
-  for (const account of input.accounts ?? []) {
-    const clientId = account.client_id;
-    if (typeof clientId !== "number" || clientId <= 0) continue;
-    if (!onActiveCampaign(account)) continue;
-    const row = ensure(String(clientId), "");
-    if (typeof account.daily_sent_count === "number" && Number.isFinite(account.daily_sent_count)) {
-      row.sends += Math.max(0, account.daily_sent_count);
-      row.sawSent = true;
-    }
-    if (fixed == null) {
-      row.target += mailboxMessagePerDayTarget(
-        account as SendCeilingAccount,
-        { messagePerDay: input.messagePerDay },
-      );
-    }
-  }
-
-  for (const runway of input.runway ?? []) {
-    if (typeof runway.clientId !== "number" || runway.clientId <= 0) continue;
-    if (!Number.isFinite(runway.remaining)) continue;
-    const row = ensure(String(runway.clientId), "");
-    row.leads = (row.leads ?? 0) + Math.max(0, runway.remaining);
-  }
-
-  const clients: WatchdogClient[] = [];
-  for (const [clientId, row] of byClient) {
-    if (!row.name) continue;
-    const hasSignal = row.sawSent || row.leads != null || row.target > 0;
-    if (!hasSignal) continue;
-    const sendsToday = row.sawSent ? row.sends : null;
-    clients.push({
-      clientId,
-      clientName: row.name,
-      sendsToday,
-      target: row.target,
-      leadsLeft: row.leads,
-      status: statusFor(sendsToday, row.target, row.leads),
-    });
-  }
-  clients.sort((a, b) => a.clientName.localeCompare(b.clientName));
+  const snapshot = input.snapshot ?? null;
+  const target = snapshot?.paceTarget || WATCHDOG_DAILY_TARGET;
+  const clients: WatchdogClient[] = (snapshot?.clients ?? [])
+    .filter((row) => row.clientName.trim().length > 0)
+    .map((row) => ({
+      clientId: row.clientId,
+      clientName: row.clientName,
+      sendsToday: Number.isFinite(row.sendsToday) ? Math.max(0, row.sendsToday) : null,
+      target,
+      leadsLeft:
+        row.leadsLeft == null || !Number.isFinite(row.leadsLeft)
+          ? null
+          : Math.max(0, row.leadsLeft),
+      status: statusFor(
+        Number.isFinite(row.sendsToday) ? row.sendsToday : null,
+        target,
+        row.leadsLeft == null || !Number.isFinite(row.leadsLeft) ? null : row.leadsLeft,
+      ),
+    }))
+    .sort((a, b) => a.clientName.localeCompare(b.clientName));
 
   let sendsToday = 0;
   let onPace = 0;
@@ -175,7 +123,11 @@ export function buildWatchdogBoard(input: {
   }
 
   return {
-    paceLabel,
+    updatedAt: snapshot?.updatedAt ?? null,
+    partial: Boolean(snapshot?.partial),
+    day: snapshot?.day ?? null,
+    source: snapshot?.source ?? "campaign-watchdog-analytics",
+    paceLabel: `${target.toLocaleString("en-US")}/day`,
     sendsToday,
     onPace,
     tracked,

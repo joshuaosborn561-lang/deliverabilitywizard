@@ -3,74 +3,38 @@ import { describe, it } from "node:test";
 import { buildWatchdogBoard } from "./watchdogBoard.js";
 
 describe("watchdog board", () => {
-  it("paces each client off mailbox caps and flags lead thresholds", () => {
+  it("uses the campaign-watchdog snapshot, not mailbox caps", () => {
     const board = buildWatchdogBoard({
-      messagePerDay: 30,
-      clients: [
-        { id: 1, name: "Vector" },
-        { id: 2, name: "Parlay" },
-        { id: 3, name: "Bolder" },
-      ],
-      accounts: [
-        {
-          client_id: 1,
-          type: "GMAIL",
-          daily_sent_count: 30,
-          campaigns: [{ status: "ACTIVE" }],
-        },
-        {
-          client_id: 2,
-          type: "OUTLOOK",
-          daily_sent_count: 4,
-          campaigns: [{ status: "ACTIVE" }],
-        },
-        {
-          client_id: 3,
-          type: "GMAIL",
-          daily_sent_count: 30,
-          campaigns: [{ status: "ACTIVE" }],
-        },
-      ],
-      runway: [
-        {
-          campaignId: 10,
-          name: "Vector",
-          clientId: 1,
-          remaining: 18000,
-          total: 20000,
-          recordedAt: "2026-11-04T17:00:00.000Z",
-        },
-        {
-          campaignId: 11,
-          name: "Parlay",
-          clientId: 2,
-          remaining: 4300,
-          total: 9000,
-          recordedAt: "2026-11-04T17:00:00.000Z",
-        },
-        {
-          campaignId: 12,
-          name: "Bolder",
-          clientId: 3,
-          remaining: 1500,
-          total: 8000,
-          recordedAt: "2026-11-04T17:00:00.000Z",
-        },
-      ],
+      snapshot: {
+        updatedAt: "2026-11-04T18:00:00.000Z",
+        partial: false,
+        day: "2026-11-04",
+        paceTarget: 1200,
+        source: "campaign-watchdog-analytics",
+        clients: [
+          { clientId: "1", clientName: "Vector", sendsToday: 1300, leadsLeft: 18000 },
+          { clientId: "2", clientName: "Parlay", sendsToday: 820, leadsLeft: 9200 },
+          { clientId: "3", clientName: "PowerGRYD", sendsToday: 1210, leadsLeft: 4300 },
+          { clientId: "4", clientName: "Bolder", sendsToday: 400, leadsLeft: 1500 },
+        ],
+      },
     });
-    assert.equal(board.paceLabel, "mailbox caps");
-    assert.equal(board.clients.length, 3);
-    const vector = board.clients.find((row) => row.clientName === "Vector");
-    const parlay = board.clients.find((row) => row.clientName === "Parlay");
-    const bolder = board.clients.find((row) => row.clientName === "Bolder");
-    assert.equal(vector?.status, "healthy");
-    assert.equal(vector?.target, 30);
-    assert.equal(parlay?.status, "topup");
-    assert.equal(parlay?.target, 15);
-    assert.equal(bolder?.status, "josh");
+    assert.equal(board.paceLabel, "1,200/day");
+    assert.equal(board.updatedAt, "2026-11-04T18:00:00.000Z");
+    assert.equal(board.sendsToday, 3730);
     assert.equal(board.onPace, 2);
+    assert.equal(board.tracked, 4);
     assert.equal(board.needTopUp, 1);
     assert.equal(board.bringToJosh, 1);
-    assert.equal(board.sendsToday, 64);
+    assert.equal(board.clients.find((row) => row.clientName === "Parlay")?.status, "behind");
+    assert.equal(board.clients.find((row) => row.clientName === "PowerGRYD")?.status, "topup");
+    assert.equal(board.clients.find((row) => row.clientName === "Bolder")?.status, "josh");
+  });
+
+  it("stays empty until the hourly reading exists", () => {
+    const board = buildWatchdogBoard({ snapshot: null });
+    assert.equal(board.clients.length, 0);
+    assert.equal(board.updatedAt, null);
+    assert.equal(board.sendsToday, 0);
   });
 });

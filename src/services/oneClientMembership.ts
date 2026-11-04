@@ -49,6 +49,10 @@ import {
   type MembershipRow,
 } from "../lib/oneClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
+import {
+  ciotolaCrossoverCampaignIds,
+  ciotolaStrayCampaignIds,
+} from "../lib/ciotolaClient.js";
 import { sleep } from "../lib/http.js";
 import { pauseWhileOverdueCanonOps } from "../lib/healthCpuPause.js";
 import { yieldEventLoop } from "../lib/stringifyYielding.js";
@@ -341,15 +345,43 @@ export class OneClientMembershipService {
         this.config,
         this.state,
       );
-      const rawPull = peelCampaignIds(owner, memberships, { poolGeneric });
+      const rawPull = [
+        ...new Set([
+          ...peelCampaignIds(owner, memberships, { poolGeneric }),
+          ...ciotolaCrossoverCampaignIds({
+            account,
+            memberships: memberships.map((row) => ({
+              ...row,
+              campaign: campaignById.get(row.campaignId),
+            })),
+          }),
+          ...ciotolaStrayCampaignIds({
+            account,
+            memberships: memberships.map((row) => ({
+              ...row,
+              campaign: campaignById.get(row.campaignId),
+            })),
+          }),
+        ]),
+      ];
       const pull: number[] = [];
       let protectedByMin = false;
       for (const campaignId of rawPull) {
         const remaining = membershipCounts.get(campaignId) ?? 0;
         const campaign = campaignById.get(campaignId);
+        const ciotolaPeel =
+          ciotolaCrossoverCampaignIds({
+            account,
+            memberships: [{ campaignId, campaign }],
+          }).includes(campaignId) ||
+          ciotolaStrayCampaignIds({
+            account,
+            memberships: [{ campaignId, campaign }],
+          }).includes(campaignId);
         const crossClient =
-          typeof campaign?.client_id === "number" &&
-          campaign.client_id !== owner;
+          (typeof campaign?.client_id === "number" &&
+            campaign.client_id !== owner) ||
+          ciotolaPeel;
         if (
           detachWouldBreakStaffableFloor(
             campaign,

@@ -800,3 +800,51 @@ describe("D282 Insight Josh-only senders", () => {
     );
   });
 });
+
+describe("D325 canAttachMailboxToCampaign Ciotola isolation", () => {
+  it("refuses JEREMY-CIOTOLA on SalesGlider with or without a POD tag", () => {
+    const sg = {
+      id: 4288963,
+      name: "SalesGlider Outbound",
+      status: "ACTIVE",
+      client_id: 345263,
+    } as SmartleadCampaign;
+    const ciotola = {
+      id: 4289735,
+      name: "Ciotola Engagers",
+      status: "ACTIVE",
+      client_id: 345263,
+    } as SmartleadCampaign;
+    const byId = new Map([
+      [4288963, sg],
+      [4289735, ciotola],
+    ]);
+    const withPod = account([], {
+      id: 38,
+      from_name: "Jeremy Ciotola",
+      from_email: "jeremy@ciotolamail.test",
+      client_id: 345263,
+      tags: [{ tag_name: "JEREMY-CIOTOLA" }, { tag_name: "POD-A" }],
+    });
+    const noPod = account([], {
+      id: 39,
+      from_name: "Jeremy Ciotola",
+      from_email: "jeremy2@ciotolamail.test",
+      client_id: 345263,
+      tags: [{ id: 533700, tag_name: "JEREMY-CIOTOLA" }],
+    });
+    const sgSeat = account([], {
+      id: 51,
+      from_name: "Pat Sender",
+      from_email: "pat@salesglidermail.test",
+      client_id: 345263,
+      tags: [{ tag_name: "POD-A" }],
+    });
+    assert.equal(canAttachMailboxToCampaign(withPod, sg, byId), false);
+    assert.equal(canAttachMailboxToCampaign(noPod, sg, byId), false);
+    assert.equal(canAttachMailboxToCampaign(withPod, ciotola, byId), true);
+    assert.equal(canAttachMailboxToCampaign(noPod, ciotola, byId), true);
+    assert.equal(canAttachMailboxToCampaign(sgSeat, ciotola, byId), false);
+    assert.equal(canAttachMailboxToCampaign(sgSeat, sg, byId), true);
+  });
+});

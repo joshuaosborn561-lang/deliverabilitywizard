@@ -7,6 +7,7 @@ import { assignClientCohorts, isOffWeek } from "../lib/restCohort.js";
 import { StateStore } from "../state/store.js";
 import {
   ClientRestService,
+  clientRestGroupKey,
   isExcludedOnlyMembership,
   isRestDetachableCampaign,
 } from "./clientRest.js";
@@ -2222,5 +2223,48 @@ describe("D269 client-rest yields the classify walk", () => {
     });
     clearInterval(timer);
     assert.ok(ticks > 0, "client-rest must yield during classify");
+  });
+});
+
+describe("D325 client-rest groups JEREMY-CIOTOLA off SalesGlider", () => {
+  it("keys Jeremy to the virtual Ciotola client with or without a POD tag", async () => {
+    const { CIOTOLA_CLIENT_ID } = await import("../lib/ciotolaClient.js");
+    const campaignClientById = new Map<number, number>([
+      [3122546, 345263],
+      [4289735, 345263],
+    ]);
+    const withPod = {
+      id: 38,
+      from_email: "jeremy@ciotolamail.test",
+      client_id: 345263,
+      campaign_ids: [3122546],
+      tags: [{ tag_name: "JEREMY-CIOTOLA" }, { tag_name: "POD-A" }],
+    };
+    const noPod = {
+      id: 39,
+      from_email: "jeremy2@ciotolamail.test",
+      client_id: 345263,
+      campaign_ids: [],
+      tags: [{ id: 533700, tag_name: "JEREMY-CIOTOLA" }],
+    };
+    const sg = {
+      id: 51,
+      from_email: "pat@salesglidermail.test",
+      client_id: 345263,
+      campaign_ids: [3122546],
+      tags: [{ tag_name: "POD-A" }],
+    };
+    assert.equal(
+      clientRestGroupKey(withPod, "jeremy@ciotolamail.test", campaignClientById),
+      `id:${CIOTOLA_CLIENT_ID}`,
+    );
+    assert.equal(
+      clientRestGroupKey(noPod, "jeremy2@ciotolamail.test", campaignClientById),
+      `id:${CIOTOLA_CLIENT_ID}`,
+    );
+    assert.equal(
+      clientRestGroupKey(sg, "pat@salesglidermail.test", campaignClientById),
+      "id:345263",
+    );
   });
 });

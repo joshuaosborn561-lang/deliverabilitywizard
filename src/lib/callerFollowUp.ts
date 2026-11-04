@@ -14,6 +14,7 @@
  */
 
 import { mailboxTagNames } from "./markerClients.js";
+import { ciotolaMayAttach, isJeremyCiotolaSeat } from "./ciotolaClient.js";
 
 export const CALLER_FOLLOWUP_SENDER_TAG_DEFAULT = "GABE-VM-RESERVED";
 export const CALLER_FOLLOWUP_NAME_PREFIX_DEFAULT = "Gabe Calls |";
@@ -368,6 +369,15 @@ export function callerFollowUpMayAttach(input: {
   const email = normalizeEmail(
     input.email ?? input.account.from_email ?? input.account.email,
   );
+  // D325 — JEREMY-CIOTOLA / Ciotola before CAYDEN-SG and D242 so a
+  // reserved seat on Gabe Calls | Ciotola still falls through to the
+  // class rules, and a Jeremy seat never lands on ordinary SalesGlider.
+  const ciotola = ciotolaMayAttach({
+    account: input.account,
+    campaign: input.campaign,
+  });
+  if (!ciotola.ok) return ciotola;
+  if (isJeremyCiotolaSeat(input.account)) return ciotola;
   // D324 — before the D242 owned/bridge checks. CAYDEN-SG is not a
   // class sender, so it must not inherit the 3-minute gap or the
   // POD strip. It also must not be fanned onto a normal campaign.

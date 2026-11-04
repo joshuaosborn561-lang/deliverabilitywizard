@@ -570,3 +570,43 @@ describe("CAYDEN-SG and Booking Follow Up membership (D324)", () => {
     );
   });
 });
+
+describe("D325 JEREMY-CIOTOLA attach through callerFollowUpMayAttach", () => {
+  const jeremy = {
+    from_email: "jeremy@ciotolamail.test",
+    tags: [{ tag_name: "JEREMY-CIOTOLA" }, { tag_name: "POD-A" }],
+  };
+  const ciotola = { id: 4289735, name: "Ciotola Engagers" };
+  const gabeCiotola = { id: 4236534, name: "Gabe Calls | Ciotola" };
+
+  it("allows Jeremy only on Ciotola campaigns, including Gabe Calls | Ciotola", () => {
+    assert.equal(
+      callerFollowUpMayAttach({ account: jeremy, campaign: ciotola }).ok,
+      true,
+    );
+    assert.equal(
+      callerFollowUpMayAttach({ account: jeremy, campaign: gabeCiotola }).ok,
+      true,
+    );
+    assert.equal(
+      callerFollowUpMayAttach({ account: jeremy, campaign: regular }).ok,
+      false,
+    );
+  });
+
+  it("keeps GABE-VM-RESERVED on Gabe Calls | Ciotola and refuses other seats", () => {
+    assert.equal(
+      callerFollowUpMayAttach({
+        account: tagged,
+        campaign: gabeCiotola,
+        warmed: true,
+      }).ok,
+      false,
+      "reserved-but-not-owned/bridge still cannot attach (D244)",
+    );
+    assert.equal(
+      callerFollowUpMayAttach({ account: { tags: [{ tag_name: "POD-A" }] }, campaign: ciotola }).ok,
+      false,
+    );
+  });
+});

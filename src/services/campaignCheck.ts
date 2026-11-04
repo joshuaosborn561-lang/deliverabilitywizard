@@ -61,6 +61,7 @@ import {
   mailboxStaffsActiveSalesGlider,
 } from "../lib/insightCampaigns.js";
 import { isGabeVmReserved } from "../lib/canaryLock.js";
+import { isCiotolaCampaign, isJeremyCiotolaSeat } from "../lib/ciotolaClient.js";
 import {
   callerFollowUpAlertKey,
   callerFollowUpBridgeRemovalAlert,
@@ -1380,6 +1381,12 @@ export class CampaignCheckService {
         findings.push({
           kind: "cross_client_membership",
           detail: `${email} also sits on ${foreign.map((id) => `#${id}`).join(", ")}`,
+        });
+      }
+      if (isJeremyCiotolaSeat(account) && !isCiotolaCampaign(campaign)) {
+        findings.push({
+          kind: "client_seat_crossover",
+          detail: `${email} is JEREMY-CIOTOLA on non-Ciotola #${campaign.id}`,
         });
       }
       linkedCount += 1;

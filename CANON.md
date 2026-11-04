@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D324** (2026-11-04). One page of current truth. When a new
+Canon as of **D325** (2026-11-04). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -9,6 +9,8 @@ guard in `src/guards/meta.test.ts` enforces both).
 and every reversal, and most of it is **superseded**. Do not derive behaviour
 from it. Derive behaviour from this file; use the ledger only to understand
 *why* a rule here exists (each rule cites its decision numbers).
+
+**D325.** Seats tagged `JEREMY-CIOTOLA` (tag id 533700) sit under Smartlead client 345263 because no Ciotola client exists. They are only ever eligible for Ciotola campaigns: name starts with `Ciotola` or `Gabe Calls | Ciotola`, or ids 4289735 / 4289736 / 4289737 / 4289738 / 4236534. The gate keys off `JEREMY-CIOTOLA`, not a POD tag — a seat with POD-A, POD-B, or no POD tag is still Ciotola, never SalesGlider. Ciotola is its own client for POD counts (virtual id 900345263) so those seats do not inflate SalesGlider's 40/POD cylinder and never receive pool generics; Ciotola PODs can later be tracked by `JEREMY-CIOTOLA` plus POD tags. Non-Jeremy seats never go onto Ciotola campaigns, except Gabe Calls | Ciotola 4236534 which keeps its `GABE-VM-RESERVED` seats. `/health` raises `client_seat_crossover` when a `JEREMY-CIOTOLA` seat is linked to a non-Ciotola campaign. Fan-out, client-rest, min40, one-client, and `canAttachMailboxToCampaign` all honor the gate. LOCKED section unchanged.
 
 **D324.** Seats tagged `CAYDEN-SG` (SalesGlider 345263, also `POD-A` and `WARMUP-GATE-EXEMPT`) sit only on `Booking Follow Up - <Client>` campaigns. That membership does not confer the other client's membership, and the seats are not fanned onto that client's other campaigns or onto ordinary SalesGlider campaigns. Booking Follow Up is a caller follow-up for membership only: it is not a D242 class campaign, so it keeps the D304 10-minute gap and the send window D306 already leaves alone, and pod-tags does not strip `POD-A`. The D316 rebalance does not retag these seats. A `HOLD-UNTIL-2099-12-31` tag on them today is a stopgap that blocks attaches; the rules above hold after it is removed. LOCKED section unchanged.
 
@@ -621,7 +623,15 @@ have a name."
   sit under floor meanwhile (D139).   **Attach-blocked** senders
   (AS(42004) / `sender_blocked` / restricted / bounce-isolation unlink)
   are skipped the same way — fan-out, top-up, client-rest, and one-client
-  restore must not put them back (D176). **D324:** a `Booking Follow Up`
+  restore must not put them back (D176).   **D325:** a `JEREMY-CIOTOLA` (533700) seat is never SalesGlider
+  fan-out / rest-restore / min40 supply even though Smartlead
+  `client_id` is 345263 and regardless of POD tag (present or
+  stripped); Ciotola campaigns (name `Ciotola` /
+  `Gabe Calls | Ciotola`, or ids 4289735–4289738 / 4236534) take
+  those seats only, and non-Jeremy seats never attach except
+  `GABE-VM-RESERVED` on Gabe Calls | Ciotola 4236534. One-client
+  peels the crossover. `/health` `client_seat_crossover` names a
+  Jeremy seat left on a non-Ciotola campaign. **D324:** a `Booking Follow Up`
   membership does not confer that campaign's client, and a `CAYDEN-SG`
   seat is never fan-out supply (not onto another client's campaigns,
   not onto ordinary SalesGlider). One-client does not peel the seat

@@ -35,6 +35,11 @@ import {
   type InventorySnapshot,
 } from "./inventory.js";
 import { canAttachMailboxToCampaign } from "../lib/insightCampaigns.js";
+import {
+  CIOTOLA_FANOUT_GROUP,
+  isCiotolaCampaign,
+  isJeremyCiotolaSeat,
+} from "../lib/ciotolaClient.js";
 import { preferredGenericOwnerId } from "../lib/dedicatedGeneric.js";
 import { isOffWeekPodSeat } from "../lib/podInventory.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
@@ -71,6 +76,10 @@ export interface ClientFanOutResult {
 function clientGroupKey(
   campaign: SmartleadCampaign,
 ): string | null {
+  // D325 — Ciotola campaigns sit under SalesGlider 345263 but are
+  // their own group. Gabe Calls | Ciotola is skipped earlier as a
+  // caller follow-up.
+  if (isCiotolaCampaign(campaign)) return CIOTOLA_FANOUT_GROUP;
   if (typeof campaign.client_id === "number") return `id:${campaign.client_id}`;
   // BCP campaigns sometimes share branding without a clean client_id.
   if (isBcpCampaignName(String(campaign.name ?? ""))) return "bcp";
@@ -191,6 +200,12 @@ export class ClientFanOutService {
         // seat still must not fan out once that tag is gone.
         if (isCaydenSgSeat(account)) {
           result.skipped.push(`${email}: CAYDEN-SG never fans out (D324)`);
+          continue;
+        }
+        if (isJeremyCiotolaSeat(account) && groupKey !== CIOTOLA_FANOUT_GROUP) {
+          result.skipped.push(
+            `${email}: JEREMY-CIOTOLA never fans out of Ciotola (D325)`,
+          );
           continue;
         }
         // CALLER FOLLOW-UP senders (D242/D244) never fan out onto
@@ -615,6 +630,13 @@ export class ClientFanOutService {
         conferringIds.some((id) => groupIds.has(id))
       );
     }
+
+    // D325 — Jeremy seats belong only to the Ciotola group, never
+    // id:345263, even though Smartlead client_id is SalesGlider.
+    if (isJeremyCiotolaSeat(account)) {
+      return groupKey === CIOTOLA_FANOUT_GROUP;
+    }
+    if (groupKey === CIOTOLA_FANOUT_GROUP) return false;
 
     if (groupKey.startsWith("id:")) {
       const clientId = Number(groupKey.slice(3));

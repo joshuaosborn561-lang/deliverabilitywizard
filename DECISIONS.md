@@ -311,6 +311,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D321 | Live — LOCKED | Every inbox has a name (Josh, 2026-10-29: "Every inbox has a name. Canon that it can never have that again. If no name just send as the company. But everyone should have a name."). A blank or placeholder from_name / signature name (Pool User, Generic, Canary, test, one word, local part) is never written: a seat sends as its Generics Ledger / InboxKit persona, else as the client company name (signature = company). No assign is refused for a missing persona. A 10-minute sweep replaces any placeholder on a non-STOPPED campaign (name + signature only; write flag off until Josh merges); signature checks treat a blank/placeholder name as a mismatch; release restores the persona. Prod incident 2026-10-29: "Pool User Emcor" sent to a prospect. |
 | D322 | Live | Locked-canon CI passes canon-consistent PRs without Josh's approval. It fails when the LOCKED section, `docs/LOCKED-CANON.md`, or `src/lib/lockedCanon.ts` changes unless the PR has the `canon-change` label approved by Josh (`joshuaosborn561-lang` applied it, or he approved the PR while it is present). Josh stays CODEOWNER of those definition files. Implementation paths, including `src/guards/lockedCanon.test.ts`, are not Josh-only. Required checks stay `check` and `locked-canon`; code-owner review is not a merge gate. Unauthorized locked-canon edits never auto-merge. POD-40, Generics Ledger, and ESP matching unchanged. |
 | D324 | Live | CAYDEN-SG seats stay on Booking Follow Up campaigns only. That membership does not confer client membership, so fan-out does not spread them. They are not D242 class senders: POD-A stays, and Booking Follow Up keeps the 10-minute gap and its current window. D316 does not retag them. LOCKED section unchanged. |
+| D325 | Live | JEREMY-CIOTOLA (tag 533700) seats sit under SalesGlider 345263 but are only eligible for Ciotola campaigns (name `Ciotola` / `Gabe Calls | Ciotola`, or ids 4289735–4289738 / 4236534). The gate keys off JEREMY-CIOTOLA, not a POD tag (POD-A / POD-B / none). Ciotola is its own client for POD counts (virtual 900345263) and never takes pool generics. Non-Jeremy seats never go onto Ciotola except GABE-VM-RESERVED on Gabe Calls | Ciotola 4236534. `/health` `client_seat_crossover` when a Jeremy seat is on a non-Ciotola campaign. LOCKED section unchanged. |
 
 ---
 
@@ -11617,3 +11618,56 @@ rule or `mayWritePodTag`). Does not amend D242, D244, D304, or D306.
 `src/services/podTags.test.ts` (D324),
 `src/lib/podOwnedInventory.test.ts` (D324),
 `src/guards/canon.test.ts` D324.
+
+## D325 — JEREMY-CIOTOLA seats are Ciotola, not SalesGlider
+
+**Date.** 2026-11-04.
+
+**Decision.** Jeremy Ciotola's 38 inboxes carry Smartlead tag
+`JEREMY-CIOTOLA` (id 533700). They sit under client 345263
+(SalesGlider) because no Ciotola client exists. They are not
+SalesGlider inventory. A seat with that tag is only ever
+eligible for Ciotola campaigns, whether it also carries
+`POD-A`, `POD-B`, or no POD tag. Stripping the POD tag is a
+stopgap, not the rule — D84 still fans an untagged named
+inbox. Ciotola is its own client for POD counts (virtual id
+900345263) even though campaigns still carry `client_id`
+345263. Ciotola PODs can later be tracked by `JEREMY-CIOTOLA`
+plus POD tags.
+
+**Ciotola campaign.** Name starts with `Ciotola` or
+`Gabe Calls | Ciotola`, or id 4289735, 4289736, 4289737,
+4289738, or 4236534.
+
+**Rule.**
+
+1. Fan-out groups Ciotola campaigns separately from `id:345263`.
+   A `JEREMY-CIOTOLA` seat belongs only to that group. D84
+   detached-inbox staff and client-rest on-week restore must not
+   put them on ACTIVE SalesGlider campaigns. Prod 2026-11-04
+   (POD-A week): after a morning unlink they were re-linked to
+   21+ ACTIVE SalesGlider campaigns (38 Jeremy + 51 POD-A each)
+   by client-rest restore and D84 fan-out (`09cdd5c`).
+2. Non-Jeremy seats never attach to a Ciotola campaign, except
+   Gabe Calls | Ciotola 4236534 which keeps its `GABE-VM-RESERVED`
+   seats (D242/D244 still govern new class attaches).
+3. `ownedNamedClientIdForSeat` remaps Jeremy to 900345263 so
+   SalesGlider's 40/POD count does not include them. Ciotola
+   never takes pool generics. One-client peels the crossover
+   (Jeremy off non-Ciotola; non-Jeremy off regular Ciotola).
+4. `/health` `canonFindings.client_seat_crossover` when a
+   `JEREMY-CIOTOLA` seat is still linked to a non-Ciotola
+   campaign. The kind is a core hole.
+
+**Amends.** D26 / D84 same-client fan-out and D43 / D207 rest
+restore inside 345263 (Ciotola is not SalesGlider). Does not
+amend D242, D244, D324, or LOCKED.
+
+**Guards.** `src/lib/ciotolaClient.test.ts`,
+`src/lib/callerFollowUp.test.ts` (D325),
+`src/services/clientFanOut.test.ts` (D325),
+`src/services/oneClientMembership.test.ts` (D325),
+`src/services/campaignCheck.test.ts` (D325),
+`src/lib/podOwnedInventory.test.ts` (D325),
+`src/lib/canonCompliance.test.ts` (D325),
+`src/guards/canon.test.ts` D325.

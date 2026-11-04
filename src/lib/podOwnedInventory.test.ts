@@ -801,4 +801,67 @@ describe("podOwnedInventory (D285)", () => {
       "Booking Follow Up membership does not make the seat foreign (D324)",
     );
   });
+
+  it("D325: JEREMY-CIOTOLA counts for Ciotola, not SalesGlider", async () => {
+    const { CIOTOLA_CLIENT_ID } = await import("./ciotolaClient.js");
+    const state = new StateStore(stateFile());
+    await state.load();
+    const jeremy = namedSeat({
+      id: 38,
+      email: "jeremy@ciotolamail.test",
+      clientId: 345263,
+      pod: "A",
+      campaignIds: [4289735],
+    });
+    jeremy.tags = [
+      { tag_name: "JEREMY-CIOTOLA" },
+      { tag_name: "POD-A" },
+    ];
+    const sg = namedSeat({
+      id: 51,
+      email: "pat@salesglidermail.test",
+      clientId: 345263,
+      pod: "A",
+      campaignIds: [3122546],
+    });
+    const rows = await countOwnedClientPods({
+      accounts: [jeremy, sg],
+      campaigns: [
+        { id: 4289735, name: "Ciotola Engagers", client_id: 345263, status: "ACTIVE" },
+        { id: 3122546, name: "SalesGlider Engagers", client_id: 345263, status: "ACTIVE" },
+      ],
+      config: loadConfig({}),
+      state,
+      clientIds: [345263],
+    });
+    const ciotolaA = rows.find((row) => row.clientId === CIOTOLA_CLIENT_ID && row.pod === "A");
+    const sgA = rows.find((row) => row.clientId === 345263 && row.pod === "A");
+    assert.equal(ownedNamedClientIdForSeat({
+      account: jeremy,
+      email: "jeremy@ciotolamail.test",
+      campaignIds: [4289735],
+      campaignById: new Map([
+        [4289735, { id: 4289735, client_id: 345263, name: "Ciotola Engagers" }],
+      ]),
+    }), CIOTOLA_CLIENT_ID);
+    assert.equal(ciotolaA?.named, 1);
+    assert.equal(sgA?.named, 1, "SalesGlider POD-A must not include Jeremy");
+
+    const noPod = namedSeat({
+      id: 39,
+      email: "jeremy2@ciotolamail.test",
+      clientId: 345263,
+      pod: "A",
+      campaignIds: [4289735],
+    });
+    noPod.tags = [{ id: 533700, tag_name: "JEREMY-CIOTOLA" }];
+    assert.equal(ownedNamedClientIdForSeat({
+      account: noPod,
+      email: "jeremy2@ciotolamail.test",
+      campaignIds: [4289735],
+      campaignById: new Map([
+        [4289735, { id: 4289735, client_id: 345263, name: "Ciotola Engagers" }],
+      ]),
+    }), CIOTOLA_CLIENT_ID);
+  });
 });

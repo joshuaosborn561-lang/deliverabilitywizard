@@ -36,6 +36,11 @@ import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { canAttachMailboxToCampaign } from "../lib/insightCampaigns.js";
 import {
+  CIOTOLA_CLIENT_ID,
+  isCiotolaCampaign,
+  isJeremyCiotolaSeat,
+} from "../lib/ciotolaClient.js";
+import {
   countStaffableMemberships,
   detachWouldBreakStaffableFloor,
   noteStaffableDetach,
@@ -158,6 +163,7 @@ export function clientRestGroupKey(
   email: string,
   campaignClientById: Map<number, number | null | undefined>,
 ): string | null {
+  if (isJeremyCiotolaSeat(account)) return `id:${CIOTOLA_CLIENT_ID}`;
   if (typeof account.client_id === "number" && Number.isFinite(account.client_id)) {
     return `id:${account.client_id}`;
   }
@@ -230,7 +236,9 @@ export class ClientRestService {
       if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) continue;
       // D264 — Gabe Calls is not an on-week restore / multi-link target.
       if (callerFollowUpExemptFromSenderTopUp(campaign, classPolicy)) continue;
-      const clientId = campaign.client_id;
+      const clientId = isCiotolaCampaign(campaign)
+        ? CIOTOLA_CLIENT_ID
+        : campaign.client_id;
       if (typeof clientId !== "number") continue;
       const list = activeByClient.get(clientId) ?? [];
       list.push(campaign);

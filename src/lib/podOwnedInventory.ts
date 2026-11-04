@@ -32,6 +32,11 @@ import {
 } from "./displaySenderCount.js";
 import { clientPodKey, type GenericAssignedPod } from "./genericPool.js";
 import {
+  CIOTOLA_CLIENT_ID,
+  isCiotolaCampaign,
+  isJeremyCiotolaSeat,
+} from "./ciotolaClient.js";
+import {
   INSIGHT_CLIENT_ID,
   SALESGLIDER_CLIENT_ID,
   insightSenderEmail,
@@ -86,6 +91,12 @@ export function seatSitsOnForeignNamedCampaign(input: {
       )
     ) {
       continue;
+    }
+    // D325 — Ciotola campaigns live under SalesGlider 345263 but
+    // count for the virtual Ciotola client, not as foreign SG.
+    if (isCiotolaCampaign(campaign)) {
+      if (input.ownerClientId === CIOTOLA_CLIENT_ID) continue;
+      return true;
     }
     const cid = campaign.client_id;
     if (
@@ -143,6 +154,12 @@ export function ownedNamedClientIdForSeat(input: {
     email?: string | null;
     username?: string | null;
     signature?: string | null;
+    tags?: Array<{
+      id?: number | null;
+      tag_id?: number | null;
+      tag_name?: unknown;
+      name?: unknown;
+    }> | null;
   };
   email: string;
   campaignIds: Iterable<number>;
@@ -152,6 +169,7 @@ export function ownedNamedClientIdForSeat(input: {
   >;
   isMarkerClientId?: (id: number | null | undefined) => boolean;
 }): number | null {
+  if (isJeremyCiotolaSeat(input.account)) return CIOTOLA_CLIENT_ID;
   const liveId =
     typeof input.account.client_id === "number" &&
     isRealNamedClientId(input.account.client_id, input.isMarkerClientId)
@@ -364,6 +382,8 @@ export async function countOwnedClientPods(input: {
       campaignById,
       isMarkerClientId: isMarker,
     });
+    // D325 — Ciotola is virtual; count it when Jeremy seats exist.
+    if (clientId === CIOTOLA_CLIENT_ID) wanted.add(CIOTOLA_CLIENT_ID);
     if (clientId == null || !wanted.has(clientId)) continue;
     if (isInsightClientId(clientId) && !isInsightJoshAllowedSender(account)) {
       continue;

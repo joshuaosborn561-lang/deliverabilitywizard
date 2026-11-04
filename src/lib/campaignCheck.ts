@@ -20,6 +20,7 @@ export const CAMPAIGN_CHECK_KINDS = [
   "missing_signature_tag",
   "foreign_brand_in_copy",
   "cross_client_membership",
+  "client_seat_crossover",
   "missing_canary",
   "canary_inactive",
   "inbox_missing_known_good",
@@ -56,6 +57,7 @@ export const FIRST_CHECK_BLOCKING: ReadonlySet<CampaignCheckKind> = new Set([
   "missing_signature_tag",
   "foreign_brand_in_copy",
   "cross_client_membership",
+  "client_seat_crossover",
 ]);
 
 export function isFirstCheckBlocking(kind: CampaignCheckKind): boolean {

@@ -117,6 +117,12 @@ import {
   isInsightCampaignId,
   isInsightClientId,
 } from "../lib/insightCampaigns.js";
+import {
+  CIOTOLA_CLIENT_ID,
+  ciotolaExemptFromGenericTopUp,
+  isCiotolaCampaign,
+  isJeremyCiotolaSeat,
+} from "../lib/ciotolaClient.js";
 import type { StateStore } from "../state/store.js";
 import {
   activeHoldUntilDate,
@@ -344,16 +350,22 @@ export class Min40TopUpService {
       ) {
         continue;
       }
-      if (typeof campaign.client_id !== "number") continue;
-      const poc = pocIds.includes(campaign.client_id);
+      if (typeof campaign.client_id !== "number" && !isCiotolaCampaign(campaign)) {
+        continue;
+      }
+      const ownerId = isCiotolaCampaign(campaign)
+        ? CIOTOLA_CLIENT_ID
+        : campaign.client_id;
+      if (typeof ownerId !== "number") continue;
+      const poc = pocIds.includes(ownerId);
       if (poc) {
         if (!shouldStaffPocCampaign(campaign, { reservedCampaignIds })) continue;
       } else if (!campaignIsActive(campaign)) {
         continue;
       }
-      const list = livingByClient.get(campaign.client_id) ?? [];
+      const list = livingByClient.get(ownerId) ?? [];
       list.push(campaign);
-      livingByClient.set(campaign.client_id, list);
+      livingByClient.set(ownerId, list);
     }
     const activeByClient = livingByClient;
 
@@ -771,6 +783,7 @@ export class Min40TopUpService {
     clientId: number,
     campaignById: Map<number, SmartleadCampaign>,
   ): boolean {
+    if (isJeremyCiotolaSeat(account)) return clientId === CIOTOLA_CLIENT_ID;
     if (account.client_id === clientId) return true;
     // D258 — live Smartlead named client_id wins over a stale pool row.
     if (
@@ -854,7 +867,11 @@ export class Min40TopUpService {
    * seats from flipping back onto 592842.
    */
   private neverGenericClient(clientId: number): boolean {
-    return insightExemptFromSenderTopUp({ client_id: clientId }) || isInsightClientId(clientId);
+    return (
+      insightExemptFromSenderTopUp({ client_id: clientId }) ||
+      isInsightClientId(clientId) ||
+      ciotolaExemptFromGenericTopUp(clientId)
+    );
   }
 
   /** D258 — hard block foreign-client / foreign-sig generics onto PowerGRYD. */
@@ -1487,14 +1504,15 @@ export class Min40TopUpService {
         for (const seat of input.seats) {
           await yieldEsp();
           const account = seat.account;
+          const ownerHere = isJeremyCiotolaSeat(account)
+            ? clientId === CIOTOLA_CLIENT_ID
+            : typeof account.client_id === "number" &&
+              account.client_id === clientId;
           const assignedHere =
-            typeof account.client_id === "number" &&
-            account.client_id === clientId &&
-            mailboxPodOf(account) === pod;
+            ownerHere && mailboxPodOf(account) === pod;
           const namedHere =
             !seat.generic &&
-            typeof account.client_id === "number" &&
-            account.client_id === clientId &&
+            ownerHere &&
             (mailboxPodOf(account) === pod || mailboxPodOf(account) == null);
           if (!assignedHere && !namedHere) continue;
           const slot = mailboxEspSlot(account);

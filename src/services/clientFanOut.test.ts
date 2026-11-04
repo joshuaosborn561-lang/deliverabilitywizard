@@ -968,3 +968,131 @@ describe("ClientFanOutService D324 — CAYDEN-SG and Booking Follow Up", () => {
     );
   });
 });
+
+describe("ClientFanOutService D325 — JEREMY-CIOTOLA stays on Ciotola", () => {
+  const state = {
+    getPoolMailbox: () => undefined,
+    isCopyCanary: () => false,
+    getRestingInbox: () => undefined,
+    getDomainHistory: () => undefined,
+    listGenericBackfillApprovals: () => ({}),
+  } as unknown as StateStore;
+
+  function service(smartlead: Partial<SmartleadClient>) {
+    return new ClientFanOutService(
+      loadConfig({}),
+      {
+        updateEmailAccount: async () => undefined,
+        ...smartlead,
+      } as unknown as SmartleadClient,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+  }
+
+  it("does not fan a JEREMY-CIOTOLA seat onto SalesGlider campaigns", async () => {
+    const adds: Array<[number, number[]]> = [];
+    const result = await service({
+      listCampaigns: async () => [
+        { id: 3122546, name: "SalesGlider Engagers", status: "ACTIVE", client_id: 345263 },
+        { id: 4289735, name: "Ciotola Engagers", status: "ACTIVE", client_id: 345263 },
+        { id: 4289736, name: "Ciotola Outbound", status: "ACTIVE", client_id: 345263 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 38,
+          from_email: "jeremy@ciotolamail.test",
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 345263,
+          campaign_ids: [],
+          tags: [
+            { id: 533700, tag_name: "JEREMY-CIOTOLA" },
+            { tag_name: "POD-A" },
+          ],
+        },
+      ],
+      listClients: async () => [{ id: 345263, name: "SalesGlider" }],
+      addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+        adds.push([campaignId, [...ids]]);
+      },
+    }).run({ dryRun: false });
+
+    const targets = adds.map(([id]) => id);
+    assert.ok(!targets.includes(3122546), "Jeremy must not land on SalesGlider");
+    assert.ok(targets.includes(4289735), "Jeremy still reaches Ciotola");
+    assert.ok(targets.includes(4289736), "Jeremy fans across Ciotola campaigns");
+    assert.ok(
+      result.skipped.some((line) =>
+        line.includes("JEREMY-CIOTOLA never fans out of Ciotola"),
+      ),
+    );
+  });
+
+  it("does not fan a SalesGlider seat onto Ciotola campaigns", async () => {
+    const adds: Array<[number, number[]]> = [];
+    await service({
+      listCampaigns: async () => [
+        { id: 3122546, name: "SalesGlider Engagers", status: "ACTIVE", client_id: 345263 },
+        { id: 4289735, name: "Ciotola Engagers", status: "ACTIVE", client_id: 345263 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 51,
+          from_email: "pat@salesglidermail.test",
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 345263,
+          campaign_ids: [3122546],
+          tags: [{ tag_name: "POD-A" }],
+        },
+      ],
+      listClients: async () => [{ id: 345263, name: "SalesGlider" }],
+      addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+        adds.push([campaignId, [...ids]]);
+      },
+    }).run({ dryRun: false });
+
+    assert.deepEqual(
+      adds.map(([id]) => id),
+      [],
+      "a SalesGlider named seat must not spread onto Ciotola",
+    );
+  });
+
+  it("still blocks JEREMY-CIOTOLA with no POD tag from the Nov 4 re-link ids", async () => {
+    const adds: Array<[number, number[]]> = [];
+    const result = await service({
+      listCampaigns: async () => [
+        { id: 4288963, name: "SalesGlider Outbound", status: "ACTIVE", client_id: 345263 },
+        { id: 4288974, name: "SalesGlider Follow Up", status: "ACTIVE", client_id: 345263 },
+        { id: 4287124, name: "SalesGlider Engagers A", status: "ACTIVE", client_id: 345263 },
+        { id: 4287125, name: "SalesGlider Engagers B", status: "ACTIVE", client_id: 345263 },
+        { id: 4289735, name: "Ciotola Engagers", status: "ACTIVE", client_id: 345263 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 38,
+          from_email: "jeremy@ciotolamail.test",
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 345263,
+          campaign_ids: [],
+          tags: [{ id: 533700, tag_name: "JEREMY-CIOTOLA" }],
+        },
+      ],
+      listClients: async () => [{ id: 345263, name: "SalesGlider" }],
+      addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+        adds.push([campaignId, [...ids]]);
+      },
+    }).run({ dryRun: false });
+
+    const targets = adds.map(([id]) => id);
+    for (const id of [4288963, 4288974, 4287124, 4287125]) {
+      assert.ok(!targets.includes(id), `Jeremy must not land on #${id}`);
+    }
+    assert.ok(targets.includes(4289735), "Jeremy still reaches Ciotola without a POD tag");
+    assert.ok(
+      result.skipped.some((line) =>
+        line.includes("JEREMY-CIOTOLA never fans out of Ciotola"),
+      ),
+    );
+  });
+});

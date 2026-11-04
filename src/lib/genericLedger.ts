@@ -10,6 +10,7 @@ import {
   DEEP_ROOTS_CLIENT_ID,
   PETERSON_CLIENT_ID,
 } from "./namedClientIds.js";
+import { CIOTOLA_CLIENT_ID } from "./ciotolaClient.js";
 import { INSIGHT_CLIENT_ID } from "./insightCampaigns.js";
 import {
   GENERIC_POOL_POD_FLOOR,
@@ -281,7 +282,7 @@ export interface GenericLedgerCleanupStamp {
 }
 
 export function suppressPodFloorAlert(clientId: number | null | undefined): boolean {
-  return clientId === PETERSON_CLIENT_ID;
+  return clientId === PETERSON_CLIENT_ID || clientId === CIOTOLA_CLIENT_ID;
 }
 
 export function isFreeWarmLedgerSeat(

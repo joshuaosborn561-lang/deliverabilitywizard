@@ -2255,7 +2255,56 @@ describe("D241 GABE-VM-RESERVED campaign-check", () => {
     }
     assert.deepEqual(writes, []);
   });
+});
 
+describe("D325 client_seat_crossover", () => {
+  it("flags a JEREMY-CIOTOLA seat on a SalesGlider campaign and not on Ciotola", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const sl = {
+      listCampaigns: async () => [
+        { id: 3122546, name: "SalesGlider Engagers", status: "ACTIVE", client_id: 345263 },
+        { id: 4289735, name: "Ciotola Engagers", status: "ACTIVE", client_id: 345263 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 38,
+          from_email: "jeremy@ciotolamail.test",
+          from_name: "Jeremy Ciotola",
+          signature: "Jeremy Ciotola\nCiotola",
+          client_id: 345263,
+          tags: [{ tag_name: "JEREMY-CIOTOLA" }, { tag_name: "POD-A" }],
+          campaign_ids: [3122546, 4289735],
+          is_smtp_success: true,
+          is_imap_success: true,
+          message_per_day: 30,
+          created_at: "2026-06-01T00:00:00Z",
+        },
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+      ],
+      getCampaignSequences: async () => [
+        { seq_number: 1, email_body: "<div>Hi</div><div>%signature%</div>" },
+      ],
+    } as unknown as SmartleadClient;
+    const service = mkCheck(loadConfig({}), sl, delivery(), state);
+    await service.run({ mode: "first" });
+    const hourly = await service.run({ mode: "hourly" });
+    const sg = hourly.findings.find((row) => row.campaignId === 3122546);
+    const ciotola = hourly.findings.find((row) => row.campaignId === 4289735);
+    assert.ok(
+      sg?.findings.some((finding) => finding.kind === "client_seat_crossover"),
+      "SalesGlider must raise client_seat_crossover",
+    );
+    assert.ok(
+      !ciotola?.findings.some((finding) => finding.kind === "client_seat_crossover"),
+      "Ciotola must not raise client_seat_crossover for its own seat",
+    );
+  });
+});
+
+describe("D242 campaign-check follow-on", () => {
   it("D242: does not converge understaffed, ESP mix, or the 3m gap on Gabe Calls (D306)", async () => {
     const state = new StateStore(stateFile());
     await state.load();

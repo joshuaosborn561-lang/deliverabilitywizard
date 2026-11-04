@@ -19182,7 +19182,7 @@ describe("owner intent — D324 CAYDEN-SG stays on Booking Follow Up", () => {
     assert.equal(callerFollowUpSkipsCanonMinGap(booking), false);
     assert.equal(isCaydenSgSeat(cayden), true);
     assert.equal(callerFollowUpMustSkipPodTags(cayden), false);
-    assert.match(canon, /Canon as of \*\*D324\*\*/);
+    assert.match(canon, /Canon as of \*\*D(32[4-9]|3[3-9]\d)\*\*/);
     assert.match(canon, /CAYDEN-SG/);
     assert.match(decisions, /## D324 — /);
     assert.match(decisions, /^\| D324 \|/m);
@@ -19190,5 +19190,47 @@ describe("owner intent — D324 CAYDEN-SG stays on Booking Follow Up", () => {
     assert.match(fanout, /CAYDEN-SG never fans out/);
     assert.match(pods, /isCaydenSgSeat/);
     assert.match(rest, /caydenSgRestMayDetach/);
+  });
+});
+
+describe("owner intent — D325 JEREMY-CIOTOLA is Ciotola, not SalesGlider", () => {
+  it("D325: tag-gated attach, virtual client, client_seat_crossover", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const [canon, decisions, fanout, check, compliance] = await Promise.all([
+      read("../../CANON.md"),
+      read("../../DECISIONS.md"),
+      read("../services/clientFanOut.ts"),
+      read("../lib/campaignCheck.ts"),
+      read("../lib/canonCompliance.ts"),
+    ]);
+    const {
+      CIOTOLA_CLIENT_ID,
+      JEREMY_CIOTOLA_TAG_ID,
+      ciotolaMayAttach,
+      isCiotolaCampaign,
+      isJeremyCiotolaSeat,
+    } = await import("../lib/ciotolaClient.js");
+    const jeremy = { tags: [{ id: 533700, tag_name: "JEREMY-CIOTOLA" }] };
+    assert.equal(JEREMY_CIOTOLA_TAG_ID, 533700);
+    assert.equal(CIOTOLA_CLIENT_ID, 900345263);
+    assert.equal(isJeremyCiotolaSeat(jeremy), true);
+    assert.equal(isCiotolaCampaign({ id: 4289735, name: "x" }), true);
+    assert.equal(
+      ciotolaMayAttach({
+        account: jeremy,
+        campaign: { id: 3122546, name: "SalesGlider Engagers" },
+      }).ok,
+      false,
+    );
+    assert.match(canon, /Canon as of \*\*D325\*\*/);
+    assert.match(canon, /JEREMY-CIOTOLA/);
+    assert.match(canon, /not a POD tag/);
+    assert.match(canon, /client_seat_crossover/);
+    assert.match(decisions, /## D325 — /);
+    assert.match(decisions, /^\| D325 \|/m);
+    assert.match(fanout, /JEREMY-CIOTOLA never fans out of Ciotola/);
+    assert.match(check, /client_seat_crossover/);
+    assert.match(compliance, /client_seat_crossover/);
   });
 });

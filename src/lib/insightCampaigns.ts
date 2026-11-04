@@ -28,6 +28,7 @@ import {
   signatureHay,
 } from "./signatureQa.js";
 import { isAttachForbiddenSeat, isDoNotRelinkPair } from "./attachGuard.js";
+import { ciotolaMayAttach, isCiotolaCampaign } from "./ciotolaClient.js";
 
 /** Live Insight campaigns Josh named (now client 582890 — D192). */
 export const INSIGHT_CAMPAIGN_IDS: readonly number[] = [
@@ -289,6 +290,8 @@ export function isActiveSalesGliderCampaign(
   if (!campaign || !campaignIsActive(campaign)) return false;
   if (isAnyShellCampaign(campaign)) return false;
   if (isInsightCampaignId(campaign.id)) return false;
+  // D325 — Ciotola campaigns sit under 345263 but are not SalesGlider.
+  if (isCiotolaCampaign(campaign)) return false;
   return campaign.client_id === SALESGLIDER_CLIENT_ID;
 }
 
@@ -381,6 +384,9 @@ export function canAttachMailboxToCampaign(
   if (isAttachForbiddenSeat(account)) return false;
   if (isDoNotRelinkPair(insightSenderEmail(account), target.id)) return false;
   if (isAnyShellCampaign(target)) return true;
+  // D325 — JEREMY-CIOTOLA never onto SalesGlider; non-Jeremy never onto
+  // Ciotola (Gabe Calls | Ciotola keeps GABE-VM-RESERVED).
+  if (!ciotolaMayAttach({ account, campaign: target }).ok) return false;
   if (isInsightJoshOnlyCampaign(target) || isInsightCampaignId(target.id)) {
     if (!isInsightJoshAllowedSender(account)) return false;
     if (mailboxStaffsActiveSalesGlider(account, campaignById)) return false;

@@ -1127,4 +1127,66 @@ describe("OneClientMembershipService", () => {
     assert.ok(!result.pulled.some((row) => row.campaignId === 8001));
     assert.ok(!result.pulled.some((row) => row.campaignId === 8003));
   });
+
+  it("D325: peels a JEREMY-CIOTOLA seat off SalesGlider and a non-Jeremy seat off Ciotola", async () => {
+    const removed: Array<[number, number[]]> = [];
+    const service = serviceWith({
+      listCampaigns: async () => [
+        { id: 4289735, name: "Ciotola Engagers", status: "ACTIVE", client_id: 345263 },
+        { id: 3122546, name: "SalesGlider Engagers", status: "ACTIVE", client_id: 345263 },
+        { id: 4236534, name: "Gabe Calls | Ciotola", status: "ACTIVE", client_id: 345263 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 38,
+          from_email: "jeremy@ciotolamail.test",
+          from_name: "Jeremy Ciotola",
+          signature: "Jeremy Ciotola\nCiotola",
+          client_id: 345263,
+          tags: [{ tag_name: "JEREMY-CIOTOLA" }, { tag_name: "POD-A" }],
+          campaign_ids: [4289735, 3122546],
+        },
+        {
+          id: 51,
+          from_email: "pat@salesglidermail.test",
+          from_name: "Pat Sender",
+          signature: "Pat Sender\nSalesGlider",
+          client_id: 345263,
+          tags: [{ tag_name: "POD-A" }],
+          campaign_ids: [3122546, 4289735],
+        },
+        {
+          id: 42,
+          from_email: "gabe@reserved.test",
+          from_name: "Gabe Lopez",
+          signature: "",
+          client_id: 345263,
+          tags: [{ tag_name: "GABE-VM-RESERVED" }],
+          campaign_ids: [4236534],
+        },
+        ...padAccounts(3122546, 345263, 40, 900),
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+      ],
+      removeEmailAccountsFromCampaign: async (campaignId: number, ids: number[]) => {
+        removed.push([campaignId, [...ids]]);
+      },
+    });
+
+    const result = await service.run({ dryRun: false });
+    assert.ok(
+      removed.some(([id, ids]) => id === 3122546 && ids.includes(38)),
+      "Jeremy must leave SalesGlider",
+    );
+    assert.ok(
+      removed.some(([id, ids]) => id === 4289735 && ids.includes(51)),
+      "a SalesGlider seat must leave Ciotola",
+    );
+    assert.ok(
+      !removed.some(([id]) => id === 4236534),
+      "GABE-VM-RESERVED stays on Gabe Calls | Ciotola",
+    );
+    assert.ok(!result.pulled.some((row) => row.campaignId === 4289735 && row.email.startsWith("jeremy")));
+  });
 });

@@ -486,3 +486,111 @@ describe("ResultMonitor D319 budget and carry-over", () => {
     assert.ok((out.carriedOver ?? 0) > 0 && (out.carriedOver ?? 0) < 5);
   });
 });
+
+describe("ResultMonitor D326 working-test reads", () => {
+  const LIVE = { id: 4289543, name: "Goliath Education PenTest Tix | Nov1", status: "ACTIVE" };
+
+  function sd(rows: unknown[], tests: unknown[]): SmartDeliveryClient {
+    return {
+      listTests: async () => tests,
+      getProviderwiseReport: async () => ({ result: rows }),
+      getSenderAccountReport: async () => [],
+      getDomainBlacklist: async () => [],
+      getIpBlacklist: async () => [],
+      getMailboxSummary: async () => [],
+      reportReadsPaused: () => false,
+      reportParallelism: () => 1,
+    } as unknown as SmartDeliveryClient;
+  }
+
+  async function stateWith(testIds: string[]): Promise<StateStore> {
+    const state = new StateStore(`/tmp/d326-monitor-${process.pid}-${Date.now()}-${Math.random()}.json`);
+    await state.load();
+    state.markCampaignTested({
+      campaignId: LIVE.id,
+      campaignName: LIVE.name,
+      testedAt: new Date().toISOString(),
+      testIds,
+      mailboxCount: 50,
+      testsCreated: testIds.length,
+    });
+    return state;
+  }
+
+  it("maps a list row with no campaign_id to its ACTIVE campaign via the scanner record", async () => {
+    const state = await stateWith(["567410"]);
+    const smartlead = { listCampaigns: async () => [LIVE] } as unknown as SmartleadClient;
+    const monitor = new ResultMonitor(
+      config,
+      sd(
+        [{ provider_name: "Gmail", inbox_count: 2, tab_count: 0, spam_count: 8 }],
+        [{ id: 567410, test_name: `Auto: ${LIVE.name} (1/2)`, every_days: 1, status: "ACTIVE" }],
+      ),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+    const out = await monitor.run();
+    assert.equal(out.lowDeliverabilityAlerts, 1);
+    assert.equal(state.listCopySuspects()[0]?.campaignId, LIVE.id);
+  });
+
+  it("treats a 0/0/0 report as no seed results, not 0% inbox", async () => {
+    const state = await stateWith(["569168"]);
+    const smartlead = { listCampaigns: async () => [LIVE] } as unknown as SmartleadClient;
+    const monitor = new ResultMonitor(
+      config,
+      sd(
+        [
+          { provider_name: "Gmail", inbox_rate: 0, inbox_count: 0, tab_count: 0, spam_count: 0, mailbox_count: 6 },
+          { provider_name: "Outlook", inbox_rate: 0, inbox_count: 0, tab_count: 0, spam_count: 0, mailbox_count: 6 },
+        ],
+        [{ id: 569168, test_name: `Auto: ${LIVE.name}`, every_days: 1, status: "ACTIVE" }],
+      ),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+    const out = await monitor.run();
+    assert.equal(out.lowDeliverabilityAlerts, 0);
+    assert.deepEqual(out.noSeedResults, ["569168"]);
+    assert.equal(state.listCopySuspects().length, 0);
+  });
+
+  it("does not score a provider row with no seeds when another provider has results", async () => {
+    const state = await stateWith(["1"]);
+    const smartlead = { listCampaigns: async () => [LIVE] } as unknown as SmartleadClient;
+    const monitor = new ResultMonitor(
+      config,
+      sd(
+        [
+          { provider_name: "Gmail", inbox_count: 9, tab_count: 0, spam_count: 1 },
+          { provider_name: "Yahoo", inbox_rate: 0, inbox_count: 0, tab_count: 0, spam_count: 0, mailbox_count: 3 },
+        ],
+        [{ id: 1, test_name: `Auto: ${LIVE.name}`, every_days: 1, status: "ACTIVE" }],
+      ),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+    const out = await monitor.run();
+    assert.equal(out.lowDeliverabilityAlerts, 0, "empty Yahoo row must not read as 0%");
+  });
+
+  it("walks every pinned live test, not only the newest 100", async () => {
+    const ids = Array.from({ length: 150 }, (_, i) => String(600000 + i));
+    const state = await stateWith(ids);
+    const seen = new Set<string>();
+    const client = {
+      ...sd([], ids.map((id) => ({ id: Number(id), test_name: "Auto: x", every_days: 1, status: "ACTIVE" }))),
+      getProviderwiseReport: async (id: string) => {
+        seen.add(String(id));
+        return { result: [] };
+      },
+    } as unknown as SmartDeliveryClient;
+    const smartlead = { listCampaigns: async () => [LIVE] } as unknown as SmartleadClient;
+    const monitor = new ResultMonitor(config, client, smartlead, fakeSlack(), state);
+    await monitor.run();
+    assert.equal(seen.size, 150);
+  });
+});

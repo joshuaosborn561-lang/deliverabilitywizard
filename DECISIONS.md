@@ -11617,3 +11617,38 @@ rule or `mayWritePodTag`). Does not amend D242, D244, D304, or D306.
 `src/services/podTags.test.ts` (D324),
 `src/lib/podOwnedInventory.test.ts` (D324),
 `src/guards/canon.test.ts` D324.
+## D326 — Every ACTIVE campaign's placement test is read, and "no seeds" is not 0%
+
+**Date.** 2026-11-04. Proposed by the Deliverability bot for Cayden's
+"every campaign has a working test" ask. Draft; not merged.
+
+**Problem (live 2026-11-02..04).**
+
+1. monitor-results capped its walk at the newest 100 pinned test ids.
+   About 267 latest-batch tests belong to the 203 ACTIVE campaigns, so
+   the tests of roughly 140 campaigns (mostly created 2026-10-29) were
+   never read; the D319 carry cursor only rotated inside those 100.
+2. SmartDelivery's list rows have no `campaign_id`, and the monitor did
+   not enrich them, so all 62 under-80 reads logged "no ACTIVE live
+   campaign to queue" even though 61 were on ACTIVE campaigns per the
+   scanner's own creation log. Isolation never queued.
+3. A provider row with no seed results (inbox, tab and spam all 0) read
+   as 0% (`inbox_rate: 0`, or inbox 0 over `mailbox_count`), so pending
+   or never-returned runs looked like failures.
+4. The reconciler counted stopped / completed rows with no linkage as
+   "orphans" (2,999), hiding the few living ones that need a look.
+
+**Rule.**
+
+1. The monitor's report walk fits every pinned id (ACTIVE live + copy
+   canary); the cap is `max(100, pinned)`. Reads still spread over
+   passes by the D319 budget and carry cursor.
+2. A test id the scanner created maps back to its campaign through
+   `testedCampaigns` when the list row has no `campaign_id`, in the
+   monitor and the reconciler. An id two campaigns claim maps to none
+   (D121 still holds: no name guessing).
+3. A report with seed counts that are all 0 is "no seed results": it is
+   logged and returned in `noSeedResults`, and is not scored. A single
+   provider row with no seeds is skipped, not scored 0%.
+4. Only stoppable rows with no linkage count as reconciler orphans.
+5. `listTests` warns when it reaches the 5,000-row cap.

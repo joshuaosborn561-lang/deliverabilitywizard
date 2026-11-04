@@ -23,7 +23,11 @@ import {
   sameEspInboxUgly,
   shouldRequeueIsolation,
 } from "../lib/placementSuspect.js";
-import { prioritizeTestIdsForReports } from "../lib/testIdPriority.js";
+import {
+  DEFAULT_REPORT_TEST_LIMIT,
+  prioritizeTestIdsForReports,
+} from "../lib/testIdPriority.js";
+import { trackedTestCampaignIndex } from "../lib/trackedTestCampaign.js";
 import type { StateStore } from "../state/store.js";
 import type {
   BlacklistedDomainHit,
@@ -53,6 +57,11 @@ export interface MonitorResult {
   carriedOver?: number;
   blacklistAlerts: number;
   lowDeliverabilityAlerts: number;
+  /**
+   * D326 — tests whose providerwise report had no seed results (inbox, tab
+   * and spam all 0). These are "unknown", not 0% — they are not scored.
+   */
+  noSeedResults?: string[];
   errors: string[];
 }
 
@@ -64,6 +73,8 @@ export class ResultMonitor {
    * memory: a restart simply starts from the top (priority tests first).
    */
   private carryCursor = 0;
+  /** D326 — test id -> campaign id from the scanner's own creation record. */
+  private trackedCampaignByTestId = new Map<string, number>();
 
   constructor(
     private readonly config: AppConfig,
@@ -81,10 +92,14 @@ export class ResultMonitor {
       testsChecked: 0,
       blacklistAlerts: 0,
       lowDeliverabilityAlerts: 0,
+      noSeedResults: [],
       errors: [],
     };
 
     console.log("[monitor] Starting result monitoring");
+    this.trackedCampaignByTestId = trackedTestCampaignIndex(
+      this.state.get().testedCampaigns,
+    );
 
     let tests: SpamTestSummary[] = [];
     try {
@@ -125,10 +140,16 @@ export class ResultMonitor {
     const listedIds = tests
       .map((test) => testIdOf(test))
       .filter((id): id is string => Boolean(id));
+    // D326 — the soft cap of 100 used to cut the walk to the newest 100
+    // pinned ids, so the tests of ~140 older ACTIVE campaigns were never
+    // read. Every pinned (ACTIVE live + copy-canary) id now fits; the D319
+    // carry cursor spreads the reads over passes.
+    const pinnedCount = new Set([...liveTestIds, ...canaryIds].map(String)).size;
     const prioritizedIds = prioritizeTestIdsForReports({
       trackedIds: [...trackedIds, ...listedIds],
       listedTests: tests,
       priorityIds: [...liveTestIds, ...canaryIds],
+      limit: Math.max(DEFAULT_REPORT_TEST_LIMIT, pinnedCount),
     });
     const testById = new Map(
       tests
@@ -152,6 +173,7 @@ export class ResultMonitor {
         result.lowDeliverabilityAlerts += await this.checkProviderDeliverability(
           testId,
           test,
+          result,
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -296,9 +318,19 @@ export class ResultMonitor {
   private async checkProviderDeliverability(
     testId: string,
     test?: SpamTestSummary,
+    result?: MonitorResult,
   ): Promise<number> {
     const report = await this.smartDelivery.getProviderwiseReport(testId);
     const rows = report.result ?? [];
+    // D326 — no seed landed anywhere (0/0/0): the run has not returned yet
+    // or never will. That is "unknown", not 0% inbox — do not score it.
+    if (providerwiseHasNoSeedResults(rows)) {
+      result?.noSeedResults?.push(testId);
+      console.log(
+        `[monitor] D326 test ${testId} (${test?.test_name ?? "unnamed"}) has no seed results yet (0 inbox / 0 tab / 0 spam) — not scored`,
+      );
+      return 0;
+    }
     const providers: Array<{ name: string; inboxPercent: number }> = [];
     for (const row of rows) {
       const score = providerInboxRate(row);
@@ -319,7 +351,10 @@ export class ResultMonitor {
     const campaigns = await this.getCampaigns();
     let target = liveCampaignForPlacementTrigger({
       testName: test?.test_name,
-      testCampaignId: test ? campaignIdOf(test) : undefined,
+      // D326 — list rows omit campaign_id; fall back to the scanner's record.
+      testCampaignId:
+        (test ? campaignIdOf(test) : undefined) ??
+        this.trackedCampaignByTestId.get(String(testId)),
       campaigns,
     });
     if (!target) {
@@ -461,8 +496,33 @@ function computePlacementScore(row: MailboxSummaryRow): number | undefined {
   return undefined;
 }
 
+/**
+ * D326 — true when the providerwise report carries seed counts and every one
+ * is 0 (nothing landed in inbox, tab or spam). Rows that only carry
+ * `inbox_rate` (no counts) are left to {@link providerInboxRate}.
+ */
+export function providerwiseHasNoSeedResults(
+  rows: Array<{
+    inbox_count?: number;
+    tab_count?: number;
+    spam_count?: number;
+  }>,
+): boolean {
+  if (!rows.length) return false;
+  let counted = false;
+  let total = 0;
+  for (const row of rows) {
+    for (const value of [row.inbox_count, row.tab_count, row.spam_count]) {
+      if (typeof value !== "number") continue;
+      counted = true;
+      total += value;
+    }
+  }
+  return counted && total <= 0;
+}
+
 /** SmartDelivery providerwise may return inbox_rate OR inbox_count/total counts. */
-function providerInboxRate(row: {
+export function providerInboxRate(row: {
   inbox_rate?: number;
   inbox_count?: number;
   spam_count?: number;
@@ -471,6 +531,14 @@ function providerInboxRate(row: {
   total_email_count?: number;
   mailbox_count?: number;
 }): number | undefined {
+  // D326 — a provider row whose seeds all came back empty is unknown, not
+  // 0%. Previously `inbox_rate: 0` (or inbox 0 over mailbox_count) on such a
+  // row read as "under 80%".
+  const counts = [row.inbox_count, row.tab_count, row.spam_count].filter(
+    (n): n is number => typeof n === "number",
+  );
+  if (counts.length && counts.reduce((a, b) => a + b, 0) <= 0) return undefined;
+
   if (typeof row.inbox_rate === "number") return row.inbox_rate;
 
   const inbox = row.inbox_count;

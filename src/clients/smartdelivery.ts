@@ -285,6 +285,13 @@ export class SmartDeliveryClient {
       all.push(...rows);
       if (rows.length < limit) break;
       offset += rows.length;
+      if (page === TEST_LIST_MAX_PAGES - 1) {
+        // D326 — say so instead of silently treating a capped list as all
+        // tests (2026-11-04: 11,378 tests, list stops at 5,000).
+        console.warn(
+          `[smartdelivery] D326 test list hit the ${TEST_LIST_CAP}-row cap — older tests are not in this pass's list`,
+        );
+      }
     }
     return all;
   }

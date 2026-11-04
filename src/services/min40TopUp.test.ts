@@ -2680,4 +2680,88 @@ describe("Min40TopUpService (D205)", () => {
     assert.match(src, /\[min40-topup\] error:/);
     assert.match(src, /reasons=/);
   });
+
+  it("D326: prefers named rebalance over generics for a 21/59 split", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "spare@crosslaunchco.com",
+      domain: "crosslaunchco.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 900,
+      firstName: "Harmony",
+      lastName: "Norris",
+      status: "available",
+      warmedAt,
+    });
+    const now = new Date("2026-01-01T17:00:00Z"); // A on, B off
+    const namedA = Array.from({ length: 21 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `a${i}@bpltg.test`,
+      client_id: 9,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      created_at: "2025-06-01T00:00:00Z",
+      campaign_ids: [10],
+      tags: [{ tag_name: "POD-A" }],
+    }));
+    const namedB = Array.from({ length: 59 }, (_, i) => ({
+      id: 200 + i,
+      from_email: `b${i}@bpltg.test`,
+      client_id: 9,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      created_at: "2025-06-01T00:00:00Z",
+      campaign_ids: [],
+      tags: [{ tag_name: "POD-B" }],
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now,
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 9, name: "BPLTG", logo: "BPLTG" }],
+        campaigns: [
+          { id: 10, name: "BPLTG Outbound", status: "ACTIVE", client_id: 9 },
+        ],
+        accounts: [
+          ...namedA,
+          ...namedB,
+          {
+            id: 900,
+            from_email: "spare@crosslaunchco.com",
+            from_name: "Harmony Norris",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }],
+            created_at: warmedAt,
+          },
+        ],
+      },
+    });
+    assert.equal(attached.length, 0, "21/59 must not cover the gap with generics");
+    assert.ok(
+      !result.asked.some((row) => row.shortBy > 0),
+      "rebalance covers both PODs; generics stay at 0",
+    );
+  });
 });

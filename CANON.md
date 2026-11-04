@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D325** (2026-11-04). One page of current truth. When a new
+Canon as of **D326** (2026-11-04). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -9,6 +9,8 @@ guard in `src/guards/meta.test.ts` enforces both).
 and every reversal, and most of it is **superseded**. Do not derive behaviour
 from it. Derive behaviour from this file; use the ledger only to understand
 *why* a rule here exists (each rule cites its decision numbers).
+
+**D326.** Moving named inboxes between POD-A and POD-B to balance a lopsided client is allowed and preferred over covering the gap with generics (Josh 11/4, supersedes D203 never-retag / PR #242). Example: BPLTG at 21/59 becomes an even ESP-balanced split. Only the off-week POD's named seats, or seats not linked to ACTIVE campaigns, may move — live sending is never disrupted mid-week. A 24h 5.7.233 / TERRL stop keeps its POD tag. Generics only top each POD up to 40. The D316 15% idle rebalance is the same path, now targeting an even split. `mayWritePodTag` still refuses every other writer. LOCKED section unchanged.
 
 **D325.** Seats tagged `JEREMY-CIOTOLA` (tag id 533700) sit under Smartlead client 345263 because no Ciotola client exists. They are only ever eligible for Ciotola campaigns: name starts with `Ciotola` or `Gabe Calls | Ciotola`, or ids 4289735 / 4289736 / 4289737 / 4289738 / 4236534. The gate keys off `JEREMY-CIOTOLA`, not a POD tag — a seat with POD-A, POD-B, or no POD tag is still Ciotola, never SalesGlider. Ciotola is its own client for POD counts (virtual id 900345263) so those seats do not inflate SalesGlider's 40/POD cylinder and never receive pool generics; Ciotola PODs can later be tracked by `JEREMY-CIOTOLA` plus POD tags. Non-Jeremy seats never go onto Ciotola campaigns, except Gabe Calls | Ciotola 4236534 which keeps its `GABE-VM-RESERVED` seats. `/health` raises `client_seat_crossover` when a `JEREMY-CIOTOLA` seat is linked to a non-Ciotola campaign. Fan-out, client-rest, min40, one-client, and `canAttachMailboxToCampaign` all honor the gate. LOCKED section unchanged.
 
@@ -226,7 +228,8 @@ Caps ramp manually (35 on Oct 12).
   **one** extra warm (21+ days) generic from that **same client's**
   generics, signature and sender name set for the client, so the
   POD runs at **41 linked / 40 sending**. Never retag named seats to
-  staff a campaign; the only A↔B retag is the D316 15% rebalance.
+  staff a campaign; the only A↔B retag is the D316/D326 named
+  rebalance (off-week or idle; a 5.7.233 stop keeps its POD tag).
   Never move seats between PODs for any other reason. Never borrow another client's
   generic. Record the temp substitution (stopped seat, substitute,
   campaign, client, stop time). When the 24 hours are up, restore
@@ -644,16 +647,24 @@ have a name."
   **static** even A/B (D43/D203) that is **ESP-balanced ~50/50 within Outlook and within Gmail**
   per non-generic client (D192) — not an alphabetical-only half.
   Never retag or move named seats between POD-A and POD-B to staff
-  the on-week campaign (D203/D234). **D234 / D316:** a named
-  already-tagged POD-A or POD-B seat is immutable — only an untagged
-  seat may receive a first POD tag — **with one lawful exception
+  the on-week campaign (D203/D234) — an on-week seat linked to an
+  ACTIVE campaign stays put mid-week. **D326** (Josh 11/4, supersedes
+  D203 never-retag / PR #242): moving named inboxes A↔B to balance a
+  lopsided client is allowed and preferred over covering the gap with
+  generics (BPLTG 21/59 → even ESP-balanced split). Only the off-week
+  POD's named seats, or seats not linked to ACTIVE campaigns, may
+  move. A 24h 5.7.233 / TERRL stop keeps its POD tag. Generics only
+  top each POD up to 40. **D234 / D316:** a named already-tagged
+  POD-A or POD-B seat is immutable — only an untagged seat may
+  receive a first POD tag — **with one lawful exception
   (D316, Josh 10/29): a client's named seats on POD-A and POD-B must
   stay within 15% of each other** (gap ÷ the larger POD), and pod-tags
-  retags idle named seats larger → smaller to fix it (never a seat on an
-  ACTIVE campaign; ESP balance kept; ≤10 per pass; canaries, reserved,
-  POC, dual-tagged, and `CAYDEN-SG` seats never move — D324 locks
-  those seats without stripping the POD tag). No other job (min40, rest,
-  rotation, ESP-balance) may change A to B or B to A. Weekend writers
+  retags idle or off-week named seats larger → smaller to even them
+  (D326; never an on-week seat on an ACTIVE campaign; ESP balance
+  kept; canaries, reserved, POC, dual-tagged, TERRL, and `CAYDEN-SG`
+  seats never move — D324 locks those seats without stripping the
+  POD tag). No other job (min40, rest, rotation, ESP-balance) may
+  change A to B or B to A. Weekend writers
   (pod-tags, client-rest) idle Sat/Sun except Josh-live `/run`.
   **D235:** a generic carries a client and POD tag only while
   staffed. Returning it to the untagged pool (surplus, named-warm
@@ -661,7 +672,7 @@ have a name."
   with `client_id` and signature and records `released_at`. The
   D234 lock still allows that strip, and still allows a first POD
   tag on an untagged pool generic being assigned. Named seats stay
-  immutable except the D316 15% rebalance. Generics are not part of that named cut.
+  immutable except the D316/D326 named rebalance. Generics are not part of that named cut.
   On top of the D192 cut, each POD keeps the D203/D301 mix: match
   that client's InboxKit Microsoft share (±max(2, 10% of the POD));
   fall back to ~1/3 only when InboxKit has no row.
@@ -695,7 +706,7 @@ have a name."
   `#deliverability` on weekdays; the wizard does not pick a side.
   The split is visible in Smartlead as POD-A/POD-B mailbox tags,
   first-tagged 6-hourly on untagged named seats only (D135/D234) —
-  decoration for humans; retagged only by the D316 15% rebalance. **CALLER FOLLOW-UP
+  decoration for humans; retagged only by the D316/D326 named rebalance. **CALLER FOLLOW-UP
   reserved seats never receive a POD tag** (D244); pod-tags
   strips POD-A/POD-B that already landed on them.
   Assigned generics also carry a POD so allocation can top A and B

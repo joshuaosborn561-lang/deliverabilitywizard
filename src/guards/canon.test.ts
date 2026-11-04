@@ -19088,7 +19088,86 @@ describe("owner intent — D316 named POD balance 15%", () => {
     assert.match(canon, /D316, Josh 10\/29\): a client's named seats on POD-A and POD-B must\s+stay within 15%/, "CANON.md lost the D316 rule");
     assert.match(decisions, /## D316 — /, "DECISIONS.md has no D316 entry");
     assert.match(decisions, /^\| D316 \|/m, "status index has no D316 row");
-    assert.match(prompt, /D316 rebalance/, "campaign-setup prompt still says never retag with no exception");
+    assert.match(prompt, /D316\/D326 rebalance|D316 rebalance/, "campaign-setup prompt still says never retag with no exception");
+  });
+});
+
+describe("owner intent — D326 named POD rebalance even split", () => {
+  it("D326: off-week or idle named seats may move; TERRL keeps its tag; generics only top to 40", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const [canon, decisions, bal, tags, min40] = await Promise.all([
+      read("../../CANON.md"),
+      read("../../DECISIONS.md"),
+      read("../lib/namedPodBalance.ts"),
+      read("../services/podTags.ts"),
+      read("../services/min40TopUp.ts"),
+    ]);
+    const {
+      genericNeedAfterNamedRebalance,
+      namedPodsEven,
+      planNamedPodRebalance,
+      seatMayMoveForNamedRebalance,
+    } = await import("../lib/namedPodBalance.js");
+    assert.equal(namedPodsEven(40, 40), true);
+    assert.equal(namedPodsEven(21, 59), false);
+    assert.equal(
+      seatMayMoveForNamedRebalance({
+        accountId: 1,
+        email: "b@x.com",
+        clientId: 1,
+        pod: "B",
+        esp: "gmail",
+        onActiveCampaign: true,
+        offWeek: true,
+        locked: false,
+      }),
+      true,
+    );
+    assert.equal(
+      seatMayMoveForNamedRebalance({
+        accountId: 2,
+        email: "a@x.com",
+        clientId: 1,
+        pod: "A",
+        esp: "gmail",
+        onActiveCampaign: true,
+        offWeek: false,
+        locked: false,
+      }),
+      false,
+    );
+    assert.equal(
+      genericNeedAfterNamedRebalance({
+        namedA: 21,
+        namedB: 59,
+        movableA: 0,
+        movableB: 59,
+      }).needA,
+      0,
+    );
+    const plan = planNamedPodRebalance(
+      Array.from({ length: 80 }, (_, i) => ({
+        accountId: i + 1,
+        email: `s${i}@x.com`,
+        clientId: 1,
+        pod: (i < 21 ? "A" : "B") as "A" | "B",
+        esp: "gmail" as const,
+        onActiveCampaign: false,
+        locked: false,
+      })),
+      { maxMoves: 50 },
+    );
+    assert.equal(plan.moves.length, 19);
+    assert.match(canon, /Canon as of \*\*D326\*\*/);
+    assert.match(canon, /supersedes D203 never-retag/);
+    assert.match(canon, /BPLTG 21\/59/);
+    assert.match(canon, /5\.7\.233/);
+    assert.match(decisions, /## D326 — /);
+    assert.match(decisions, /^\| D326 \|/m);
+    assert.match(bal, /seatMayMoveForNamedRebalance/);
+    assert.match(tags, /accountOnBounceHold/);
+    assert.match(min40, /genericNeedAfterNamedRebalance/);
   });
 });
 
@@ -19223,7 +19302,7 @@ describe("owner intent — D325 JEREMY-CIOTOLA is Ciotola, not SalesGlider", () 
       }).ok,
       false,
     );
-    assert.match(canon, /Canon as of \*\*D325\*\*/);
+    assert.match(canon, /Canon as of \*\*D(32[5-9]|3[3-9]\d)\*\*/);
     assert.match(canon, /JEREMY-CIOTOLA/);
     assert.match(canon, /not a POD tag/);
     assert.match(canon, /client_seat_crossover/);

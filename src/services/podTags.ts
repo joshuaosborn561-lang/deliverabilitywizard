@@ -15,6 +15,7 @@ import {
 import { existingPodTag } from "../lib/podTagLock.js";
 import {
   NAMED_POD_MAX_MOVES_PER_PASS,
+  namedPodsEven,
   planNamedPodRebalance,
   type NamedPodSeat,
 } from "../lib/namedPodBalance.js";
@@ -27,6 +28,8 @@ import {
   isCaydenSgSeat,
 } from "../lib/callerFollowUp.js";
 import { pocEngagementClientIds } from "../lib/pocClient.js";
+import { accountOnBounceHold } from "../lib/bounceHold.js";
+import { onWeekCohort } from "../lib/restCohort.js";
 
 export const POD_TAG_A = "POD-A";
 export const POD_TAG_B = "POD-B";
@@ -40,7 +43,7 @@ export interface PodTagResult {
   skipped?: boolean;
   reason?: string;
   refused?: number;
-  /** D316 — named seats retagged to hold POD-A/POD-B within 15%. */
+  /** D316 / D326 — named seats retagged to even a lopsided client. */
   rebalanced?: number;
 }
 
@@ -73,22 +76,23 @@ export class PodTagService {
     const result = await this.runFirstTag(opts);
     if (result.skipped || !this.config.enableNamedPodRebalance) return result;
     try {
-      const moved = await this.rebalanceNamedSeats();
+      const moved = await this.rebalanceNamedSeats(opts.now);
       if (moved > 0) result.rebalanced = moved;
     } catch (error) {
-      console.warn("[pod-tags] D316 named-seat rebalance failed", error);
+      console.warn("[pod-tags] D326 named-seat rebalance failed", error);
     }
     return result;
   }
 
   /**
-   * D316 (B3) — Josh 10/29: a client's named seats on POD-A and POD-B stay
-   * within 15% of each other; retag named seats to fix it (overrides the
-   * D234 never-retag). Only seats NOT on an ACTIVE campaign move, so
-   * nothing is unlinked from live sending; canaries, reserved, dual-tagged,
-   * POC and isolation seats never move; at most N per pass.
+   * D326 — Josh 11/4: move named inboxes A↔B to balance a lopsided
+   * client, preferred over covering the gap with generics. Only the
+   * off-week POD's named seats, or seats not linked to ACTIVE
+   * campaigns, may move. A 24h 5.7.233 / TERRL stop keeps its POD
+   * tag. Canaries, reserved, dual-tagged, POC, isolation and
+   * CAYDEN-SG never move. ESP stay balanced. At most N per pass.
    */
-  async rebalanceNamedSeats(): Promise<number> {
+  async rebalanceNamedSeats(now: Date = new Date()): Promise<number> {
     const pods = await loadPods({
       config: this.config,
       state: this.state,
@@ -106,6 +110,7 @@ export class PodTagService {
       this.config.pocClientNamePatterns,
       this.state.listEndedPocClientIds(),
     );
+    const onWeek = onWeekCohort(now);
     const seats: NamedPodSeat[] = [];
     for (const pod of pods) {
       if ((pod.pool !== "A" && pod.pool !== "B") || pod.clientId == null) continue;
@@ -122,7 +127,9 @@ export class PodTagService {
           isCaydenSgSeat(account) ||
           hasDualPodTags(account.tags) ||
           isPodRotationSkippedClient(pod.clientId, pocSkipIds) ||
-          existingPodTag(account.tags) !== pod.pool;
+          existingPodTag(account.tags) !== pod.pool ||
+          // D326 — a 24h 5.7.233 / TERRL stop keeps its POD tag.
+          accountOnBounceHold(account, this.state, now);
         seats.push({
           accountId: account.id,
           email,
@@ -130,6 +137,7 @@ export class PodTagService {
           pod: pod.pool,
           esp: senderEspBucket(account),
           onActiveCampaign: campaignIdsOf(account).some((id) => active.has(id)),
+          offWeek: pod.pool !== onWeek,
           locked: Boolean(locked),
         });
       }
@@ -138,9 +146,9 @@ export class PodTagService {
       maxMoves: NAMED_POD_MAX_MOVES_PER_PASS,
     });
     for (const client of plan.clients) {
-      if (client.gap > 0.15 + 1e-9) {
+      if (!namedPodsEven(client.a, client.b)) {
         console.log(
-          `[pod-tags] D316 client ${client.clientId} named A=${client.a} B=${client.b} gap=${(client.gap * 100).toFixed(0)}% → ${client.moves.length} retag(s)${client.remainingGap > 0.15 + 1e-9 ? `, still ${(client.remainingGap * 100).toFixed(0)}% after (busy seats stay until rested)` : ""}`,
+          `[pod-tags] D326 client ${client.clientId} named A=${client.a} B=${client.b} gap=${(client.gap * 100).toFixed(0)}% → ${client.moves.length} retag(s)${client.remainingEven ? "" : ", still uneven after (on-week ACTIVE seats stay mid-week)"}`,
         );
       }
     }
@@ -149,7 +157,7 @@ export class PodTagService {
     const toB = plan.moves.filter((m) => m.to === "B");
     if (this.config.dryRun) {
       console.log(
-        `[pod-tags] D316 (dry-run: no writes) would retag ${plan.moves.map((m) => `${m.email} POD-${m.from}→POD-${m.to}`).join(", ")}`,
+        `[pod-tags] D326 (dry-run: no writes) would retag ${plan.moves.map((m) => `${m.email} POD-${m.from}→POD-${m.to}`).join(", ")}`,
       );
       return 0;
     }
@@ -169,7 +177,7 @@ export class PodTagService {
       }
     }
     console.log(
-      `[pod-tags] D316 retagged ${moved} named seat(s) to hold POD-A/POD-B within 15%: ${plan.moves.map((m) => `${m.email} POD-${m.from}→POD-${m.to}`).join(", ")}`,
+      `[pod-tags] D326 retagged ${moved} named seat(s) to even POD-A/POD-B: ${plan.moves.map((m) => `${m.email} POD-${m.from}→POD-${m.to}`).join(", ")}`,
     );
     return moved;
   }

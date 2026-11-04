@@ -10,8 +10,9 @@
  *
  * D203 — this split is **named senders only** and **static**. Never
  * retag or move named seats between POD-A and POD-B to staff the
- * on-week campaign. D316 — the one exception: pod-tags retags idle named
- * seats larger → smaller to keep A and B within 15% of each other. Exclusive client-signed generics layer on top of
+ * on-week campaign. D326 — pod-tags may retag off-week or idle named
+ * seats larger → smaller to even a lopsided client (preferred over
+ * generics). D316 — the same path also keeps A and B within 15% of each other. Exclusive client-signed generics layer on top of
  * each POD (own split so named cohorts do not flip — D198). On top
  * of this within-ESP A/B cut, each POD also keeps a ~1/3 Outlook /
  * Gmail mix floor when the client has both ESPs (no monoculture).
@@ -66,7 +67,8 @@ export function normalizeCohortInboxes(
  * First half (ceil) is A; the rest is B. Email-only callers (no
  * type) land in the "other" bucket and keep the old alphabetical
  * half. D203: do not recompute this cut to move named seats across
- * A/B just to staff the on-week campaign — the named split is static.
+ * A/B just to staff the on-week campaign — the named split is static
+ * here. D326 rebalance lives in pod-tags.
  */
 export function assignClientCohorts(
   inboxes: Array<string | ClientCohortInbox>,

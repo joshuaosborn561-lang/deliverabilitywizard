@@ -212,7 +212,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D198 | Superseded in part by D221 — keep dedicated pool generics even above 40 is retired (PowerGRYD 592842 remains the dedicated exception); exclusive + client-sig still identifies a current assignment (D199); same-client multi-link stays (D207/D209); D283 — pool `assignedClientId=592842` / `powergryd_dedicated` does not win over live Smartlead `client_id=null` | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
 | D199 | Live — same-client generic multi-link by D207/D209; 40/POD inventory by D203; live floor per ACTIVE campaign (D207); rest-record is not peel-exempt (D209) | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
 | D200 | Superseded by D207 — same-client generics may multi-link like named seats; exclusive-attach / exclusiveExtras peel is retired; cross-client peel stays | Exclusive-attach / no-multi-link applies to pool generics only; same-client named seats (techevolution* / TechEvo 521881) may sit on every campaign of that client; still peel pool multi-link, foreign-client tag, and rotating undedicated pool shares |
-| D203 | Live — live send floor is per ACTIVE campaign (D207); 40-A + 40-B inventory, static named split, never-retag stay; ~1/3 ESP mix is the InboxKit-miss fallback (D301) | Named-client POD A/B is a static even split of named senders only; each POD owes 40 staffable seats at client inventory (40-A + 40-B); exclusive client-signed generics are thin per-POD top-up when named half is short; do not retag named seats or over-disperse the free pool. ESP mix follows the client's InboxKit split (D301); ~1/3 is fallback only. |
+| D203 | Live — live send floor is per ACTIVE campaign (D207); 40-A + 40-B inventory stay; never-retag named seats superseded by D326; ~1/3 ESP mix is the InboxKit-miss fallback (D301) | Named-client POD A/B is an even split of named senders only; each POD owes 40 staffable seats at client inventory (40-A + 40-B); exclusive client-signed generics are thin per-POD top-up when named half is short after rebalance. Do not retag an on-week ACTIVE seat mid-week (D326). ESP mix follows the client's InboxKit split (D301); ~1/3 is fallback only. |
 | D205 | Live — Insight SEG removed from hold defaults by D246; min40 shares same-client generics (D207); PowerGRYD restaff-as-special-case retired by D237; watch still never START/PAUSE; auto-allow / Allow-generics Slack retired by D268 | Wizard-owned canon-ops stages (hold-enforcement / min40-topup / powergryd-watch / generic-cleanup) on a weekday Chicago 30-minute cron; the only live-campaign PAUSED write besides shells |
 | D207 | Live — named min-40 *fill/page* superseded by D285; peel-below-40 on ACTIVE stays | MIN 40 peel floor is per ACTIVE campaign; same-client generics may multi-link; no PAUSED/STOPPED detach (D169 retired); detachWouldBreakStaffableFloor on every ACTIVE remove except disconnected / cross-client / HOLD-RETIRE / under-warmed. Named fill and ops_alert are per POD owned inventory (D285) |
 | D209 | Live | Same-client multi-link is never a peel reason; a rest record on a still-attached seat does not shrink the 40 floor or exempt the peel; client-rest only marks resting after a successful detach; CultureFits / Vasco GENERIC seats that already staff a named client are normal pool seats, not dirt |
@@ -303,7 +303,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D312 | Live | A1 critical sweep: placement results (`monitor-results`), `test-reconcile` and `isolation-branch` run every 30 min on their own lock and a top-priority Smartlead lane; bounce-autostop's 10-min cron also runs on that lane (never blocked by the exclusive health lane, served first, and critical writes jump the mutation queue). Amends D270 (exclusive health lane), D257 (limiter) and D247 (locks). Those stages are overdue-paged at 75 min, not 6h45m. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 | D314 | Live (LOCKED PR — Josh merges) | Insight is exempt from the `esp_mix` Canon finding (Josh 10/29: "yes exempt insight it is mostly msft"). Campaigns on Insight (client 582890 / Insight campaign ids) no longer raise `esp_mix`, so they stop counting against `/health` canonFindings and the Canon score. ESP-mix still applies to every other client; seat assignment, min-40 and the Azure rules are unchanged. |
 | D315 | Live | A4 bloat: (1) `enrichCampaignIds` remembers each test's campaign (immutable) instead of one `GET spam-test/{id}` per test in five services every pass — those were 3,088 of 4,886 logged 429s on 10/28–29 (628 tests); (2) the unfiltered `listTests` is shared for 30 s across callers and dropped on any write; (3) the D260 "treating as generic" warning logs once per host/client per process (~800 identical lines per 12 h). No stage removed, no behavior change. |
-| D316 | Live (LOCKED PR — Josh merges) | Named POD-A / POD-B seats stay within 15% of each other (Josh 10/29: "retag named seats to fix it, overriding never-retag"). Amends D234/D203: `pod-tags` retags idle named seats larger → smaller (never a seat on an ACTIVE campaign, ESP kept balanced, ≤10 per pass, canary/reserved/POC/dual-tagged never move). `mayWritePodTag` still refuses every other flip. Kill switch `ENABLE_NAMED_POD_REBALANCE`. |
+| D316 | Live — even-split target and off-week moves amended by D326 | Named POD-A / POD-B seats stay within 15% of each other (Josh 10/29: "retag named seats to fix it, overriding never-retag"). Amends D234/D203: `pod-tags` retags idle named seats larger → smaller (never a seat on an ACTIVE campaign, ESP kept balanced, canary/reserved/POC/dual-tagged never move). `mayWritePodTag` still refuses every other flip. Kill switch `ENABLE_NAMED_POD_REBALANCE`. |
 | D317 | Live | Health-sweep budget: (1) a cold test→campaign cache (after a deploy) can no longer storm SmartDelivery — 3 failed lookups in a row open a 2-minute breaker, each lookup retries once not four times, and every `enrichCampaignIds` caller gets a 90 s default budget; (2) `campaign-health` and `client-rest` stage timeout 10m → 15m as a safety net, with a 20m hard cap on any stage; (3) campaign-health logs its top-up / fan-out / copy-canary seconds and `/health` publishes each stage's `lastDurationMs`. Builds on D315. No stage removed, no cadence change, no campaign, mailbox, setting or WRITE_ENABLED change. |
 | D318 | Live | Exclusive health lane vs the serial mutation queue: a normal-lane job at the head of the Smartlead mutation queue parked behind the exclusive health lane while the health pass (reconnect, mailbox-gap, campaign-health writes) waited on that same queue — a deadlock released only by the 6-minute job timeout, three jobs deep (limiter idle, queue depth 3, oldest wait 300s+). Queued jobs now ride the health lane while it is exclusive (one job at a time, so at most one slot); direct normal-lane calls still wait. `/health` limiter adds `parkedBehindHealth` / `healthWaiting`. No cadence, stage, campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 | D319 | Live | Report-read budget + normal-lane share: (1) SmartDelivery `spam-test/report/*` reads (providerwise, domain-blacklist, blacklist, sender-account-wise) retry once, not four times, and three failed reads in a row (429 / 5xx / timeout) pause report reads for 2 minutes — callers fail fast; a missing test (404) does not count. (2) `monitor-results` works in a 6-minute budget, rotates its test walk from where the last pass stopped (unfinished tests carry over; paused reads are never recorded as "no hits"), and runs a second worker only while the limiter has headroom (no pause, no 429 streak, under 60% of 150/min). (3) While health is exclusive the normal lane keeps one share slot (never the last free one) so the 6-hour monitor chain (lead-runout, canary-adopt, isolation-rig …) can finish; idle slots are handed to waiters when the exclusive stretch ends. No stage removed, no cadence change, no campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
@@ -312,6 +312,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D322 | Live | Locked-canon CI passes canon-consistent PRs without Josh's approval. It fails when the LOCKED section, `docs/LOCKED-CANON.md`, or `src/lib/lockedCanon.ts` changes unless the PR has the `canon-change` label approved by Josh (`joshuaosborn561-lang` applied it, or he approved the PR while it is present). Josh stays CODEOWNER of those definition files. Implementation paths, including `src/guards/lockedCanon.test.ts`, are not Josh-only. Required checks stay `check` and `locked-canon`; code-owner review is not a merge gate. Unauthorized locked-canon edits never auto-merge. POD-40, Generics Ledger, and ESP matching unchanged. |
 | D324 | Live | CAYDEN-SG seats stay on Booking Follow Up campaigns only. That membership does not confer client membership, so fan-out does not spread them. They are not D242 class senders: POD-A stays, and Booking Follow Up keeps the 10-minute gap and its current window. D316 does not retag them. LOCKED section unchanged. |
 | D325 | Live | JEREMY-CIOTOLA (tag 533700) seats sit under SalesGlider 345263 but are only eligible for Ciotola campaigns (name `Ciotola` / `Gabe Calls | Ciotola`, or ids 4289735–4289738 / 4236534). The gate keys off JEREMY-CIOTOLA, not a POD tag (POD-A / POD-B / none). Ciotola is its own client for POD counts (virtual 900345263) and never takes pool generics. Non-Jeremy seats never go onto Ciotola except GABE-VM-RESERVED on Gabe Calls | Ciotola 4236534. `/health` `client_seat_crossover` when a Jeremy seat is on a non-Ciotola campaign. LOCKED section unchanged. |
+| D326 | Live | Moving named inboxes between POD-A and POD-B to balance a lopsided client is allowed and preferred over covering the gap with generics (Josh 11/4, supersedes D203 never-retag / PR #242). Example: BPLTG 21/59 → even ESP-balanced split. Only the off-week POD's named seats, or seats not linked to ACTIVE campaigns, may move. A 24h 5.7.233 / TERRL stop keeps its POD tag. Generics only top each POD up to 40. D316's 15% path now targets even. `mayWritePodTag` still refuses every other writer. LOCKED section unchanged. |
 
 ---
 
@@ -11671,3 +11672,44 @@ amend D242, D244, D324, or LOCKED.
 `src/lib/podOwnedInventory.test.ts` (D325),
 `src/lib/canonCompliance.test.ts` (D325),
 `src/guards/canon.test.ts` D325.
+
+## D326 — Named POD A↔B rebalance is preferred over generics
+
+**Date.** 2026-11-04.
+
+**Decision.** Josh: moving named inboxes between POD A and
+POD B to balance a lopsided client is now allowed, and
+preferred over covering the gap with generics. Example:
+BPLTG at 21/59 should become an even ESP-balanced split.
+Generics only top each POD up to 40. Seats temporarily
+stopped, such as a 24h 5.7.233 / TERRL stop, keep their
+POD tag. The rebalance only moves the off-week POD's named
+seats, or seats not linked to ACTIVE campaigns, so it never
+disrupts live sending mid-week.
+
+**Supersedes.** D203 / PR #242 "static POD A/B, never retag
+named seats across pods" for the never-retag rule. The 40/POD
+cylinder, ESP mix, and "do not retag an on-week ACTIVE seat
+to staff the campaign" stay. D316's 15% idle path is the
+same writer, now targeting an even split and allowing
+off-week leftover ACTIVE links.
+
+**Rule.**
+
+1. `pod-tags` `rebalanceNamedSeats` is the only A↔B writer.
+   `mayWritePodTag` still refuses every other flip.
+2. Eligible: unlocked named seats on the off-week POD, or
+   unlocked named seats not linked to an ACTIVE campaign.
+3. Locked: canary, GABE-VM-RESERVED, CAYDEN-SG, dual-tagged,
+   POC, isolation, and any 24h 5.7.233 / bounce-hold / TERRL
+   seat — those keep their POD tag.
+4. Larger → smaller, ESP-balanced, enough moves in one pass
+   for 21/59 → 40/40.
+5. min40 computes generic need after that projection.
+   A 21/59 client with a movable off-week surplus takes no
+   pool generics.
+
+**Guards.** `src/lib/namedPodBalance.test.ts` (D326),
+`src/services/podTags.test.ts` (D326),
+`src/services/min40TopUp.test.ts` (D326),
+`src/guards/canon.test.ts` D326.

@@ -1077,4 +1077,54 @@ describe("OneClientMembershipService", () => {
       521881,
     );
   });
+
+  it("D324: keeps a CAYDEN-SG seat on Booking Follow Up and peels a foreign regular campaign", async () => {
+    const removed: Array<[number, number[]]> = [];
+    const service = serviceWith({
+      listCampaigns: async () => [
+        {
+          id: 8001,
+          name: "Booking Follow Up - Bolder Cyber Partners",
+          status: "ACTIVE",
+          client_id: 111,
+        },
+        { id: 8002, name: "Parlay SEG", status: "ACTIVE", client_id: 222 },
+        {
+          id: 8003,
+          name: "SalesGlider Engagers",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 9,
+          from_email: "cayden@salesglidermail.test",
+          from_name: "Cayden Lopez",
+          signature: "Cayden Lopez\nSalesGlider",
+          client_id: 345263,
+          tags: [
+            { tag_name: "CAYDEN-SG" },
+            { tag_name: "POD-A" },
+            { tag_name: "WARMUP-GATE-EXEMPT" },
+          ],
+          campaign_ids: [8001, 8002, 8003],
+        },
+        ...padAccounts(8002, 222),
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+        { id: 111, name: "Bolder Cyber Partners", logo: "Bolder Cyber Partners" },
+        { id: 222, name: "Parlay", logo: "Parlay" },
+      ],
+      removeEmailAccountsFromCampaign: async (campaignId: number, ids: number[]) => {
+        removed.push([campaignId, [...ids]]);
+      },
+    });
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(removed, [[8002, [9]]]);
+    assert.ok(!result.pulled.some((row) => row.campaignId === 8001));
+    assert.ok(!result.pulled.some((row) => row.campaignId === 8003));
+  });
 });

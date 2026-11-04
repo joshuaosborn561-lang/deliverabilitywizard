@@ -836,6 +836,7 @@ describe("CampaignCheckService", () => {
         notifyActionResult: async (text: string) => {
           told.push(text);
         },
+        send: async () => undefined,
       } as never,
     );
 
@@ -891,6 +892,7 @@ describe("CampaignCheckService", () => {
       notifyActionResult: async (text: string) => {
         told.push(text);
       },
+      send: async () => undefined,
     } as never;
     const service = mkCheck(
       loadConfig({}),
@@ -969,6 +971,7 @@ describe("CampaignCheckService", () => {
         notifyActionResult: async (text: string) => {
           told.push(text);
         },
+        send: async () => undefined,
       } as never,
     );
 
@@ -987,6 +990,7 @@ describe("CampaignCheckService", () => {
       notifyActionResult: async (text: string) => {
         told.push(text);
       },
+      send: async () => undefined,
     } as never;
     const sl = {
       listCampaigns: async () => [
@@ -1062,6 +1066,7 @@ describe("CampaignCheckService", () => {
         notifyActionResult: async (text: string) => {
           told.push(text);
         },
+        send: async () => undefined,
       } as never,
     );
 

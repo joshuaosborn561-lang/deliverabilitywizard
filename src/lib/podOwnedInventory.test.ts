@@ -786,5 +786,19 @@ describe("podOwnedInventory (D285)", () => {
       }),
       true,
     );
+    campaignById.set(4, {
+      id: 4,
+      client_id: 80,
+      name: "Booking Follow Up - Parlay",
+    });
+    assert.equal(
+      seatSitsOnForeignNamedCampaign({
+        campaignIds: [1, 4],
+        ownerClientId: TECHEVO_CLIENT_ID,
+        campaignById,
+      }),
+      false,
+      "Booking Follow Up membership does not make the seat foreign (D324)",
+    );
   });
 });

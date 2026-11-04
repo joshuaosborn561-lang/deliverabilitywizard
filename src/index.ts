@@ -3046,6 +3046,15 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       state,
       cursorAssistant,
       isolationExecute,
+      inventoryPeek: () => {
+        const snap = inventoryBook.peek();
+        if (!snap) return null;
+        return {
+          campaigns: snap.campaigns,
+          accounts: snap.accounts,
+          clients: snap.clients,
+        };
+      },
       runtime: {
         deliverability: runOpsDeliverability,
         dns: () => dnsAudit.run({ alert: false }),

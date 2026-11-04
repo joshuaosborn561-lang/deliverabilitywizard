@@ -1,7 +1,12 @@
 const state = {
   csrf: "",
   user: null,
-  dashboard: null,
+  today: null,
+  watchdog: null,
+  fix: null,
+  fixFilter: "all",
+  openClient: "",
+  openColumn: "",
   placementRows: [],
   placementSort: { key: "createdAt", direction: "desc" },
   placementLoading: null,
@@ -36,12 +41,6 @@ function showLogin(message = "") {
 function showApp() {
   $("#login-view").classList.add("hidden");
   $("#app-view").classList.remove("hidden");
-  $("#user-name").textContent = state.user.username;
-  $("#user-role").textContent = state.user.role;
-  $("#user-initial").textContent = state.user.username[0].toUpperCase();
-  $$(".owner-only").forEach((element) => {
-    element.classList.toggle("hidden", state.user.role !== "owner");
-  });
 }
 
 function toast(message) {
@@ -52,60 +51,11 @@ function toast(message) {
   toast.timer = setTimeout(() => element.classList.add("hidden"), 3500);
 }
 
-async function withLoadingButton(button, loadingText, task) {
-  if (button.disabled) return;
-  const original = button.textContent;
-  button.disabled = true;
-  button.textContent = loadingText;
-  try {
-    await task();
-  } finally {
-    button.disabled = false;
-    button.textContent = original;
-  }
-}
-
-function formatDate(value) {
-  if (!value) return "Not yet";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Unknown";
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function age(value) {
-  if (!value) return "never";
-  const ms = Date.now() - new Date(value).getTime();
-  if (!Number.isFinite(ms)) return "unknown";
-  const minutes = Math.max(0, Math.floor(ms / 60000));
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
-
 function make(tag, className, text) {
   const element = document.createElement(tag);
   if (className) element.className = className;
   if (text !== undefined) element.textContent = text;
   return element;
-}
-
-function formatNyYmd(ymd) {
-  if (!ymd || typeof ymd !== "string") return "unknown date";
-  const [year, month, day] = ymd.split("-").map(Number);
-  if (![year, month, day].every((part) => Number.isFinite(part))) return ymd;
-  const date = new Date(Date.UTC(year, month - 1, day, 17, 0, 0));
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  }).format(date);
 }
 
 function daysUntilLabel(days) {
@@ -114,180 +64,368 @@ function daysUntilLabel(days) {
   return `${days} days`;
 }
 
-async function loadDashboard(force = false) {
-  const data = await api(`/dashboard${force ? "?force=1" : ""}`);
-  state.dashboard = data;
-  const count = (value) => (value == null ? "—" : value);
-  const rollover = data.restRollover;
-  const cards = [
-    ["Sending mailboxes", count(data.fleet.sendingMailboxes), data.fleet.activeCampaigns == null ? "Live Smartlead count unavailable" : `Across ${data.fleet.activeCampaigns} active campaigns`],
-    ["Resting (off-week)", data.pool.restingInboxes || 0, data.policy.clientRest ? "Per-client A/B · generics on send clock" : "Sender rest is off"],
-    ["Total mailboxes", count(data.fleet.totalMailboxes), "All Smartlead accounts"],
-    ["Available generics", data.pool.byStatus.available || 0, `${data.pool.total} total pool records`],
-    ["Warming generics", data.pool.byStatus.warming || 0, `${data.policy.warmupDays}-day pool / ${data.policy.freshInboxWarmupDays}-day fresh`],
-    ["Disconnected", count(data.fleet.disconnectedMailboxes), "SMTP or IMAP failed"],
-  ];
-  if (rollover && Number.isFinite(rollover.daysUntil)) {
-    const swapDate = formatNyYmd(rollover.nextRolloverYmd);
-    const onPod = rollover.onWeekCohort || "A";
-    cards.splice(1, 0, [
-      "A/B rollover",
-      daysUntilLabel(rollover.daysUntil),
-      data.policy.clientRest
-        ? `Pod ${onPod} sending · swaps ${swapDate}`
-        : `Rest loop off · calendar swaps ${swapDate}`,
-    ]);
+function formatCt(value) {
+  if (!value) return "Not yet";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Not yet";
+  const time = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+  return `${time} CT`;
+}
+
+function comma(value) {
+  if (value == null || !Number.isFinite(Number(value))) return "—";
+  return Number(value).toLocaleString("en-US");
+}
+
+function setBadge(id, count) {
+  const badge = $(id);
+  badge.textContent = String(count);
+  badge.classList.toggle("zero", !count);
+}
+
+function renderRollover(rollover) {
+  const el = $("#ab-rollover");
+  if (!rollover || !Number.isFinite(rollover.daysUntil)) {
+    el.textContent = "";
+    return;
   }
-  const kpis = $("#kpis");
-  kpis.replaceChildren(
-    ...cards.map(([label, value, note]) => {
-      const card = make("article", "kpi");
-      card.append(make("span", "", label), make("strong", "", String(value)), make("small", "", note));
+  el.textContent = `A/B rollover · Pod ${rollover.onWeekCohort} sending · ${daysUntilLabel(rollover.daysUntil)}`;
+}
+
+function summaryCard(label, value, note, tone) {
+  const card = make("article", `summary-card${tone ? ` ${tone}` : ""}`);
+  card.append(make("span", "", label), make("strong", "", String(value)));
+  if (note) card.append(make("small", "", note));
+  return card;
+}
+
+async function loadToday() {
+  const data = await api("/today");
+  state.today = data;
+  $("#sweep-state").textContent = data.hourlySweep || "on";
+  $("#canon-check").textContent = data.canonCheck || "every 15 min";
+  $("#alerts-label").textContent = data.alertsLabel || "Slack";
+  renderRollover(data.restRollover);
+  setBadge("#today-badge", data.checksFailing || 0);
+  const green = `${data.clientsAllGreen} / ${data.clientsTotal}`;
+  $("#today-cards").replaceChildren(
+    summaryCard("LAST SWEEP", formatCt(data.lastSweepAt), `next ${formatCt(data.nextSweepAt)} · hourly`),
+    summaryCard("CHECKS PASSING", comma(data.checksPassing), "", "good"),
+    summaryCard("CHECKS FAILING", comma(data.checksFailing), "", data.checksFailing ? "bad" : ""),
+    summaryCard("CLIENTS ALL-GREEN", green, ""),
+  );
+  const head = $("#today-head");
+  head.replaceChildren(
+    make("th", "", "Client"),
+    ...data.columns.map((column) => {
+      const th = make("th");
+      th.append(make("span", "", column.label), make("small", "", column.hint));
+      return th;
+    }),
+  );
+  const body = $("#today-body");
+  const rows = [];
+  for (const client of data.rows || []) {
+    const tr = document.createElement("tr");
+    tr.append(make("td", "client-name", client.clientName));
+    for (const column of data.columns) {
+      const cell = client.cells[column.id];
+      const td = document.createElement("td");
+      if (cell.ok) {
+        td.append(make("span", "mark ok", "✓"));
+      } else {
+        const button = make("button", "mark bad", "✕");
+        button.type = "button";
+        button.addEventListener("click", () => {
+          const same = state.openClient === client.clientId && state.openColumn === column.id;
+          state.openClient = same ? "" : client.clientId;
+          state.openColumn = same ? "" : column.id;
+          renderTodayBody();
+        });
+        td.append(button);
+      }
+      tr.append(td);
+    }
+    rows.push(tr);
+    if (state.openClient === client.clientId) {
+      const column = data.columns.find((item) => item.id === state.openColumn);
+      const cell = column ? client.cells[column.id] : null;
+      if (column && cell && !cell.ok) {
+        const extra = document.createElement("tr");
+        extra.className = "fail-row";
+        const td = document.createElement("td");
+        td.colSpan = data.columns.length + 1;
+        const box = make("div", "fail-box");
+        box.append(make("h3", "", `${client.clientName} · ${column.label} — ${cell.failures.length} failing`));
+        for (const failure of cell.failures) {
+          const line = make("div", "fail-line");
+          line.append(make("span", "", failure.text));
+          const button = make("button", "", failure.actionLabel);
+          button.type = "button";
+          button.addEventListener("click", () => runFailureAction(failure, client.clientName));
+          line.append(button);
+          box.append(line);
+        }
+        td.append(box);
+        extra.append(td);
+        rows.push(extra);
+      }
+    }
+  }
+  body.replaceChildren(...rows);
+  $("#today-empty").classList.toggle("hidden", (data.rows || []).length > 0);
+}
+
+function renderTodayBody() {
+  if (state.today) {
+    const saved = state.today;
+    state.today = saved;
+    loadTodayFromCache();
+  }
+}
+
+function loadTodayFromCache() {
+  const data = state.today;
+  if (!data) return;
+  const body = $("#today-body");
+  const rows = [];
+  for (const client of data.rows || []) {
+    const tr = document.createElement("tr");
+    tr.append(make("td", "client-name", client.clientName));
+    for (const column of data.columns) {
+      const cell = client.cells[column.id];
+      const td = document.createElement("td");
+      if (cell.ok) td.append(make("span", "mark ok", "✓"));
+      else {
+        const button = make("button", "mark bad", "✕");
+        button.type = "button";
+        button.addEventListener("click", () => {
+          const same = state.openClient === client.clientId && state.openColumn === column.id;
+          state.openClient = same ? "" : client.clientId;
+          state.openColumn = same ? "" : column.id;
+          loadTodayFromCache();
+        });
+        td.append(button);
+      }
+      tr.append(td);
+    }
+    rows.push(tr);
+    if (state.openClient === client.clientId) {
+      const column = data.columns.find((item) => item.id === state.openColumn);
+      const cell = column ? client.cells[column.id] : null;
+      if (column && cell && !cell.ok) {
+        const extra = document.createElement("tr");
+        extra.className = "fail-row";
+        const td = document.createElement("td");
+        td.colSpan = data.columns.length + 1;
+        const box = make("div", "fail-box");
+        box.append(make("h3", "", `${client.clientName} · ${column.label} — ${cell.failures.length} failing`));
+        for (const failure of cell.failures) {
+          const line = make("div", "fail-line");
+          line.append(make("span", "", failure.text));
+          const button = make("button", "", failure.actionLabel);
+          button.type = "button";
+          button.addEventListener("click", () => runFailureAction(failure, client.clientName));
+          line.append(button);
+          box.append(line);
+        }
+        td.append(box);
+        extra.append(td);
+        rows.push(extra);
+      }
+    }
+  }
+  body.replaceChildren(...rows);
+}
+
+function runFailureAction(failure, clientName) {
+  if (failure.actionId === "refresh-placement") {
+    loadPlacement(true)
+      .then(() => loadToday())
+      .catch((error) => toast(error.message));
+    return;
+  }
+  state.fixFilter = "all";
+  switchPanel("fix");
+  toast(`Fix queue · ${clientName}`);
+}
+
+const WATCH_LABEL = {
+  healthy: "Healthy",
+  behind: "Behind pace",
+  topup: "Top up",
+  josh: "Bring to Josh",
+  unread: "No reading",
+};
+
+async function loadWatchdog() {
+  const data = await api("/watchdog");
+  state.watchdog = data;
+  setBadge("#watchdog-badge", (data.needTopUp || 0) + (data.bringToJosh || 0));
+  $("#watchdog-cards").replaceChildren(
+    summaryCard("SENDS TODAY (ALL)", comma(data.sendsToday), ""),
+    summaryCard("ON PACE", `${data.onPace} / ${data.tracked}`, data.paceLabel, "good"),
+    summaryCard("NEED TOP-UP", comma(data.needTopUp), `under ${comma(data.topUpBelow)} leads`, data.needTopUp ? "warn" : ""),
+    summaryCard("BRING TO JOSH", comma(data.bringToJosh), `under ${comma(data.joshBelow)} leads`, data.bringToJosh ? "bad" : ""),
+  );
+  const grid = $("#watchdog-grid");
+  grid.replaceChildren(
+    ...(data.clients || []).map((client) => {
+      const card = make("article", `watch-card ${client.status}`);
+      const header = document.createElement("header");
+      header.append(make("h3", "", client.clientName), make("span", `pill ${client.status}`, WATCH_LABEL[client.status] || client.status));
+      const ratio = client.target > 0 && client.sendsToday != null
+        ? Math.max(0, Math.min(100, (client.sendsToday / client.target) * 100))
+        : 0;
+      const barTone = client.sendsToday != null && client.target > 0 && client.sendsToday < client.target
+        ? "behind"
+        : client.status;
+      card.append(header);
+      card.append(make("p", "muted", "Sends today"));
+      const meter = make("div", `meter ${barTone}`);
+      const fill = document.createElement("span");
+      fill.style.width = `${ratio}%`;
+      meter.append(fill);
+      card.append(meter);
+      card.append(make("strong", "", `${comma(client.sendsToday)} / ${comma(client.target)}`));
+      card.append(make("p", "muted", "Leads left"));
+      const leads = make("p", "leads", comma(client.leadsLeft));
+      if (client.status === "josh") leads.style.color = "var(--red)";
+      if (client.status === "topup") leads.style.color = "var(--amber)";
+      card.append(leads);
+      if (client.status === "topup") {
+        card.append(make("div", "note", `Under ${comma(data.topUpBelow)} — needs top-up`));
+      }
+      if (client.status === "josh") {
+        card.append(make("div", "note josh", "Market used up — bring to Josh"));
+      }
       return card;
     }),
   );
+  $("#watchdog-empty").classList.toggle("hidden", (data.clients || []).length > 0);
+}
 
-  const restPolicy = data.policy.clientRest
-    ? rollover && Number.isFinite(rollover.daysUntil)
-      ? `Pod ${rollover.onWeekCohort} on · ${daysUntilLabel(rollover.daysUntil)} to swap`
-      : "Per-client A/B · 2 on / 2 off"
-    : "Off";
-  const policies = [
-    ["Campaign floor", `${data.policy.campaignSenderFloor} staffable`],
-    ["Mailbox cap", data.policy.mailboxDailyCap],
-    ["Inbox threshold", `${data.policy.inboxThreshold}% same-ESP`],
-    ["Bounce pause", data.policy.bounceAutostop || "off"],
-    ["Bounce readings", `${data.policy.bounceThreshold}% / ${data.policy.bounceWarnThreshold}% are logs, not pulls`],
-    ["Fresh / pool warmup", `${data.policy.freshInboxWarmupDays}d fresh · ${data.policy.warmupDays}d pool`],
-    ["Client rest", restPolicy],
-    ["Generic sit / ESP mix", `${data.policy.genericSendRestDays}d send · ${data.policy.espMixMinPercent}% each ESP`],
+function renderFix() {
+  const data = state.fix;
+  if (!data) return;
+  const filters = [
+    ["all", "All"],
+    ["approval", "Approvals"],
+    ["copy", "Copy"],
+    ["isolation", "Isolation"],
+    ["audit", "Audit"],
   ];
-  $("#policy-grid").replaceChildren(
-    ...policies.map(([label, value]) => {
-      const item = make("div", "policy-item");
-      item.append(make("span", "", label), make("strong", "", value));
-      return item;
+  $("#fix-filters").replaceChildren(
+    ...filters.map(([id, label]) => {
+      const button = make("button", state.fixFilter === id ? "active" : "", `${label} ${data.counts[id] ?? 0}`);
+      button.type = "button";
+      button.addEventListener("click", () => {
+        state.fixFilter = id;
+        renderFix();
+      });
+      return button;
     }),
   );
-
-  const runNames = {
-    scan: "Placement scan",
-    monitor: "Result monitor",
-    reconnect: "Reconnect",
-    warmupGate: "Warmup gate",
-    health: "Campaign health / rest",
-  };
-  $("#last-runs").replaceChildren(
-    ...Object.entries(data.lastRuns).map(([key, value]) => {
-      const item = make("div", "run-item");
-      item.append(make("span", "", runNames[key] || key), make("strong", "", age(value)));
-      item.title = formatDate(value);
-      return item;
+  const items = (data.items || []).filter((item) => state.fixFilter === "all" || item.filter === state.fixFilter);
+  $("#fix-list").replaceChildren(
+    ...items.map((item) => {
+      const card = make("article", "fix-card");
+      const copy = make("div");
+      copy.append(make("div", "fix-kind", item.filter.toUpperCase()));
+      copy.append(make("h3", "", item.title));
+      copy.append(make("p", "", item.subtitle || item.clientName || ""));
+      const actions = make("div", "fix-actions");
+      if (item.spamAssassin) {
+        const bad = item.spamAssassin.score !== 0;
+        const score = make(
+          "span",
+          `sa${bad ? " bad" : ""}`,
+          bad
+            ? `SpamAssassin ${item.spamAssassin.score} must be 0`
+            : `SpamAssassin ${item.spamAssassin.score.toFixed(1)}`,
+        );
+        actions.append(score);
+      }
+      const approve = make("button", "approve", item.approveLabel);
+      approve.type = "button";
+      approve.disabled = Boolean(item.approveDisabled);
+      approve.addEventListener("click", () => decideFix(item, "approve"));
+      const reject = make("button", "reject", item.rejectLabel || "Reject");
+      reject.type = "button";
+      reject.addEventListener("click", () => decideFix(item, "reject"));
+      actions.append(approve, reject);
+      card.append(make("div", "fix-mark", item.filter === "isolation" ? "↻" : "✎"), copy, actions);
+      return card;
     }),
   );
+  $("#fix-empty").classList.toggle("hidden", items.length > 0);
+}
 
-  if (state.user.role === "owner") {
-    $("#approval-badge").textContent = String(data.pendingApprovals || 0);
+async function loadFix() {
+  state.fix = await api("/fix-queue");
+  setBadge("#fix-badge", state.fix.counts?.all || 0);
+  renderFix();
+}
+
+async function decideFix(item, decision) {
+  try {
+    if (item.filter === "audit" && decision === "approve") {
+      switchPanel("today");
+      toast(item.subtitle || item.title);
+      return;
+    }
+    if (item.filter === "audit" && decision === "reject") {
+      await api(`/fix-queue/${encodeURIComponent(item.id)}/reject`, {
+        method: "POST",
+        body: JSON.stringify({ confirm: true }),
+      });
+      toast("Noted. The sweep finding stays until it clears.");
+      await loadFix();
+      return;
+    }
+    if (item.filter === "approval") {
+      const id = item.id.replace(/^approval:/, "");
+      await api(`/approvals/${encodeURIComponent(id)}/${decision === "approve" ? "approve" : "deny"}`, {
+        method: "POST",
+        body: JSON.stringify({ confirm: true }),
+      });
+    } else {
+      const id = item.id.replace(/^(copy|isolation):/, "");
+      await api(`/isolation/actions/${encodeURIComponent(id)}/${decision === "approve" ? "approve" : "deny"}`, {
+        method: "POST",
+        body: JSON.stringify({ confirm: true }),
+      });
+    }
+    toast(decision === "approve" ? "Approved" : "Rejected");
+    await loadFix();
+    await loadToday();
+  } catch (error) {
+    toast(error.message);
   }
-  $("#isolation-badge").textContent = String(data.pendingIsolation || 0);
-  if (data.fleetError) toast(`Live fleet count unavailable: ${data.fleetError}`);
-  if (data.campaignSetupPrompt) {
-    $("#setup-prompt").textContent = data.campaignSetupPrompt;
-  }
-  renderAudit(data.recentAudit || []);
 }
 
 function switchPanel(name) {
   $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.panel === name));
   $$(".panel").forEach((panel) => panel.classList.toggle("active", panel.id === `${name}-panel`));
-  const title = { overview: "Overview", placement: "Placement results", isolation: "Isolation", chat: "Assistant", approvals: "Approvals", audit: "Audit log" };
+  const title = { today: "Today", watchdog: "Watchdog", fix: "Fix queue" };
   $("#panel-title").textContent = title[name] || name;
-  if (name === "approvals") loadApprovals().catch((error) => toast(error.message));
-  if (name === "isolation") loadIsolation().catch((error) => toast(error.message));
-  if (name === "audit") loadAudit().catch((error) => toast(error.message));
-  if (name === "placement" && !state.placementRows.length) {
-    loadPlacement().catch((error) => {
-      $("#placement-errors").textContent = error.message;
-      toast(error.message);
-    });
-  }
+  if (name === "watchdog" && !state.watchdog) loadWatchdog().catch((error) => toast(error.message));
+  if (name === "fix") loadFix().catch((error) => toast(error.message));
 }
 
-function percent(value) {
-  return typeof value === "number" && Number.isFinite(value)
-    ? `${value.toFixed(1)}%`
-    : "—";
+function openChat() {
+  $("#chat-drawer").classList.add("open");
+  $("#chat-drawer").setAttribute("aria-hidden", "false");
+  $("#chat-input").focus();
 }
 
-function scoreClass(value, inverse = false) {
-  if (typeof value !== "number") return "score-unknown";
-  if (inverse) {
-    if (value <= 10) return "score-good";
-    if (value <= 30) return "score-warn";
-    return "score-bad";
-  }
-  if (value >= 80) return "score-good";
-  if (value >= 50) return "score-warn";
-  return "score-bad";
-}
-
-function placementValue(row, key) {
-  const value = row[key];
-  if (value == null || value === "") return null;
-  if (key === "createdAt") {
-    const parsed = Date.parse(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  if (typeof value === "number") return value;
-  return String(value).toLowerCase();
-}
-
-function renderPlacement() {
-  const query = $("#placement-search").value.trim().toLowerCase();
-  const { key, direction } = state.placementSort;
-  const directionFactor = direction === "asc" ? 1 : -1;
-  const rows = state.placementRows
-    .filter((row) =>
-      `${row.name} ${row.campaignName || ""} ${row.campaignId || ""} ${row.status} ${row.id}`
-        .toLowerCase()
-        .includes(query),
-    )
-    .sort((a, b) => {
-      const left = placementValue(a, key);
-      const right = placementValue(b, key);
-      if (left === right) return 0;
-      if (left === null) return 1;
-      if (right === null) return -1;
-      return (left < right ? -1 : 1) * directionFactor;
-    });
-
-  const body = $("#placement-body");
-  body.replaceChildren(
-    ...rows.map((row) => {
-      const tr = document.createElement("tr");
-      const test = document.createElement("td");
-      test.append(make("strong", "", row.name));
-      test.append(make("small", "", `#${row.id}${row.runNumber != null ? ` · run ${row.runNumber}` : ""}`));
-      const campaign = document.createElement("td");
-      campaign.append(make("span", "", row.campaignName || (row.campaignId ? `Campaign #${row.campaignId}` : "—")));
-      const status = document.createElement("td");
-      status.append(make("span", `status ${String(row.status).toLowerCase() === "completed" ? "success" : "pending"}`, row.status));
-      const inbox = make("td", scoreClass(row.inboxPercent), percent(row.inboxPercent));
-      const google = make("td", scoreClass(row.googleInboxPercent), percent(row.googleInboxPercent));
-      const microsoft = make("td", scoreClass(row.microsoftInboxPercent), percent(row.microsoftInboxPercent));
-      const spam = make("td", scoreClass(row.spamPercent, true), percent(row.spamPercent));
-      const seeds = make("td", "", String(row.totalSeeds || "—"));
-      const date = make("td", "", formatDate(row.createdAt));
-      tr.append(test, campaign, status, inbox, google, microsoft, spam, seeds, date);
-      return tr;
-    }),
-  );
-  $("#placement-empty").classList.toggle("hidden", rows.length > 0);
-  $$("[data-sort]").forEach((button) => {
-    const active = button.dataset.sort === key;
-    button.classList.toggle("active", active);
-    button.dataset.direction = active ? direction : "";
-  });
+function closeChat() {
+  $("#chat-drawer").classList.remove("open");
+  $("#chat-drawer").setAttribute("aria-hidden", "true");
 }
 
 async function loadPlacement(force = false, pass = 0) {
@@ -309,52 +447,27 @@ async function loadPlacementPass(force = false, pass = 0) {
   banner.className = "error";
   const data = await api(`/placements${force ? "?force=1" : ""}`);
   state.placementRows = data.rows || [];
-  const stamp = formatDate(data.generatedAt);
-  const morningLabel = data.morningYmd ? `Morning of ${data.morningYmd}` : "";
-  $("#placement-updated").textContent = morningLabel
-    ? `${morningLabel} · ${stamp} · ${state.placementRows.length} tests`
-    : `${data.stale ? "Last snapshot" : "Updated"} ${stamp} · ${state.placementRows.length} tests`;
+  const stamp = formatCt(data.generatedAt);
+  $("#placement-updated").textContent = `${data.stale ? "Last snapshot" : "Updated"} ${stamp} · ${state.placementRows.length} tests`;
   const errors = Array.isArray(data.errors) ? data.errors.filter(Boolean) : [];
   if (data.rateLimited && state.placementRows.length) {
-    banner.textContent =
-      "SmartDelivery rate-limited this pass. The remaining tests update in a minute.";
-    banner.className = "muted";
-  } else if (data.pending && data.morningPending) {
-    banner.textContent = data.morningYmd
-      ? `Loading the morning placement run for ${data.morningYmd}.`
-      : "Loading this morning's placement run.";
+    banner.textContent = "SmartDelivery rate-limited this pass. The remaining tests update in a minute.";
     banner.className = "muted";
   } else if (data.pending) {
-    banner.textContent = state.placementRows.length
-      ? "Still loading placement tests. This page will keep updating."
-      : "Loading placement tests…";
-    banner.className = "muted";
-  } else if (data.morningPending) {
-    banner.textContent = data.morningYmd
-      ? `Still loading the morning run for ${data.morningYmd}.`
-      : "Still loading this morning's placement run.";
+    banner.textContent = "Still loading placement tests. This page will keep updating.";
     banner.className = "muted";
   } else if (data.stale && state.placementRows.length) {
-    banner.textContent =
-      errors[0] ||
-      "Showing the last saved snapshot — SmartDelivery did not refresh this pass.";
+    banner.textContent = errors[0] || "Showing the last saved snapshot — SmartDelivery did not refresh this pass.";
     banner.className = "muted";
   } else if (errors.length) {
     banner.textContent = errors.join(" ");
     banner.className = "error";
   }
-  renderPlacement();
-  // A 429 used to stop the tab, so every row after the first limit kept its old date.
-  // Wait out the cooldown, then continue. Do not call again inside the window.
   if (pass < 20 && data.rateLimited) {
     await new Promise((resolve) => setTimeout(resolve, 65_000));
     return loadPlacement(true, pass + 1);
   }
-  // The catalog walk is a couple of pages per request so a 429 does not wipe
-  // the offset. Keep going while live campaigns are still missing, and while
-  // a pass stopped early so the Railway proxy would not 502 the tab.
-  const keepGoing =
-    data.pending || (data.complete === false && !data.stale);
+  const keepGoing = data.pending || (data.complete === false && !data.stale);
   if (keepGoing && Date.now() - state.placementPollSince < 4 * 60 * 1000) {
     await new Promise((resolve) => setTimeout(resolve, 3_000));
     return loadPlacement(true, pass + 1);
@@ -379,11 +492,11 @@ function linkify(text) {
   return fragment;
 }
 
-function addMessage(role, text, confirmation) {
+function addMessage(role, text) {
   const messages = $("#messages");
   const bubble = make("div", `message ${role}`);
   bubble.append(linkify(text));
-  bubble.append(make("small", "", role === "assistant" ? "Deliverability Ops" : state.user.username));
+  bubble.append(make("small", "", role === "assistant" ? "Wizard" : state.user.username));
   messages.append(bubble);
   messages.scrollTop = messages.scrollHeight;
   return bubble;
@@ -394,316 +507,39 @@ function setBubbleText(bubble, text) {
   bubble.textContent = "";
   bubble.append(linkify(text));
   if (small) bubble.append(small);
-  else bubble.append(make("small", "", "Deliverability Ops"));
+  else bubble.append(make("small", "", "Wizard"));
   $("#messages").scrollTop = $("#messages").scrollHeight;
 }
 
-async function pollCursorRun(agentId, runId, bubble) {
-  const started = Date.now();
-  const maxMs = 10 * 60 * 1000;
-  while (Date.now() - started < maxMs) {
-    await new Promise((resolve) => setTimeout(resolve, 2500));
-    try {
-      const response = await api(`/cursor-run/${encodeURIComponent(agentId)}/${encodeURIComponent(runId)}`);
-      if (response.data?.pending) {
-        setBubbleText(
-          bubble,
-          `Still working in Cursor Grok 4.5 High Fast…\n${response.data.agentUrl || ""}`,
-        );
-        continue;
-      }
-      setBubbleText(bubble, response.message || "Done.");
-      return;
-    } catch (error) {
-      setBubbleText(
-        bubble,
-        `Couldn't read the Cursor answer yet (${error.message}). Keep this tab open — retrying…`,
-      );
-    }
-  }
-  setBubbleText(
-    bubble,
-    "Cursor is still running. Open the agent link above (or refresh later) — the answer may take a few more minutes.",
-  );
-}
-
 async function sendChat(message) {
-  switchPanel("chat");
   addMessage("user", message);
-  const looksFreeform =
-    !/^(help|commands|status|check |audit |reconnect|approvals)/i.test(
-      message.trim(),
-    );
-  const loading = addMessage(
-    "assistant",
-    looksFreeform
-      ? "Starting Cursor Grok 4.5 High Fast…"
-      : "Working…",
-  );
+  const bubble = addMessage("assistant", "Thinking…");
   try {
-    const response = await api("/chat", {
+    const data = await api("/chat", {
       method: "POST",
       body: JSON.stringify({ message }),
     });
-    if (response.confirmation) {
-      loading.remove();
-      addMessage("assistant", response.message, response.confirmation);
-      return;
-    }
-    if (response.data?.pending && response.data.agentId && response.data.runId) {
-      setBubbleText(
-        loading,
-        [response.message || "Cursor is working…", "", "Waiting for the answer…"].join(
-          "\n",
-        ),
-      );
-      await pollCursorRun(response.data.agentId, response.data.runId, loading);
-      return;
-    }
-    setBubbleText(loading, response.message || "Done.");
-    if (response.data?.refreshDashboard) await loadDashboard();
-    if (response.data?.refreshApprovals) await loadApprovals();
-    if (
-      response.data &&
-      !response.data.refreshDashboard &&
-      !response.data.refreshApprovals &&
-      !response.data.pending &&
-      !response.data.agentUrl
-    ) {
-      const summary = summarizeData(response.data);
-      if (summary) addMessage("assistant", summary);
+    setBubbleText(bubble, data.message || "");
+    if (data.data?.pending && data.data.agentId && data.data.runId) {
+      pollCursor(bubble, data.data.agentId, data.data.runId);
     }
   } catch (error) {
-    setBubbleText(loading, `Operation failed safely: ${error.message}`);
+    setBubbleText(bubble, error.message);
   }
 }
 
-function summarizeData(data) {
-  if (data.monitor || data.dns || (data.campaigns && !Array.isArray(data.campaigns))) {
-    const lines = [];
-    if (data.monitor) {
-      lines.push(
-        `Placement: ${data.monitor.testsChecked || 0} tests checked, ${data.monitor.blacklistAlerts || 0} blacklist alert(s), ${data.monitor.lowDeliverabilityAlerts || 0} weak-placement alert(s).`,
-      );
-      if (data.monitor.errors?.length) lines.push(`Placement problems: ${data.monitor.errors.slice(0, 3).join("; ")}`);
+async function pollCursor(bubble, agentId, runId) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    try {
+      const data = await api(`/cursor-run/${agentId}/${runId}`);
+      if (data.message) setBubbleText(bubble, data.message);
+      if (!data.data?.pending) return;
+    } catch (error) {
+      setBubbleText(bubble, error.message);
+      return;
     }
-    if (data.dns) lines.push(`DNS: ${data.dns.checked || 0} checked, ${data.dns.critical?.length || 0} critical.`);
-    if (data.campaigns) {
-      lines.push(
-        `Campaigns: ${data.campaigns.campaigns?.length || 0} active, ${data.campaigns.understaffed?.length || 0} understaffed, ${data.campaigns.untested?.length || 0} untested.`,
-      );
-    }
-    return lines.join("\n");
   }
-  if (data.checked !== undefined && data.critical) {
-    return `DNS: ${data.checked} domains checked, ${data.clean} clean, ${data.critical.length} critical.`;
-  }
-  if (data.campaigns && Array.isArray(data.campaigns)) {
-    return `Campaign audit: ${data.campaigns.length} active, ${data.understaffed.length} understaffed, ${data.untested.length} untested.`;
-  }
-  if (data.scanned !== undefined && data.disconnected !== undefined) {
-    return `Reconnect: ${data.scanned} checked, ${data.disconnected} disconnected, ${data.reconnected} reconnected, ${data.failed} failed.`;
-  }
-  return "";
-}
-
-
-function isolationKindLabel(kind) {
-  if (kind === "buy_domains") return "Buy replacements";
-  if (kind === "buy_canary_fleet") return "Buy canary fleet";
-  if (kind === "retire_domain") return "Retire domain";
-  if (kind === "swap_copy") return "Make the changes";
-  return kind;
-}
-
-function isolationApproveLabel(kind) {
-  if (kind === "swap_copy") return "Make the changes";
-  if (kind === "buy_domains") return "Buy replacements";
-  if (kind === "buy_canary_fleet") return "Buy canary fleet";
-  return "Retire this domain";
-}
-
-function canDecideIsolation(action) {
-  if (action.status !== "pending") return false;
-  if (action.kind === "swap_copy") return true;
-  return state.user.role === "owner";
-}
-
-async function loadIsolation() {
-  const data = await api("/isolation");
-  const actions = $("#isolation-actions");
-  const domains = $("#isolation-domains");
-  const runs = $("#isolation-runs");
-  if (!data.actions.length) {
-    actions.replaceChildren(make("p", "muted", "Nothing waiting on a human."));
-  } else {
-    actions.replaceChildren(
-      ...data.actions.map((action) => {
-        const card = make("div", "stack-card");
-        const header = make("header");
-        header.append(
-          make("strong", "", action.title || isolationKindLabel(action.kind)),
-          make("span", `status ${action.status}`, action.status),
-        );
-        card.append(header);
-        if (action.proof) card.append(make("pre", "setup-prompt", action.proof));
-        const retryReason = String(
-          action.error || action.detail?.retryReason || "",
-        ).trim();
-        const phase = String(action.detail?.phase || "");
-        if (phase === "awaiting_purchase" || retryReason) {
-          card.append(
-            make(
-              "p",
-              "muted",
-              retryReason
-                ? `Retrying purchase (no human tap): ${retryReason}`
-                : "Retrying purchase — no domain yet. Health will retry (D174).",
-            ),
-          );
-        }
-        card.append(make("p", "muted", formatDate(action.requestedAt)));
-        if (canDecideIsolation(action)) {
-          const row = make("div", "approval-actions");
-          const approve = make(
-            "button",
-            "approve",
-            isolationApproveLabel(action.kind),
-          );
-          const deny = make("button", "deny", "Not now");
-          approve.addEventListener("click", () => decideIsolation(action.id, "approve"));
-          deny.addEventListener("click", () => decideIsolation(action.id, "deny"));
-          row.append(approve, deny);
-          card.append(row);
-        } else if (action.status === "pending" && state.user.role !== "owner") {
-          card.append(make("p", "muted", "Josh has to approve this one."));
-        }
-        return card;
-      }),
-    );
-  }
-
-  if (!data.domains.length) {
-    domains.replaceChildren(make("p", "muted", "No known-good domain readings yet."));
-  } else {
-    domains.replaceChildren(
-      ...data.domains.map((row) => {
-        const card = make("div", "stack-card");
-        const header = make("header");
-        header.append(make("strong", "", row.domain), make("span", `status ${row.status}`, row.status));
-        card.append(header);
-        card.append(
-          make(
-            "p",
-            "",
-            row.fleet
-              ? `${row.consecutiveFails} fail cycle${row.consecutiveFails === 1 ? "" : "s"} in a row. Fleet domain — several inboxes must fail.`
-              : `${row.consecutiveFails} fail cycle${row.consecutiveFails === 1 ? "" : "s"} in a row.`,
-          ),
-        );
-        if (row.lastReason) card.append(make("p", "muted", row.lastReason));
-        const last = row.readings?.[row.readings.length - 1];
-        if (last?.failingEmails?.length) {
-          card.append(make("p", "", `Failed: ${last.failingEmails.join(", ")}`));
-        }
-        return card;
-      }),
-    );
-  }
-
-  if (!data.runs.length) {
-    runs.replaceChildren(make("p", "muted", "No campaign copy-or-inboxes checks yet."));
-  } else {
-    runs.replaceChildren(
-      ...data.runs.map((run) => {
-        const card = make("div", "stack-card");
-        const header = make("header");
-        header.append(
-          make("strong", "", run.campaignName || `Campaign ${run.campaignId}`),
-          make("span", `status ${run.verdict}`, run.verdict),
-        );
-        card.append(header, make("p", "", run.reason || ""));
-        if (run.notes) card.append(make("pre", "setup-prompt", run.notes));
-        return card;
-      }),
-    );
-  }
-}
-
-async function decideIsolation(id, decision) {
-  const label = decision === "approve" ? "Do this" : "Leave it";
-  if (!window.confirm(`${label}?`)) return;
-  const result = await api(`/isolation/actions/${encodeURIComponent(id)}/${decision}`, {
-    method: "POST",
-    body: JSON.stringify({ confirm: true }),
-  });
-  toast(result.message || `Request ${decision}d`);
-  await Promise.all([loadIsolation(), loadDashboard()]);
-}
-
-async function loadApprovals() {
-  if (state.user.role !== "owner") return;
-  const { approvals } = await api("/approvals");
-  const list = $("#approvals-list");
-  const ordered = [...approvals].sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
-  if (!ordered.length) {
-    list.replaceChildren(make("p", "muted", "No spend requests."));
-    return;
-  }
-  list.replaceChildren(
-    ...ordered.map((approval) => {
-      const card = make("div", "stack-card");
-      const header = make("header");
-      header.append(make("strong", "", approval.kind), make("span", `status ${approval.status}`, approval.status));
-      card.append(header, make("p", "", approval.description), make("p", "muted", formatDate(approval.requestedAt)));
-      if (approval.status === "pending") {
-        const actions = make("div", "approval-actions");
-        const approve = make("button", "approve", "Approve");
-        const deny = make("button", "deny", "Deny");
-        approve.addEventListener("click", () => decideApproval(approval.id, "approve"));
-        deny.addEventListener("click", () => decideApproval(approval.id, "deny"));
-        actions.append(approve, deny);
-        card.append(actions);
-      }
-      return card;
-    }),
-  );
-}
-
-async function decideApproval(id, decision) {
-  if (!window.confirm(`${decision === "approve" ? "Approve" : "Deny"} this spend request?`)) return;
-  await api(`/approvals/${encodeURIComponent(id)}/${decision}`, {
-    method: "POST",
-    body: JSON.stringify({ confirm: true }),
-  });
-  toast(`Spend request ${decision}d`);
-  await Promise.all([loadApprovals(), loadDashboard()]);
-}
-
-function renderAudit(records) {
-  const list = $("#audit-list");
-  if (!records.length) {
-    list.replaceChildren(make("p", "muted", "No console operations yet."));
-    return;
-  }
-  list.replaceChildren(
-    ...records.map((record) => {
-      const card = make("div", "stack-card");
-      const header = make("header");
-      header.append(
-        make("strong", "", `${record.actor} · ${record.action}`),
-        make("span", `status ${record.outcome}`, record.outcome),
-      );
-      card.append(header, make("p", "muted", `${formatDate(record.at)}${record.target ? ` · ${record.target}` : ""}`));
-      if (record.detail) card.append(make("p", "", record.detail));
-      return card;
-    }),
-  );
-}
-
-async function loadAudit() {
-  const { audit } = await api("/audit");
-  renderAudit(audit);
 }
 
 $("#login-form").addEventListener("submit", async (event) => {
@@ -721,8 +557,8 @@ $("#login-form").addEventListener("submit", async (event) => {
     state.csrf = response.csrf;
     $("#access-key").value = "";
     showApp();
-    await loadDashboard();
-    addMessage("assistant", "Signed in. Ask “help” to see allowlisted operations.");
+    await Promise.all([loadToday(), loadWatchdog(), loadFix()]);
+    addMessage("assistant", "Signed in. The grid is the last hourly sweep.");
   } catch (error) {
     $("#login-error").textContent = error.message;
   }
@@ -732,9 +568,12 @@ $("#logout").addEventListener("click", async () => {
   await api("/logout", { method: "POST", body: "{}" }).catch(() => {});
   state.user = null;
   state.csrf = "";
+  closeChat();
   showLogin();
 });
 
+$("#open-chat").addEventListener("click", openChat);
+$("#close-chat").addEventListener("click", closeChat);
 $("#chat-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const input = $("#chat-input");
@@ -744,63 +583,7 @@ $("#chat-form").addEventListener("submit", async (event) => {
   await sendChat(message);
 });
 
-$("#chat-input").addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && !event.shiftKey) {
-    event.preventDefault();
-    $("#chat-form").requestSubmit();
-  }
-});
-
 $$(".nav-item").forEach((button) => button.addEventListener("click", () => switchPanel(button.dataset.panel)));
-$$("[data-command]").forEach((button) => button.addEventListener("click", () => sendChat(button.dataset.command)));
-$("#copy-setup-prompt").addEventListener("click", async () => {
-  const text = $("#setup-prompt").textContent || "";
-  if (!text) {
-    toast("Load the dashboard first.");
-    return;
-  }
-  try {
-    await navigator.clipboard.writeText(text);
-    toast("Campaign setup prompt copied.");
-  } catch {
-    toast("Copy failed — select the prompt text instead.");
-  }
-});
-$("#refresh-dashboard").addEventListener("click", (event) =>
-  withLoadingButton(event.currentTarget, "Refreshing…", () =>
-    loadDashboard(true),
-  ).catch((error) => toast(error.message)),
-);
-$("#refresh-placement").addEventListener("click", (event) =>
-  withLoadingButton(event.currentTarget, "Refreshing…", () =>
-    loadPlacement(true),
-  ).catch((error) => {
-    $("#placement-errors").textContent = error.message;
-    toast(error.message);
-  }),
-);
-$("#placement-search").addEventListener("input", renderPlacement);
-$$("[data-sort]").forEach((button) =>
-  button.addEventListener("click", () => {
-    const key = button.dataset.sort;
-    state.placementSort =
-      state.placementSort.key === key
-        ? {
-            key,
-            direction:
-              state.placementSort.direction === "asc" ? "desc" : "asc",
-          }
-        : {
-            key,
-            direction:
-              ["name", "campaignName", "status"].includes(key) ? "asc" : "desc",
-          };
-    renderPlacement();
-  }),
-);
-$("#refresh-approvals").addEventListener("click", () => loadApprovals().catch((error) => toast(error.message)));
-$("#refresh-isolation").addEventListener("click", () => loadIsolation().catch((error) => toast(error.message)));
-$("#refresh-audit").addEventListener("click", () => loadAudit().catch((error) => toast(error.message)));
 
 (async function boot() {
   try {
@@ -814,8 +597,7 @@ $("#refresh-audit").addEventListener("click", () => loadAudit().catch((error) =>
     state.user = session.user;
     state.csrf = session.csrf;
     showApp();
-    await loadDashboard();
-    addMessage("assistant", "Welcome back. Ask “help” to see allowlisted operations.");
+    await Promise.all([loadToday(), loadWatchdog(), loadFix()]);
   } catch {
     showLogin();
   }

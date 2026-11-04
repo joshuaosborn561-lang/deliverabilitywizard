@@ -3,21 +3,19 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="light" />
     <title>Deliverability Wizard Ops</title>
     <link rel="stylesheet" href="/ops/styles.css" />
   </head>
   <body>
-    <div class="noise"></div>
-
     <section id="login-view" class="center-shell">
       <div class="login-card">
         <div class="brand-mark">DW</div>
         <p class="eyebrow">Private operations console</p>
         <h1>Deliverability Wizard</h1>
         <p class="muted">
-          Check fleet health, run safe mailbox ops, or chat with Cursor
-          Grok 4.5 High Fast — same assistant style Josh uses.
+          Morning compliance, send pace, and the fix queue. Chat stays a
+          side panel.
         </p>
         <form id="login-form">
           <label>
@@ -40,10 +38,6 @@
           <button type="submit" class="primary">Sign in</button>
           <p id="login-error" class="error" role="alert"></p>
         </form>
-        <p class="fine-print">
-          Fast ops stay allowlisted. Freeform questions go to Cursor Grok.
-          Spending, deletion, and policy overrides stay blocked.
-        </p>
       </div>
     </section>
 
@@ -51,247 +45,82 @@
       <aside class="sidebar">
         <div>
           <div class="logo-row">
-            <div class="brand-mark small">DW</div>
-            <div>
-              <strong>Deliverability</strong>
-              <span>Operations</span>
-            </div>
+            <strong>Deliverability<span>Wizard</span></strong>
           </div>
           <nav>
-            <button class="nav-item active" data-panel="overview">Overview</button>
-            <button class="nav-item" data-panel="placement">Placement</button>
-            <button class="nav-item" data-panel="isolation">
-              Isolation <span id="isolation-badge" class="badge">0</span>
+            <button class="nav-item active" data-panel="today">
+              <span class="nav-ico">✓</span>
+              Today
+              <span id="today-badge" class="nav-count">0</span>
             </button>
-            <button class="nav-item" data-panel="chat">Assistant</button>
-            <button class="nav-item owner-only" data-panel="approvals">
-              Approvals <span id="approval-badge" class="badge">0</span>
+            <button class="nav-item" data-panel="watchdog">
+              <span class="nav-ico">↗</span>
+              Watchdog
+              <span id="watchdog-badge" class="nav-count">0</span>
             </button>
-            <button class="nav-item" data-panel="audit">Audit log</button>
+            <button class="nav-item" data-panel="fix">
+              <span class="nav-ico">⚒</span>
+              Fix queue
+              <span id="fix-badge" class="nav-count">0</span>
+            </button>
           </nav>
         </div>
         <div class="sidebar-footer">
-          <div class="user-chip">
-            <span id="user-initial">C</span>
-            <div>
-              <strong id="user-name">cayden</strong>
-              <small id="user-role">operator</small>
-            </div>
-          </div>
+          <p>Hourly sweep: <strong id="sweep-state">on</strong></p>
+          <p>Canon check: <span id="canon-check">every 15 min</span></p>
+          <p>Alerts: <span id="alerts-label">Slack</span></p>
+          <p id="ab-rollover" class="rollover"></p>
           <button id="logout" class="ghost">Sign out</button>
         </div>
       </aside>
 
       <main>
         <header class="topbar">
-          <div>
-            <p class="eyebrow">Live fleet</p>
-            <h2 id="panel-title">Overview</h2>
-          </div>
-          <div class="health-pill"><span></span> Railway connected</div>
+          <h2 id="panel-title">Today</h2>
+          <button id="open-chat" class="chat-launch" type="button">Chat</button>
         </header>
 
-        <section id="overview-panel" class="panel active">
-          <div id="kpis" class="kpi-grid"></div>
-          <div class="grid-two">
-            <article class="surface">
-              <div class="section-heading">
-                <div>
-                  <p class="eyebrow">Guardrails</p>
-                  <h3>Operating policy</h3>
-                </div>
-              </div>
-              <div id="policy-grid" class="policy-grid"></div>
-            </article>
-            <article class="surface">
-              <div class="section-heading">
-                <div>
-                  <p class="eyebrow">Automation</p>
-                  <h3>Last successful runs</h3>
-                </div>
-                <button id="refresh-dashboard" class="ghost compact">
-                  Refresh
-                </button>
-              </div>
-              <div id="last-runs" class="run-list"></div>
-            </article>
+        <section id="today-panel" class="panel active">
+          <div id="today-cards" class="summary-grid"></div>
+          <div class="board">
+            <table class="today-table">
+              <thead>
+                <tr id="today-head"></tr>
+              </thead>
+              <tbody id="today-body"></tbody>
+            </table>
+            <p id="today-empty" class="muted empty hidden">No client sweep yet.</p>
           </div>
-          <article class="surface quick-surface">
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">D43</p>
-                <h3>Campaign setup rails</h3>
-              </div>
-              <button id="copy-setup-prompt" class="ghost compact">
-                Copy prompt
-              </button>
-            </div>
-            <p class="muted setup-lede">
-              Each client's inboxes split A/B. Off-week half sits. The
-              Overview card counts days until that fortnight swaps
-              (America/New_York ISO weeks). Generics fill a POC or
-              Josh-approved campaign to the half-client floor (~30% Google
-              and ~30% Microsoft), then sit after 14 days of live send.
-            </p>
-            <pre id="setup-prompt" class="setup-prompt"></pre>
-          </article>
-          <article class="surface quick-surface">
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">Common jobs</p>
-                <h3>Quick checks</h3>
-              </div>
-              <span class="muted">Allowlisted ops + Cursor Grok 4.5 High Fast</span>
-            </div>
-            <div class="quick-actions">
-              <button data-command="Check deliverability">Check deliverability</button>
-              <button data-command="Audit campaigns">Audit campaigns</button>
-              <button data-command="Campaign setup">Campaign setup</button>
-              <button data-command="Check DNS">Check DNS</button>
-              <button data-command="Reconnect disconnected mailboxes">
-                Reconnect mailboxes
-              </button>
-            </div>
-          </article>
+          <p id="placement-errors" class="error hidden"></p>
+          <p id="placement-updated" class="muted hidden"></p>
         </section>
 
-        <section id="placement-panel" class="panel">
-          <article class="surface">
-            <div class="section-heading placement-heading">
-              <div>
-                <p class="eyebrow">Active sending campaigns</p>
-                <h3>Placement test results</h3>
-                <span id="placement-updated" class="muted"></span>
-              </div>
-              <div class="placement-controls">
-                <input
-                  id="placement-search"
-                  type="search"
-                  placeholder="Filter tests or campaigns"
-                  aria-label="Filter placement tests"
-                />
-                <button id="refresh-placement" class="ghost compact">
-                  Refresh live
-                </button>
-              </div>
-            </div>
-            <div class="table-wrap">
-              <table class="placement-table">
-                <thead>
-                  <tr>
-                    <th><button data-sort="name">Test</button></th>
-                    <th><button data-sort="campaignName">Campaign</button></th>
-                    <th><button data-sort="status">Status</button></th>
-                    <th><button data-sort="inboxPercent">Inbox</button></th>
-                    <th><button data-sort="googleInboxPercent">Google</button></th>
-                    <th><button data-sort="microsoftInboxPercent">Microsoft</button></th>
-                    <th><button data-sort="spamPercent">Spam</button></th>
-                    <th><button data-sort="totalSeeds">Seeds</button></th>
-                    <th><button data-sort="createdAt">Date</button></th>
-                  </tr>
-                </thead>
-                <tbody id="placement-body"></tbody>
-              </table>
-              <p id="placement-empty" class="muted table-empty hidden">
-                No placement tests for active sending campaigns (canary copy tests are hidden).
-              </p>
-            </div>
-            <p id="placement-errors" class="error"></p>
-          </article>
+        <section id="watchdog-panel" class="panel">
+          <div id="watchdog-cards" class="summary-grid"></div>
+          <div id="watchdog-grid" class="watch-grid"></div>
+          <p id="watchdog-empty" class="muted empty hidden">No send reading yet.</p>
         </section>
 
-        <section id="isolation-panel" class="panel">
-          <article class="surface">
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">Proof first</p>
-                <h3>Waiting on a human</h3>
-                <p class="muted">
-                  Rotation, rest, testing and word hunting run on their own.
-                  Josh taps to retire a domain or buy replacements. Josh or
-                  Cayden tap to switch one word in a live email.
-                </p>
-              </div>
-              <button id="refresh-isolation" class="ghost compact">Refresh</button>
-            </div>
-            <div id="isolation-actions" class="stack-list"></div>
-          </article>
-          <article class="surface">
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">Known-good inbox tests</p>
-                <h3>Domain health</h3>
-                <p class="muted">
-                  Domains are judged only on the known-good email, never on
-                  campaign performance. Fleet domains need several failing
-                  inboxes. Sitting inboxes count.
-                </p>
-              </div>
-            </div>
-            <div id="isolation-domains" class="stack-list"></div>
-          </article>
-          <article class="surface">
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">Campaign flags</p>
-                <h3>Copy or inboxes</h3>
-                <p class="muted">
-                  A campaign in spam is a flag that something is wrong —
-                  either the inboxes or the copy. This is the research, with
-                  proof.
-                </p>
-              </div>
-            </div>
-            <div id="isolation-runs" class="stack-list"></div>
-          </article>
-        </section>
-
-        <section id="chat-panel" class="panel">
-          <article class="surface chat-shell">
-            <div id="messages" class="messages" aria-live="polite"></div>
-            <form id="chat-form" class="chat-form">
-              <textarea
-                id="chat-input"
-                rows="1"
-                maxlength="4000"
-                placeholder="Ask anything — or try: Check deliverability, audit campaigns…"
-              ></textarea>
-              <button type="submit" class="send-button" aria-label="Send">
-                ↑
-              </button>
-            </form>
-          </article>
-        </section>
-
-        <section id="approvals-panel" class="panel owner-only">
-          <article class="surface">
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">Owner only</p>
-                <h3>Spend approvals</h3>
-              </div>
-              <button id="refresh-approvals" class="ghost compact">Refresh</button>
-            </div>
-            <div id="approvals-list" class="stack-list"></div>
-          </article>
-        </section>
-
-        <section id="audit-panel" class="panel">
-          <article class="surface">
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">Accountability</p>
-                <h3>Operations audit</h3>
-              </div>
-              <button id="refresh-audit" class="ghost compact">Refresh</button>
-            </div>
-            <div id="audit-list" class="stack-list"></div>
-          </article>
+        <section id="fix-panel" class="panel">
+          <div id="fix-filters" class="chips"></div>
+          <div id="fix-list" class="fix-list"></div>
+          <p id="fix-empty" class="muted empty hidden">Nothing in this filter.</p>
         </section>
       </main>
+
+      <aside id="chat-drawer" class="chat-drawer" aria-hidden="true">
+        <header class="chat-head">
+          <strong>Wizard chat</strong>
+          <button id="close-chat" type="button" class="icon-btn" aria-label="Close chat">×</button>
+        </header>
+        <div id="messages" class="messages"></div>
+        <form id="chat-form" class="chat-form">
+          <input id="chat-input" type="text" placeholder="Ask the wizard..." autocomplete="off" />
+        </form>
+      </aside>
     </div>
 
-    <div id="toast" class="toast hidden"></div>
-    <script src="/ops/app.js" defer></script>
+    <div id="toast" class="toast hidden" role="status"></div>
+    <script src="/ops/app.js"></script>
   </body>
 </html>

@@ -54,7 +54,7 @@ Then, on live Smartlead:
   writes are no-ops (D157). Do not flap a campaign that will peel again
   on the next bounce. The pulse posts `Unpaused N bounce holds` when
   N > 0; say the same in your thread reply.
-- On-week pod only. Do not retag named seats between POD-A and POD-B (D203); only the wizard's D316 15% rebalance may.
+- On-week pod only. Do not retag named seats between POD-A and POD-B to staff the on-week campaign (D203); the wizard's D326 rebalance may move off-week or idle named seats to even a lopsided client.
   Every ACTIVE campaign owes ≥40 staffable senders from its own client
   (D207). Same-client generics may sit on every ACTIVE campaign of that
   client. Never detach seats from PAUSED/STOPPED.

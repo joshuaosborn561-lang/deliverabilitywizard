@@ -103,6 +103,7 @@ import {
   ownedPodMap,
   type OwnedPodCount,
 } from "../lib/podOwnedInventory.js";
+import { genericNeedAfterNamedRebalance } from "../lib/namedPodBalance.js";
 import { assignClientCohorts, onWeekCohort } from "../lib/restCohort.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
 import { accountOnBounceHold } from "../lib/bounceHold.js";
@@ -208,7 +209,7 @@ function campaignIsActive(campaign: { status?: string | null } | undefined): boo
  * alerted (Josh-only seats). PowerGRYD 592842 takes generics
  * like any named client. D283 still refuses Onboarding-freed
  * seats that would flip back to PowerGRYD ownership.
- * Never retag named seats here (D316's 15% rebalance lives in pod-tags). Never retag a generic across PODs (D230).
+ * Never retag named seats here (D326's even rebalance lives in pod-tags). Never retag a generic across PODs (D230).
  * Never START/PAUSE. Never CornerStone or HOLD-UNTIL/RETIRE.
  * D268 — no Allow-generics Slack card and no auto-allow list.
  * Never add generics past the floor. Never add them when owned
@@ -1487,6 +1488,44 @@ export class Min40TopUpService {
       const selected = new Set<string>();
       const skipGenerics = this.neverGenericClient(clientId);
       const microsoftShare = this.clientSplits?.shareForClient(brand);
+      const rowA = owned.get(clientPodKey(clientId, "A"));
+      const rowB = owned.get(clientPodKey(clientId, "B"));
+      const activeIds = new Set(
+        clientActive
+          .filter((campaign) => String(campaign.status ?? "").toUpperCase() === "ACTIVE")
+          .map((campaign) => campaign.id),
+      );
+      let movableA = 0;
+      let movableB = 0;
+      for (const seat of input.seats) {
+        if (seat.generic) continue;
+        const account = seat.account;
+        const ownerHere = isJeremyCiotolaSeat(account)
+          ? clientId === CIOTOLA_CLIENT_ID
+          : typeof account.client_id === "number" &&
+            account.client_id === clientId;
+        if (!ownerHere) continue;
+        const pod = mailboxPodOf(account);
+        if (pod !== "A" && pod !== "B") continue;
+        const locked =
+          accountOnBounceHold(account, this.state, input.now) ||
+          isLockedCanarySeat(account, seat.email, this.state);
+        if (locked) continue;
+        const onActive = [...seat.campaignIds].some((id) => activeIds.has(id));
+        const offWeek = pod !== onWeek;
+        if (onActive && !offWeek) continue;
+        if (pod === "A") movableA += 1;
+        else movableB += 1;
+      }
+      const projected = genericNeedAfterNamedRebalance({
+        namedA: rowA?.named ?? 0,
+        namedB: rowB?.named ?? 0,
+        movableA,
+        movableB,
+        genericsA: rowA?.generics ?? 0,
+        genericsB: rowB?.generics ?? 0,
+        floor,
+      });
       // D285 — both PODs. Never skip the off-week POD. On-week first
       // so a scarce generic links. D268's off-week skip is retired.
       const pods: Array<"A" | "B"> = onWeek === "B" ? ["B", "A"] : ["A", "B"];
@@ -1497,8 +1536,9 @@ export class Min40TopUpService {
           );
           break;
         }
-        const row = owned.get(clientPodKey(clientId, pod));
-        let need = row?.shortBy ?? floor;
+        // D326 — prefer named A↔B rebalance over covering a lopsided
+        // split with generics. Generics only top each POD up to 40.
+        let need = pod === "A" ? projected.needA : projected.needB;
         const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
         const yieldEsp = createLoopYielder(MIN40_SEAT_YIELD_EVERY);
         for (const seat of input.seats) {

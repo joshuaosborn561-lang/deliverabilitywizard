@@ -74,7 +74,7 @@ describe("PodTagService (D135)", () => {
       },
     };
     const service = new PodTagService(
-      loadConfig({} as NodeJS.ProcessEnv),
+      loadConfig({ ENABLE_NAMED_POD_REBALANCE: "false" } as NodeJS.ProcessEnv),
       smartlead as never,
       state,
       bookWith(
@@ -477,5 +477,108 @@ describe("PodTagService D316 — named seats within 15%", () => {
     assert.ok((result.rebalanced ?? 0) > 0, "an unlocked idle seat still moves");
     assert.ok(touched.includes(7));
     assert.ok(!touched.includes(6), "CAYDEN-SG POD-A must stay");
+  });
+});
+
+describe("PodTagService D326 — even named split, off-week or idle", () => {
+  const weekday = new Date("2026-10-05T14:00:00.000Z"); // A on, B off
+
+  it("moves off-week named seats to even 21/59 even if they still have an ACTIVE leftover", async () => {
+    const state = new StateStore(
+      `/tmp/dw-d326-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const accounts = [
+      ...Array.from({ length: 21 }, (_, i) => ({
+        id: i + 1,
+        from_email: `a${i + 1}@bpltg.test`,
+        client_id: 9,
+        type: "GMAIL",
+        campaign_ids: [50],
+        tags: [{ tag_name: POD_TAG_A }],
+      })),
+      ...Array.from({ length: 59 }, (_, i) => ({
+        id: 100 + i,
+        from_email: `b${i + 1}@bpltg.test`,
+        client_id: 9,
+        type: "GMAIL",
+        campaign_ids: [50],
+        tags: [{ tag_name: POD_TAG_B }],
+      })),
+    ];
+    const assigns: Array<[number[], number[]]> = [];
+    const removes: Array<[number[], number[]]> = [];
+    const service = new PodTagService(
+      loadConfig({ DRY_RUN: "false" } as NodeJS.ProcessEnv),
+      {
+        ensureTag: async (name: string) => ({
+          id: name === POD_TAG_A ? 71 : 72,
+          name,
+        }),
+        assignTags: async (ids: number[], tags: number[]) =>
+          void assigns.push([ids, tags]),
+        removeTags: async (ids: number[], tags: number[]) =>
+          void removes.push([ids, tags]),
+      } as never,
+      state,
+      bookWith([{ id: 50, name: "BPLTG", status: "ACTIVE", client_id: 9 }], accounts),
+      async () => {},
+    );
+    const result = await service.run({ now: weekday });
+    assert.equal(result.rebalanced, 19);
+    const moved = removes.flatMap(([ids]) => ids);
+    assert.ok(moved.every((id) => id >= 100), "only off-week POD-B seats move");
+    assert.ok(assigns.some(([, tags]) => tags[0] === 71), "POD-A tag added");
+  });
+
+  it("keeps a 24h 5.7.233 / TERRL stop on its POD", async () => {
+    const state = new StateStore(
+      `/tmp/dw-d326-terl-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const accounts = [
+      ...Array.from({ length: 2 }, (_, i) => ({
+        id: i + 1,
+        from_email: `a${i + 1}@acme.test`,
+        client_id: 9,
+        type: "GMAIL",
+        campaign_ids: [],
+        tags: [{ tag_name: POD_TAG_A }],
+      })),
+      ...Array.from({ length: 8 }, (_, i) => ({
+        id: 20 + i,
+        from_email: `b${i + 1}@acme.test`,
+        client_id: 9,
+        type: "OUTLOOK",
+        campaign_ids: [],
+        tags: [{ tag_name: POD_TAG_B }],
+      })),
+    ];
+    state.ensureBounceHold(
+      accounts.filter((row) => row.id >= 20).map((row) => row.id),
+      weekday,
+    );
+    const assigns: Array<[number[], number[]]> = [];
+    const removes: Array<[number[], number[]]> = [];
+    const service = new PodTagService(
+      loadConfig({ DRY_RUN: "false" } as NodeJS.ProcessEnv),
+      {
+        ensureTag: async (name: string) => ({
+          id: name === POD_TAG_A ? 71 : 72,
+          name,
+        }),
+        assignTags: async (ids: number[], tags: number[]) =>
+          void assigns.push([ids, tags]),
+        removeTags: async (ids: number[], tags: number[]) =>
+          void removes.push([ids, tags]),
+      } as never,
+      state,
+      bookWith([{ id: 50, name: "Acme", status: "ACTIVE", client_id: 9 }], accounts),
+      async () => {},
+    );
+    const result = await service.run({ now: weekday });
+    assert.equal(result.rebalanced ?? 0, 0);
+    assert.deepEqual(removes, []);
+    assert.deepEqual(assigns, []);
   });
 });

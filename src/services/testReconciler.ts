@@ -18,6 +18,7 @@ import {
   isIsolationManagedTestName,
 } from "../lib/isolationNames.js";
 import { shouldEvaluateIsolationSuspect } from "../lib/placementSuspect.js";
+import { trackedTestCampaignIndex } from "../lib/trackedTestCampaign.js";
 
 export interface StoppedTest {
   testId: string;
@@ -109,18 +110,29 @@ export class TestReconciler {
     }
 
     const activeStatuses = new Set(this.config.autoTestActiveStatuses);
+    // D326 — enrichment runs on a 90s budget, so most list rows still lack
+    // campaign_id. The scanner's own creation record links them.
+    const trackedCampaignByTestId = trackedTestCampaignIndex(
+      this.state.get().testedCampaigns,
+    );
 
     for (const test of tests) {
       if (!isAutomatedTest(test)) continue;
       result.automatedTests += 1;
 
       const testId = testIdOf(test);
+      const tracked = testId ? trackedCampaignByTestId.get(testId) : undefined;
       const campaignId =
         campaignIdOf(test) ??
         (isCanaryCopyTestName(test.test_name)
           ? campaignIdFromCanaryTestName(test.test_name)?.toString()
-          : undefined);
+          : undefined) ??
+        (tracked !== undefined ? String(tracked) : undefined);
       if (!testId) continue;
+
+      // D326 — a stopped / completed test has nothing left to stop; it is
+      // not an "orphan" to check by hand (2,999 such rows padded the list).
+      if (!campaignId && !isTestStoppable(test)) continue;
 
       if (!campaignId) {
         // No campaign linkage — never guess; surface instead of stopping.

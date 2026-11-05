@@ -15,7 +15,6 @@ import {
 import { existingPodTag } from "../lib/podTagLock.js";
 import {
   NAMED_POD_MAX_MOVES_PER_PASS,
-  namedPodsEven,
   planNamedPodRebalance,
   type NamedPodSeat,
 } from "../lib/namedPodBalance.js";
@@ -30,6 +29,39 @@ import {
 import { pocEngagementClientIds } from "../lib/pocClient.js";
 import { accountOnBounceHold } from "../lib/bounceHold.js";
 import { onWeekCohort } from "../lib/restCohort.js";
+import { hasPoolMarkerTag } from "../lib/markerClients.js";
+import { isJeremyCiotolaSeat } from "../lib/ciotolaClient.js";
+import { accountTagNames } from "../lib/attachGuard.js";
+
+/** GENERIC pool tag id (name match also covers GENERIC / POC). */
+const GENERIC_TAG_ID = 510826;
+
+/**
+ * D326 fix — a seat counted in a client's named POD-A/POD-B split,
+ * matching the CANON sweep: not GENERIC/POC (510826), CAYDEN-SG,
+ * GABE-VM-RESERVED / caller follow-up, JEREMY-CIOTOLA (533700), a
+ * canary, any HOLD-UNTIL-*, or dual POD-tagged.
+ */
+export function isNamedSeatForPodBalance(
+  account: Parameters<typeof isLockedCanarySeat>[0] &
+    Parameters<typeof isGabeVmReserved>[0],
+  email: string,
+  state: Parameters<typeof isLockedCanarySeat>[2] = {},
+): boolean {
+  const tags = account.tags ?? [];
+  if (hasPoolMarkerTag({ tags })) return false;
+  if ((tags as Array<Record<string, unknown>>).some((t) => Number(t.id ?? t.tag_id) === GENERIC_TAG_ID)) return false;
+  if (isCaydenSgSeat(account)) return false;
+  if (isGabeVmReserved(account) || callerFollowUpMustSkipPodTags(account as never, email)) return false;
+  if (isJeremyCiotolaSeat(account as never)) return false;
+  const names = accountTagNames(account as never).map((n) => n.toUpperCase());
+  if (names.some((n) => n.startsWith("HOLD-UNTIL"))) return false;
+  if (names.some((n) => n.includes("CANARY"))) return false;
+  if (email && isLockedCanarySeat(account, email, state)) return false;
+  if (email.toLowerCase().includes("canary")) return false;
+  if (hasDualPodTags(account.tags as never)) return false;
+  return true;
+}
 
 export const POD_TAG_A = "POD-A";
 export const POD_TAG_B = "POD-B";
@@ -111,44 +143,46 @@ export class PodTagService {
       this.state.listEndedPocClientIds(),
     );
     const onWeek = onWeekCohort(now);
-    const seats: NamedPodSeat[] = [];
+    // D326 fix (Cayden 11/5) — count EVERY named seat of a rotating
+    // client, the same population the CANON sweep counts. The pod list
+    // only holds seats on ACTIVE campaigns or the resting list, so it
+    // skewed the real split (Nov 4–5: 40 seats moved B→A). Pods only
+    // decide which clients rotate; the seats come from the full book.
+    const rotating = new Set<number>();
     for (const pod of pods) {
       if ((pod.pool !== "A" && pod.pool !== "B") || pod.clientId == null) continue;
-      for (const mailbox of pod.mailboxes) {
-        const account = byId.get(mailbox.accountId);
-        if (!account) continue;
-        const email = accountEmail(account) || mailbox.email;
-        const locked =
-          (email && isLockedCanarySeat(account, email, this.state)) ||
-          callerFollowUpMustSkipPodTags(account, email) ||
-          isGabeVmReserved(account) ||
-          // D324 — lock only. The first-tag pass below must not strip
-          // POD-A off these seats (they are not D242 class senders).
-          isCaydenSgSeat(account) ||
-          hasDualPodTags(account.tags) ||
-          isPodRotationSkippedClient(pod.clientId, pocSkipIds) ||
-          existingPodTag(account.tags) !== pod.pool ||
-          // D326 — a 24h 5.7.233 / TERRL stop keeps its POD tag.
-          accountOnBounceHold(account, this.state, now);
-        seats.push({
-          accountId: account.id,
-          email,
-          clientId: pod.clientId,
-          pod: pod.pool,
-          esp: senderEspBucket(account),
-          onActiveCampaign: campaignIdsOf(account).some((id) => active.has(id)),
-          offWeek: pod.pool !== onWeek,
-          locked: Boolean(locked),
-        });
-      }
+      if (isPodRotationSkippedClient(pod.clientId, pocSkipIds)) continue;
+      rotating.add(pod.clientId);
+    }
+    const seats: NamedPodSeat[] = [];
+    for (const account of accounts) {
+      const clientId = account.client_id;
+      if (typeof clientId !== "number" || !rotating.has(clientId)) continue;
+      const email = accountEmail(account) || "";
+      if (!isNamedSeatForPodBalance(account, email, this.state)) continue;
+      const pod = existingPodTag(account.tags);
+      if (pod !== "A" && pod !== "B") continue;
+      // Counted, never moved: a 24h 5.7.233 / TERRL stop keeps its POD tag.
+      const locked = accountOnBounceHold(account, this.state, now);
+      seats.push({
+        accountId: account.id,
+        email,
+        clientId,
+        pod,
+        esp: senderEspBucket(account),
+        onActiveCampaign: campaignIdsOf(account).some((id) => active.has(id)),
+        offWeek: pod !== onWeek,
+        locked: Boolean(locked),
+      });
     }
     const plan = planNamedPodRebalance(seats, {
       maxMoves: NAMED_POD_MAX_MOVES_PER_PASS,
+      now,
     });
     for (const client of plan.clients) {
-      if (!namedPodsEven(client.a, client.b)) {
+      if (client.violations.length) {
         console.log(
-          `[pod-tags] D326 client ${client.clientId} named A=${client.a} B=${client.b} gap=${(client.gap * 100).toFixed(0)}% → ${client.moves.length} retag(s)${client.remainingEven ? "" : ", still uneven after (on-week ACTIVE seats stay mid-week)"}`,
+          `[pod-tags] D326 client ${client.clientId} named A=${client.a} B=${client.b} gap=${(client.gap * 100).toFixed(0)}% out of 15% on ${client.violations.join("+")} → ${client.moves.length} retag(s)${client.remainingViolations.length ? `, still out on ${client.remainingViolations.join("+")} (on-week ACTIVE / locked seats stay)` : ""}`,
         );
       }
     }

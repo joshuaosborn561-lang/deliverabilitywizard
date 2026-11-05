@@ -3,8 +3,11 @@ import { describe, it } from "node:test";
 import {
   NAMED_POD_MAX_GAP,
   NAMED_POD_MAX_MOVES_PER_PASS,
+  NAMED_POD_ACCEPTED_SPLITS,
+  NAMED_POD_HANDS_OFF_CLIENT_IDS,
   genericNeedAfterNamedRebalance,
   namedPodGap,
+  namedPodSplitViolations,
   namedPodsBalanced,
   namedPodsEven,
   planNamedPodRebalance,
@@ -173,5 +176,100 @@ describe("D326 named POD rebalance — even split, off-week or idle", () => {
       movableB: 59,
     });
     assert.deepEqual(projected, { a: 40, b: 40, moves: 19 });
+  });
+});
+
+describe("D326 fix — count every named seat, no-op within 15% (Cayden 11/5)", () => {
+  const split = (
+    clientId: number,
+    g: [number, number],
+    o: [number, number],
+    over: Partial<NamedPodSeat> = {},
+  ) => [
+    ...many(g[0], "A", "gmail", { clientId, ...over }),
+    ...many(g[1], "B", "gmail", { clientId, ...over }),
+    ...many(o[0], "A", "outlook", { clientId, ...over }),
+    ...many(o[1], "B", "outlook", { clientId, ...over }),
+  ];
+
+  it("today's manual re-splits are a no-op (VP 37/37, Nexus 50/50, SG 78/77, EMCOR 125/125)", () => {
+    const seats = [
+      ...split(607625, [19, 19], [18, 18]),
+      ...split(607522, [25, 25], [25, 25]),
+      ...split(345263, [30, 30], [48, 47]),
+      ...split(574020, [35, 35], [90, 90]),
+    ];
+    const plan = planNamedPodRebalance(seats, { maxMoves: 200 });
+    assert.equal(plan.moves.length, 0);
+    assert.ok(plan.clients.every((c) => c.withinTolerance && c.violations.length === 0));
+  });
+
+  it("on-week live and locked seats still COUNT: 40/38 real split is left alone", () => {
+    // Old D326 only saw idle/resting seats: 10 A vs 38 B → would move 14 B→A.
+    const seats = [
+      ...many(30, "A", "gmail", { onActiveCampaign: true, offWeek: false }),
+      ...many(10, "A", "gmail"),
+      ...many(36, "B", "gmail", { offWeek: true }),
+      ...many(2, "B", "gmail", { locked: true }),
+    ];
+    const plan = planNamedPodRebalance(seats, { maxMoves: 50 });
+    assert.equal(plan.moves.length, 0);
+    assert.equal(plan.clients[0]!.a, 40);
+    assert.equal(plan.clients[0]!.b, 38);
+  });
+
+  it("acts when the total is outside 15% and stops at an even split", () => {
+    const plan = planNamedPodRebalance(split(1, [24, 14], [20, 16]), { maxMoves: 50 });
+    const c = plan.clients[0]!;
+    assert.deepEqual(c.violations.includes("total"), true);
+    assert.equal(c.remainingEven, true);
+    assert.deepEqual(c.remainingViolations, []);
+  });
+
+  it("an even total with a lopsided ESP swaps one-for-one and keeps the total even", () => {
+    const plan = planNamedPodRebalance(split(1, [30, 20], [20, 30]), { maxMoves: 50 });
+    const c = plan.clients[0]!;
+    assert.deepEqual(c.violations, ["gmail", "outlook"]);
+    assert.ok(plan.moves.length > 0 && plan.moves.length % 2 === 0);
+    assert.equal(plan.moves.filter((m) => m.to === "A").length, plan.moves.filter((m) => m.to === "B").length);
+    assert.deepEqual(c.remainingViolations, []);
+    assert.equal(c.remainingEven, true);
+  });
+
+  it("per-ESP check: gmail 30/27 is ok, outlook 50/36 is not (gap ÷ larger, CANON D316)", () => {
+    const v = namedPodSplitViolations(1, split(1, [30, 27], [50, 36]));
+    assert.deepEqual(v, ["total", "outlook"]);
+    assert.deepEqual(namedPodSplitViolations(1, split(1, [33, 27], [44, 46])), ["gmail"]);
+  });
+
+  it("respects an approved exception until it expires or gets worse", () => {
+    const accepted = [{ clientId: 7, split: "outlook" as const, a: 15, b: 12, until: "2026-11-08", note: "t" }];
+    const seats = split(7, [8, 8], [15, 12]);
+    const before = new Date("2026-11-06T12:00:00Z");
+    assert.deepEqual(namedPodSplitViolations(7, seats, { accepted, now: before }), []);
+    assert.equal(planNamedPodRebalance(seats, { accepted, now: before }).moves.length, 0);
+    const after = new Date("2026-11-09T12:00:00Z");
+    assert.deepEqual(namedPodSplitViolations(7, seats, { accepted, now: after }), ["outlook"]);
+    const worse = split(7, [8, 8], [16, 11]);
+    assert.ok(namedPodSplitViolations(7, worse, { accepted, now: before }).includes("outlook"));
+    assert.ok(NAMED_POD_ACCEPTED_SPLITS.some((r) => r.clientId === 521881 && r.split === "outlook"));
+  });
+
+  it("never moves a hands-off client (PowerGRYD)", () => {
+    assert.ok(NAMED_POD_HANDS_OFF_CLIENT_IDS.includes(592842));
+    const plan = planNamedPodRebalance(split(592842, [30, 5], [20, 5]), { maxMoves: 50 });
+    assert.equal(plan.moves.length, 0);
+    assert.equal(plan.clients[0]!.handsOff, true);
+  });
+
+  it("min40 projection agrees: within 15% projects no moves, so generics top the short POD", () => {
+    assert.deepEqual(
+      projectNamedPods({ namedA: 38, namedB: 42, movableA: 0, movableB: 42 }),
+      { a: 38, b: 42, moves: 0 },
+    );
+    assert.equal(
+      genericNeedAfterNamedRebalance({ namedA: 38, namedB: 42, movableA: 0, movableB: 42 }).needA,
+      2,
+    );
   });
 });

@@ -316,7 +316,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D322 | Live | Locked-canon CI passes canon-consistent PRs without Josh's approval. It fails when the LOCKED section, `docs/LOCKED-CANON.md`, or `src/lib/lockedCanon.ts` changes unless the PR has the `canon-change` label approved by Josh (`joshuaosborn561-lang` applied it, or he approved the PR while it is present). Josh stays CODEOWNER of those definition files. Implementation paths, including `src/guards/lockedCanon.test.ts`, are not Josh-only. Required checks stay `check` and `locked-canon`; code-owner review is not a merge gate. Unauthorized locked-canon edits never auto-merge. POD-40, Generics Ledger, and ESP matching unchanged. |
 | D324 | Live | CAYDEN-SG seats stay on Booking Follow Up campaigns only. That membership does not confer client membership, so fan-out does not spread them. They are not D242 class senders: POD-A stays, and Booking Follow Up keeps the 10-minute gap and its current window. D316 does not retag them. LOCKED section unchanged. |
 | D325 | Live | JEREMY-CIOTOLA (tag 533700) seats sit under SalesGlider 345263 but are only eligible for Ciotola campaigns (name `Ciotola` / `Gabe Calls | Ciotola`, or ids 4289735–4289738 / 4236534). The gate keys off JEREMY-CIOTOLA, not a POD tag (POD-A / POD-B / none). Ciotola is its own client for POD counts (virtual 900345263) and never takes pool generics. Non-Jeremy seats never go onto Ciotola except GABE-VM-RESERVED on Gabe Calls | Ciotola 4236534. `/health` `client_seat_crossover` when a Jeremy seat is on a non-Ciotola campaign. LOCKED section unchanged. |
-| D326 | Live | Moving named inboxes between POD-A and POD-B to balance a lopsided client is allowed and preferred over covering the gap with generics (Josh 11/4, supersedes D203 never-retag / PR #242). Example: BPLTG 21/59 → even ESP-balanced split. Only the off-week POD's named seats, or seats not linked to ACTIVE campaigns, may move. A 24h 5.7.233 / TERRL stop keeps its POD tag. Generics only top each POD up to 40. D316's 15% path now targets even. `mayWritePodTag` still refuses every other writer. LOCKED section unchanged. |
+| D326 | Live | Moving named inboxes between POD-A and POD-B to balance a lopsided client is allowed and preferred over covering the gap with generics (Josh 11/4, supersedes D203 never-retag / PR #242). Example: BPLTG 21/59 → even ESP-balanced split. Only the off-week POD's named seats, or seats not linked to ACTIVE campaigns, may move. A 24h 5.7.233 / TERRL stop keeps its POD tag. Generics only top each POD up to 40. D316's 15% path now targets even. `mayWritePodTag` still refuses every other writer. LOCKED section unchanged. **11/5 amendment:** counts every named seat (sweep exclusions), acts only when total or per-ESP is outside 15%, no-op otherwise; honours approved exceptions and PowerGRYD hands-off. |
 
 ---
 
@@ -11829,6 +11829,23 @@ off-week leftover ACTIVE links.
 5. min40 computes generic need after that projection.
    A 21/59 client with a movable off-week surplus takes no
    pool generics.
+6. **Amendment 2026-11-05 (Cayden: "Fix D326 to count every
+   named seat").** The split is counted over EVERY named seat
+   of a rotating client — the same population the CANON sweep
+   counts — not just seats on ACTIVE campaigns or the resting
+   list (that subset moved 40 seats B→A overnight for Nexus,
+   Virtual Pulsar, SalesGlider and EMCOR). Not counted:
+   GENERIC/POC (510826), CAYDEN-SG, GABE-VM-RESERVED / caller
+   follow-up, JEREMY-CIOTOLA (533700), canaries, any
+   HOLD-UNTIL-*, dual-tagged, untagged. Locked and on-week
+   ACTIVE seats count but never move. It acts only when the
+   total OR a per-ESP (Gmail / Outlook) split is outside 15%
+   (gap ÷ larger); within tolerance it is a no-op, and min40's
+   projection agrees. Approved exceptions
+   (`NAMED_POD_ACCEPTED_SPLITS`, expire at the next rotation)
+   and hands-off clients (`NAMED_POD_HANDS_OFF_CLIENT_IDS`,
+   PowerGRYD) are respected. An even total with a lopsided ESP
+   is fixed by one-for-one swaps.
 
 **Guards.** `src/lib/namedPodBalance.test.ts` (D326),
 `src/services/podTags.test.ts` (D326),

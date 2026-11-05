@@ -3,8 +3,10 @@ import { describe, it } from "node:test";
 import {
   bounceReasonSnippet,
   classifyBounceText,
+  isNdrReplyBody,
   leadCategoryOf,
   leadCategoryWantsNdrRead,
+  ndrBodyFromHistory,
   preferNdrRows,
   summarizeBounceSamples,
 } from "./bounceReason.js";
@@ -50,6 +52,34 @@ describe("bounce reason classification (D140)", () => {
       ),
       "content_block",
     );
+  });
+
+  it("reads the Exchange Mimecast card (couldn't be delivered / 5.7.352)", () => {
+    const body =
+      "Your message to communications@pcg.org couldn't be delivered. " +
+      "pcg.org suspects your message is spam, or contains a virus, and rejected it. " +
+      "Status code: 550 5.7.352 Mimecast detected message as spam or virus -> " +
+      "554 Email rejected due to security policies";
+    assert.equal(isNdrReplyBody(body), true);
+    assert.equal(
+      isNdrReplyBody("Thanks, not interested. Please take us off the list."),
+      false,
+    );
+    assert.equal(
+      ndrBodyFromHistory({
+        history: [
+          { type: "SENT", from: "philiphoppe@culturefitsaio.info" },
+          { type: "REPLY", email_body: body },
+        ],
+      }),
+      body,
+    );
+    assert.equal(classifyBounceText(body), "content_block");
+    assert.equal(
+      classifyBounceText("Status code: 550 5.7.352"),
+      "content_block",
+    );
+    assert.notEqual(classifyBounceText(body), "tenant_rate_limit");
   });
 
   it("summarizes toward the dominant class", () => {

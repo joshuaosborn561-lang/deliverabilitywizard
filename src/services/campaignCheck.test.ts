@@ -251,6 +251,50 @@ describe("CampaignCheckService", () => {
     assert.deepEqual(sequences, []);
   });
 
+  it("a 429 on the sequence read is unverified, not clean, and keeps the last sequence findings", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    let fail = false;
+    const sl = {
+      listCampaigns: async () => [
+        { id: 4256612, name: "Vector | Big Owners | Clippers | Wave 2", status: "ACTIVE", client_id: 548611 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 22,
+          from_email: "aarav@client.com",
+          from_name: "Aarav Sanchez",
+          signature: "Aarav Sanchez\nGoliath Cybersecurity",
+          client_id: 548611,
+          campaign_ids: [4256612],
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+      ],
+      listClients: async () => [goliath],
+      getCampaignSequences: async () => {
+        if (fail) throw new Error("HTTP 429");
+        return [
+          { seq_number: 1, seq_delay_details: { delay_in_days: 0 }, email_body: "<div>Hi</div><div>%signature%</div>" },
+          { seq_number: 2, seq_delay_details: { delay_in_days: 2 }, email_body: "<div>Bump</div><div>%signature%</div>" },
+        ];
+      },
+    } as unknown as SmartleadClient;
+    const service = mkCheck(loadConfig({}), sl, delivery([]), state);
+    await service.run({ mode: "first" });
+    await service.run({ mode: "hourly" });
+    const before = state.getCampaignCheck(4256612)?.findings ?? [];
+    assert.ok(before.some((row) => row.startsWith("missing_breakup_step")), "baseline has the breakup finding");
+
+    fail = true;
+    const hourly = await service.run({ mode: "hourly" });
+    const after = state.getCampaignCheck(4256612)?.findings ?? [];
+    assert.ok(after.some((row) => row.startsWith("unverified:")), "429 marks the campaign unverified");
+    assert.ok(after.some((row) => row.startsWith("missing_breakup_step")), "prior sequence finding is carried, not cleared");
+    const row = hourly.findings.find((r) => r.campaignId === 4256612);
+    assert.ok(row && row.findings.length > 0, "a failed read is never reported as clean");
+  });
+
   it("D81: a clean campaign passes first check; hourly still reads sequences", async () => {
     const state = new StateStore(stateFile());
     await state.load();

@@ -17,6 +17,7 @@ import {
   isFirstCheckBlocking,
   type CampaignCheckRecord,
   type CampaignFinding,
+  unverifiedFindings,
 } from "../lib/campaignCheck.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import {
@@ -679,6 +680,15 @@ export class CampaignCheckService {
           ...unlinked.map((email) => `${name} ${email}`),
         );
       }
+      // A failed Smartlead read (429 etc.) is unverified, never clean:
+      // keep the last sequence findings and say so.
+      if (inspected.sequenceReadError) {
+        findings = unverifiedFindings({
+          error: inspected.sequenceReadError,
+          current: findings,
+          priorStored: record.findings,
+        });
+      }
       const passed = firstCheckPassed(findings);
       const next: CampaignCheckRecord = {
         ...record,
@@ -722,6 +732,8 @@ export class CampaignCheckService {
       }
       if (!findings.length) {
         console.log(`[campaign-check] ${kind} #${campaign.id} ${name} — clean`);
+      } else if (inspected.sequenceReadError) {
+        console.log(`[campaign-check] ${kind} #${campaign.id} ${name} — unverified (${inspected.sequenceReadError})`);
       }
     }
 
@@ -1215,8 +1227,10 @@ export class CampaignCheckService {
     mergeTagCheckedAt?: string | null;
     mergeTagLeadTotal?: number | null;
     mergeTagCustomKeys?: string[];
+    sequenceReadError?: string | null;
   }> {
     const findings: CampaignFinding[] = [];
+    let sequenceReadError: string | null = null;
     const { campaign } = input;
     const name = String(campaign.name ?? campaign.id);
     const status = String(campaign.status ?? "").toUpperCase();
@@ -1533,6 +1547,7 @@ export class CampaignCheckService {
         }
       }
     } catch (error) {
+      sequenceReadError = error instanceof Error ? error.message : String(error);
       console.warn(
         `[campaign-check] could not read sequences for #${campaign.id}`,
         error,
@@ -1769,6 +1784,7 @@ export class CampaignCheckService {
       mergeTagCheckedAt: mergeTag.checkedAt,
       mergeTagLeadTotal: mergeTag.leadTotal,
       mergeTagCustomKeys: mergeTag.customKeys,
+      sequenceReadError,
     };
   }
 

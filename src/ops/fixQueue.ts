@@ -7,7 +7,10 @@
 import type { OpsRole } from "./auth.js";
 import { findingKind } from "../lib/canonCompliance.js";
 import { canDecideIsolationAction } from "../lib/isolationActors.js";
-import type { CampaignCheckRecord } from "../lib/campaignCheck.js";
+import {
+  campaignCheckIsActive,
+  type CampaignCheckRecord,
+} from "../lib/campaignCheck.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { OpsAuditRecord, SpendApprovalRecord } from "../state/store.js";
 import {
@@ -58,6 +61,8 @@ export function buildFixQueue(input: {
   isolation: IsolationActionRecord[];
   checks: CampaignCheckRecord[];
   audit: OpsAuditRecord[];
+  /** Live inventory status by campaign id; same ACTIVE filter as Today and /health. */
+  statusById?: Map<number, string>;
 }): FixQueue {
   const items: FixQueueItem[] = [];
   const hidden = rejectedIds(input.audit);
@@ -107,6 +112,10 @@ export function buildFixQueue(input: {
   }
 
   for (const record of input.checks) {
+    // Only living ACTIVE campaigns from the live book. Rows for paused,
+    // drafted, or deleted campaigns are not re-judged every pass, so their
+    // findings go stale; Today and /health already hide them.
+    if (!campaignCheckIsActive(record, input.statusById)) continue;
     for (const finding of record.findings ?? []) {
       const kind = findingKind(finding);
       if (!COPY_KINDS.has(kind) && kind !== "mailbox_sig" && kind !== "missing_signature_tag" && kind !== "merge_tag_blank") {

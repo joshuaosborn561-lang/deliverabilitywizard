@@ -393,8 +393,13 @@ export function createOpsRouter(opts: {
   });
 
   router.get("/fix-queue", (req: AuthenticatedRequest, res) => {
+    const inventory = peekInventory();
+    const statusById = new Map(
+      (inventory?.campaigns ?? []).map((row) => [row.id, String(row.status ?? "")]),
+    );
     res.json(
       buildFixQueue({
+        statusById: statusById.size ? statusById : undefined,
         role: req.opsSession!.role,
         approvals: opts.state.listSpendApprovals(),
         isolation: opts.state.listIsolationActions(),

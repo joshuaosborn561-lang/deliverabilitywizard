@@ -45,6 +45,7 @@ export type TodayColumnId =
   | "generics"
   | "senders"
   | "settings"
+  | "sequence"
   | "signatures"
   | "placement"
   | "copy"
@@ -135,10 +136,13 @@ const COLUMN_KINDS: Record<TodayColumnId, readonly string[]> = {
     "mailbox_gap",
     "campaign_min_gap",
     "campaign_send_gap",
-    "step2_delay",
-    "missing_breakup_step",
     "send_window",
   ],
+  // D186 / D306 sequence-shape checks. These are copy/sequence findings
+  // (step 3 breakup is Josh's call and is never auto-written), not
+  // campaign settings, so they get their own column instead of turning
+  // "Campaign settings" red on every client.
+  sequence: ["step2_delay", "missing_breakup_step", "unverified"],
   signatures: [
     "mailbox_sig",
     "missing_signature_tag",
@@ -178,7 +182,7 @@ function hourClock(hhmm: string): string {
 export function campaignSettingsHint(): string {
   const start = hourClock(SEND_WINDOW_START_HOUR);
   const end = hourClock(SEND_WINDOW_END_HOUR);
-  return `ESP match · 10m gap · 2d delay · Mon–Thu ${start}–${end} ET`;
+  return `ESP match · 10m gap · Mon–Thu ${start}–${end} ET`;
 }
 
 export function todayColumns(): TodayColumn[] {
@@ -191,6 +195,11 @@ export function todayColumns(): TodayColumn[] {
     },
     { id: "senders", label: "Senders", hint: "14d warmup · one client · ESP mix" },
     { id: "settings", label: "Campaign settings", hint: campaignSettingsHint() },
+    {
+      id: "sequence",
+      label: "Sequence",
+      hint: "step 2 at 2d · step 3 breakup on day 4",
+    },
     {
       id: "signatures",
       label: "Signatures",

@@ -24,6 +24,12 @@ import type {
   SmartleadCampaign,
   SmartleadEmailAccount,
 } from "../types/index.js";
+import {
+  sequenceVariantTargets,
+  uncoveredVariants,
+  variantLabelFromTestName,
+  variantTestSuffix,
+} from "../lib/sequenceVariants.js";
 
 export interface ScanResult {
   scanned: number;
@@ -297,7 +303,15 @@ export class CampaignScanner {
         return false;
       }
       if (testedCampaignIds.has(String(campaign.id))) {
-        return false;
+        // D303 — a covered campaign is re-planned only for A/B variants
+        // that still lack their own test: once for legacy campaign-level
+        // records, then again only when the campaign changes.
+        const record = this.state.get().testedCampaigns[String(campaign.id)];
+        if (!record) return false;
+        if (!record.variantKeys) return true;
+        const updated = campaign.updated_at ? Date.parse(campaign.updated_at) : NaN;
+        const testedAt = Date.parse(record.testedAt);
+        return Number.isFinite(updated) && Number.isFinite(testedAt) && updated > testedAt;
       }
       // Prefer campaigns created/updated since last scan; on first run include all untested.
       if (lastScanAt && Number.isFinite(lastScanAt)) {
@@ -319,7 +333,16 @@ export class CampaignScanner {
     for (const campaign of candidates) {
       try {
         throwIfAborted(options.signal);
-        const plan = await this.buildPlan(campaign, options.signal);
+        const plan = await this.buildPlan(campaign, options.signal, {
+          covered: testedCampaignIds.has(String(campaign.id)),
+          coveredKeys: [
+            ...(this.state.get().testedCampaigns[String(campaign.id)]?.variantKeys ?? []),
+            ...livingVariantLabels(existingTests, campaign.id),
+          ],
+          hasRecordKeys: Boolean(
+            this.state.get().testedCampaigns[String(campaign.id)]?.variantKeys,
+          ),
+        });
         if (!plan) {
           result.skipped += 1;
           continue;
@@ -363,7 +386,10 @@ export class CampaignScanner {
       return result;
     }
 
-    const testsNeeded = plans.reduce((sum, plan) => sum + plan.batches.length, 0);
+    const testsNeeded = plans.reduce(
+      (sum, plan) => sum + plan.batches.length * Math.max(1, plan.variants?.length ?? 1),
+      0,
+    );
     const used = existingTests.length;
     const remaining = remainingTestSlots(this.config.totalTestQuota, used);
     const remainingLabel = Number.isFinite(remaining) ? String(remaining) : "unlimited";
@@ -382,7 +408,7 @@ export class CampaignScanner {
         campaigns: plans.map((p) => ({
           id: p.campaign.id,
           name: p.campaign.name || `Campaign ${p.campaign.id}`,
-          testsNeeded: p.batches.length,
+          testsNeeded: p.batches.length * Math.max(1, p.variants?.length ?? 1),
         })),
       });
       await done(result);
@@ -434,12 +460,26 @@ export class CampaignScanner {
     for (const plan of eligiblePlans) {
       throwIfAborted(options.signal);
       const createdIds: string[] = [];
+      const createdVariantKeys: string[] = [];
+      const variants = plan.variants?.length
+        ? plan.variants
+        : [
+            {
+              key: "A",
+              label: "A",
+              mappingId: plan.sequenceMappingId,
+              subject: plan.subjectPreview,
+            },
+          ];
       try {
+        for (const variant of variants) {
+        const variantLabel = variantTestSuffix(variant, plan.variantTotal ?? variants.length);
         for (let i = 0; i < plan.batches.length; i += 1) {
           throwIfAborted(options.signal);
           let batch = plan.batches[i]!;
           const batchLabel =
-            plan.batches.length > 1 ? ` (${i + 1}/${plan.batches.length})` : "";
+            (plan.batches.length > 1 ? ` (${i + 1}/${plan.batches.length})` : "") +
+            variantLabel;
           const recurring = this.config.autoPlacementTests;
 
           if (this.config.dryRun) {
@@ -463,8 +503,8 @@ export class CampaignScanner {
               description: [
                 `Auto-created by Deliverability Wizard`,
                 `Campaign ID: ${plan.campaign.id}`,
-                `Sequence #${plan.sequenceNumber} (mapping ${plan.sequenceMappingId})`,
-                `Subject: ${plan.subjectPreview}`,
+                `Sequence #${plan.sequenceNumber} variant ${variant.label} (mapping ${variant.mappingId})`,
+                `Subject: ${variant.subject || plan.subjectPreview}`,
                 `Senders in this test: ${batch.length}`,
                 recurring
                   ? `Recurring every ${this.config.placementTestEveryDays} day(s) while the campaign is active`
@@ -473,7 +513,7 @@ export class CampaignScanner {
               spam_filters: ["spam_assassin"],
               link_checker: true,
               campaign_id: plan.campaign.id,
-              sequence_mapping_id: plan.sequenceMappingId,
+              sequence_mapping_id: variant.mappingId,
               sender_accounts: batch,
               all_email_sent_without_time_gap: false,
               min_time_btwn_emails: 5,
@@ -530,6 +570,8 @@ export class CampaignScanner {
           );
           await sleep(500, options.signal);
         }
+        createdVariantKeys.push(variant.key);
+        }
 
         this.state.markCampaignTested({
           campaignId: plan.campaign.id,
@@ -538,6 +580,7 @@ export class CampaignScanner {
           testIds: createdIds,
           mailboxCount: plan.senderEmails.length,
           testsCreated: createdIds.length,
+          variantKeys: createdVariantKeys,
         });
       } catch (error) {
         if (isAbortError(error)) throw error;
@@ -569,6 +612,7 @@ export class CampaignScanner {
   private async buildPlan(
     campaign: SmartleadCampaign,
     signal?: AbortSignal,
+    coverage: { covered?: boolean; coveredKeys?: string[]; hasRecordKeys?: boolean } = {},
   ): Promise<CampaignTestPlan | null> {
     throwIfAborted(signal);
     const [accounts, sequences] = await Promise.all([
@@ -589,6 +633,24 @@ export class CampaignScanner {
       return null;
     }
 
+    // D303 — one placement test per A/B variant of the tested step.
+    const targets = sequenceVariantTargets(sequence, mappingId);
+    const owed = coverage.covered
+      ? uncoveredVariants(targets, {
+          keys: coverage.hasRecordKeys ? coverage.coveredKeys ?? [] : null,
+          legacyCampaignCovered: true,
+        }).filter(
+          (t) =>
+            !(coverage.coveredKeys ?? []).some(
+              (k) => k.toUpperCase() === t.key.toUpperCase(),
+            ),
+        )
+      : targets;
+    if (!owed.length) {
+      console.log(`[scan] Skipping campaign ${campaign.id} — every variant already tested`);
+      return null;
+    }
+
     const batches = chunkArray(senderEmails, this.config.maxMailboxesPerTest);
     return {
       campaign,
@@ -597,6 +659,13 @@ export class CampaignScanner {
       sequenceNumber: sequence.seq_number,
       subjectPreview: sequenceSubjectPreview(sequence),
       batches,
+      variants: owed.map((t) => ({
+        key: t.key,
+        label: t.label,
+        mappingId: t.mappingId,
+        subject: t.subject,
+      })),
+      variantTotal: targets.length,
     };
   }
 
@@ -613,4 +682,18 @@ export class CampaignScanner {
     });
   }
 
+}
+
+/** D303 — variant labels already carried by living tests on a campaign. */
+function livingVariantLabels(
+  tests: Array<{ test_name?: string; campaign_id?: unknown }>,
+  campaignId: number,
+): string[] {
+  const out: string[] = [];
+  for (const test of tests) {
+    if (Number((test as { campaign_id?: unknown }).campaign_id) !== campaignId) continue;
+    const label = variantLabelFromTestName(test.test_name);
+    if (label) out.push(label.toUpperCase());
+  }
+  return out;
 }

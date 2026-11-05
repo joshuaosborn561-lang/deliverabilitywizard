@@ -185,3 +185,36 @@ function persistAskAttachBlock(
     source: `ask:${action.kind}:${action.status}`,
   });
 }
+
+/**
+ * D303 — a BURNED mailbox retires that one mailbox only, never its whole
+ * domain. Opens a retire_mailbox ask on the normal approval path (Josh or
+ * Cayden approve). No spend: a replacement needs its own approval.
+ */
+export async function requestRetireMailbox(input: {
+  store: StateStore;
+  slack: Pick<SlackClient, "notifyIsolationAction">;
+  email: string;
+  accountId: number | null;
+  campaignIds: number[];
+  clientId: number;
+  proof: string;
+}): Promise<IsolationActionRecord | null> {
+  const email = input.email.trim().toLowerCase();
+  return requestIsolationAction({
+    store: input.store,
+    slack: input.slack,
+    action: buildIsolationAction({
+      kind: "retire_mailbox",
+      title: `Retire mailbox ${email}`,
+      proof: input.proof,
+      detail: {
+        email,
+        accountId: input.accountId,
+        campaignIds: input.campaignIds,
+        clientId: input.clientId,
+        strikeKey: `retire_mailbox:${email}`,
+      },
+    }),
+  });
+}

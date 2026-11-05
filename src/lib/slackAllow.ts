@@ -32,6 +32,7 @@ export function slackAllowed(kind?: SlackAllowKind | null): boolean {
 export function slackKindForIsolationAction(
   kind:
     | "retire_domain"
+    | "retire_mailbox"
     | "buy_domains"
     | "buy_isolation_domain"
     | "buy_canary_fleet"
@@ -43,6 +44,7 @@ export function slackKindForIsolationAction(
   // D97 — leftover Add %signature% asks are not Slack. The checker writes.
   if (
     kind === "retire_domain" ||
+    kind === "retire_mailbox" ||
     kind === "buy_domains" ||
     kind === "buy_isolation_domain"
   ) {

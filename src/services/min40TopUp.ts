@@ -139,6 +139,7 @@ import {
   type InventorySnapshot,
 } from "./inventory.js";
 import { returnSurplusGenerics } from "./genericSurplusReturn.js";
+import { DEFAULT_WARMUP_DAYS } from "../lib/warmupDays.js";
 
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 250;
 
@@ -1822,7 +1823,7 @@ export class Min40TopUpService {
         pod,
         warmReadyAt: warmReadyAtFromClock(
           warmupClockStartedAt(account, email, this.state),
-          this.config.campaignMinWarmupDays ?? 14,
+          this.config.campaignMinWarmupDays ?? DEFAULT_WARMUP_DAYS,
           now,
         ),
       });

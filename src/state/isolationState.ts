@@ -136,6 +136,8 @@ export interface CopyCanaryRecord {
 
 export type IsolationActionKind =
   | "retire_domain"
+  /** D303 — retire one burned mailbox, never its whole domain. */
+  | "retire_mailbox"
   | "buy_domains"
   | "buy_isolation_domain"
   | "buy_canary_fleet"

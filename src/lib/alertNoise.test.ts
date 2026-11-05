@@ -29,6 +29,22 @@ describe("alert noise", () => {
     );
   });
 
+  it("treats undici fetch-failed as transient network noise", () => {
+    for (const message of [
+      "fetch failed",
+      "TypeError: fetch failed",
+      "stage-isolation-buy-resume: fetch failed",
+      "getaddrinfo ENOTFOUND api.inboxkit.com",
+    ]) {
+      assert.equal(isRateLimitNoise(message), true, message);
+      assert.equal(isBenignOpsNoise(message), true, message);
+    }
+    assert.match(
+      humanizeAlertError("stage-isolation-buy-resume: fetch failed"),
+      /network request failed/i,
+    );
+  });
+
   it("treats request aborts / timeouts as non-paging noise", () => {
     for (const message of [
       "bounce stats: This operation was aborted",

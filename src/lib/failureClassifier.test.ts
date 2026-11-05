@@ -47,6 +47,25 @@ describe("classifyFailure", () => {
     }
   });
 
+  it("treats undici fetch-failed transport blips as noise, not type_error/unknown", () => {
+    // Production: unknown:stage-isolation-buy-resume:…fetch-failed (string
+    // "fetch failed") relaunched the remediator. TypeError: fetch failed
+    // used to fall through to type_error because "TypeError" matched first.
+    for (const message of [
+      "fetch failed",
+      new TypeError("fetch failed"),
+      "TypeError: fetch failed",
+      "getaddrinfo ENOTFOUND api.inboxkit.com",
+      "connect ECONNREFUSED 127.0.0.1:443",
+    ]) {
+      const c = classifyFailure("stage-isolation-buy-resume", message);
+      assert.equal(c.class, "noise", String(message));
+      assert.equal(c.autoRemediate, false, String(message));
+      assert.equal(c.fingerprint, "noise:stage-isolation-buy-resume");
+      assert.match(c.summary, /network noise/i);
+    }
+  });
+
   it("treats bounce-stats HTTP 524 / upstream 5xx as noise", () => {
     for (const message of [
       "bounce stats: HTTP 524",

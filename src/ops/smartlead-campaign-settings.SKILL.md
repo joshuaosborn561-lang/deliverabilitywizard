@@ -213,7 +213,7 @@ monitoring is the health job.
   "schedule": {
     "timezone": "America/New_York",
     "days_of_the_week": [1, 2, 3, 4],
-    "start_hour": "08:00",
+    "start_hour": "07:00",
     "end_hour": "19:00",
     "min_time_btw_emails": 10,
     "max_leads_per_day": 10000
@@ -223,10 +223,16 @@ monitoring is the health job.
 
 - Monday–Thursday only. No Friday, no weekends. Smartlead is one
   window — do not invent a Friday slot.
-- 08:00–19:00 America/New_York (Eastern). Not Chicago 09:00–18:00
-  (retired by D182). Custom windows are overwritten to this
-  standing window (D306). CALLER FOLLOW-UP keeps Mon–Fri
-  07:00–20:00 Chicago with a 3-minute gap.
+- 07:00–19:00 America/New_York (Eastern). D327 moved the start from
+  D182's 08:00 to 07:00. Not America/Chicago. Not Chicago 09:00–18:00
+  (retired by D182). The standing window is Eastern, not the unmerged
+  Chicago draft.
+- Custom windows on eligible campaigns are overwritten to this
+  standing window (D306 / D327). Do **not** apply it to campaigns
+  whose names contain `Calls |` (Gabe Calls, Cayden Calls), Booking
+  Follow Up campaigns, or test campaigns — those keep their own windows.
+  CALLER FOLLOW-UP stays Mon–Fri 07:00–20:00
+  America/Chicago with a 3-minute gap.
 - `min_time_btw_emails: 10` on every campaign (LOCKED, D304). Do not use 13 or 20. The hourly checker
   converges any drift back to 10 on sight, campaign and mailbox level
   (D138) — do not fight it.
@@ -327,7 +333,11 @@ One sentence per `<div>`, separated by `<div><br></div>`. Never a bare
 
 `%signature%` is its own final div. PS after signature, each on its own line.
 
-### Sequence step delays (D186)
+### Sequences are exactly 2 messages (D327)
+
+There is no third message and no breakup email. Do not build, upload,
+require, or flag a step 3. Do not rewrite live copy to insert or delete
+a step.
 
 On `upload_sequence`, set `seq_delay_details.delay_in_days` explicitly:
 
@@ -335,13 +345,12 @@ On `upload_sequence`, set `seq_delay_details.delay_in_days` explicitly:
 |---|---|
 | 1 (first email) | **0** |
 | 2 (second email) | **2** |
-| 3 (breakup) | **2** so it lands on day 4 |
 
-Campaign-check flags `step2_delay` when step 2 is not 2 and writes it
-back via `sequencesForWrite`. It flags `missing_breakup_step` when
-step 3 is missing or not 2 — check only, never writes step 3 (D306).
-Canary / pod-control / word-hunt shells, Gabe caller follow-ups, and
-1-step instrumentation are skipped.
+Campaign-check flags `step2_delay` when step 2 is not 2 and writes that
+delay back via `sequencesForWrite` (D186). It does not flag a missing
+step 3 and does not write sequence copy. Canary / pod-control /
+word-hunt shells, Gabe caller follow-ups, and 1-step instrumentation
+skip the step-2 rule.
 
 Use the native `variants` array on `upload_sequence`. Never concatenate
 whole bodies with `|` as manual spintax.
@@ -429,9 +438,10 @@ Nothing goes ACTIVE until every line passes.
     bounce pausing, D90).
 14. No off-ICP leads (retail, student orgs, school districts).
 15. Every proof claim in the copy is client-approved.
-16. Sequence delays: step 1 `delay_in_days` is 0; step 2 is **2**
-    (D186). 1-step canary / shell campaigns are exempt. Do not
-    "fix" step 3+.
+16. Sequence is exactly **2 messages** (D327). Step 1
+    `delay_in_days` is 0; step 2 is **2** (D186). 1-step canary /
+    shell campaigns are exempt. Do not add a step 3. Do not rewrite
+    live copy to insert or delete a step.
 
 **Suppression is a hard gate.** Never load a campaign before the client's
 existing-customer list is applied. An AP/billing export is not a domain
@@ -450,8 +460,9 @@ A success response is not verification. Read it back.
 
 ## Source of truth
 
-Schedule: Josh 2026-09-09 (D182) — Monday–Thursday 08:00–19:00
-America/New_York. General settings still from campaign 3479011
+Schedule: Josh 2026-11-05 (D327) — Monday–Thursday 07:00–19:00
+America/New_York. D182 set this window at 08:00; D327 moves the
+start to 07:00. Not America/Chicago. General settings still from campaign 3479011
 (Parlay Sports Offer) live API. AI / bounce fields: Josh, after the
 MCP tools landed.
 
@@ -460,7 +471,8 @@ Client A/B rest and the generic 14-day send clock are the rotation system.
 The hold-rebuild tier was retired by D130 — leftover HOLD-UNTIL tags are
 inert residue (D128). Placement-test quota is unlimited (D45).
 
-Sequence step delays: Josh 2026-09-10 (D186) — step 1 stays 0, step 2
+Sequences: Josh 2026-11-05 (D327) — exactly 2 messages, no breakup
+step. Step delays: Josh 2026-09-10 (D186) — step 1 stays 0, step 2
 is 2 days on every client campaign that has a second email.
 
 Health owns rest execution, top-up, fan-out, the live monitors, and bounce

@@ -138,11 +138,10 @@ const COLUMN_KINDS: Record<TodayColumnId, readonly string[]> = {
     "campaign_send_gap",
     "send_window",
   ],
-  // D186 / D306 sequence-shape checks. These are copy/sequence findings
-  // (step 3 breakup is Josh's call and is never auto-written), not
-  // campaign settings, so they get their own column instead of turning
-  // "Campaign settings" red on every client.
-  sequence: ["step2_delay", "missing_breakup_step", "unverified"],
+  // D186 step-2 delay and a failed sequence read. D327: exactly 2
+  // messages, so a missing step 3 is not a finding. These are not
+  // campaign settings.
+  sequence: ["step2_delay", "unverified"],
   signatures: [
     "mailbox_sig",
     "missing_signature_tag",
@@ -198,7 +197,7 @@ export function todayColumns(): TodayColumn[] {
     {
       id: "sequence",
       label: "Sequence",
-      hint: "step 2 at 2d · step 3 breakup on day 4",
+      hint: "exactly 2 messages · step 2 at 2d",
     },
     {
       id: "signatures",

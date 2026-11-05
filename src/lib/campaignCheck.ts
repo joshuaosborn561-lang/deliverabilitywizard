@@ -35,7 +35,6 @@ export const CAMPAIGN_CHECK_KINDS = [
   "campaign_send_gap",
   "send_window",
   "step2_delay",
-  "missing_breakup_step",
   "below_launch_bar",
   "merge_tag_blank",
   "unverified",
@@ -77,7 +76,6 @@ export function firstCheckPassed(findings: CampaignFinding[]): boolean {
  */
 export const SEQUENCE_DERIVED_KINDS: ReadonlySet<string> = new Set([
   "step2_delay",
-  "missing_breakup_step",
   "missing_signature_tag",
   "foreign_brand_in_copy",
   "merge_tag_blank",

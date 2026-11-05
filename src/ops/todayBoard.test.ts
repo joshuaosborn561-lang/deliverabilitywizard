@@ -58,7 +58,7 @@ describe("today board", () => {
     assert.equal(board.clientsTotal, 2);
     assert.equal(board.clientsAllGreen, 1);
     assert.equal(board.checksFailing, 1);
-    assert.equal(board.checksPassing, 19);
+    assert.equal(board.checksPassing, 21);
     assert.equal(board.rows[1]?.clientName, "Vector");
     assert.equal(board.rows[0]?.cells.placement.ok, false);
     assert.equal(board.rows[0]?.cells.placement.failures.length, 2);
@@ -68,6 +68,29 @@ describe("today board", () => {
     assert.match(campaignSettingsHint(), /Mon–Thu 8a–7p ET/);
     assert.match(board.columns.find((column) => column.id === "isolation")?.hint ?? "", /queues isolation/);
     assert.equal(board.lastSweepAt, "2026-11-04T17:00:00.000Z");
+  });
+
+  it("puts sequence-shape findings in Sequence, not Campaign settings", () => {
+    const board = buildTodayBoard({
+      hourlySweepEnabled: true,
+      cronHealth: "*/15 * * * *",
+      restRollover: rollover,
+      clients: [{ id: 1, name: "Vector" }],
+      campaigns: [{ id: 10, name: "Vector", status: "ACTIVE", client_id: 1 }],
+      checks: [
+        check({
+          campaignId: 10,
+          name: "Vector",
+          findings: [
+            "missing_breakup_step: step 3 missing (want delay 2d so it lands on day 4)",
+            "step2_delay: step 2 delay 3d (want 2)",
+          ],
+        }),
+      ],
+    });
+    assert.equal(board.rows[0]?.cells.settings.ok, true);
+    assert.equal(board.rows[0]?.cells.sequence.ok, false);
+    assert.equal(board.rows[0]?.cells.sequence.failures.length, 2);
   });
 
   it("treats a scored placement as known even if the raw status said UNKNOWN", () => {

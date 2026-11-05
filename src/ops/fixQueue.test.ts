@@ -108,4 +108,30 @@ describe("fix queue", () => {
     assert.equal(queue.counts.audit, 0);
     assert.equal(queue.counts.approval, 0);
   });
+  it("lists audit findings only for campaigns ACTIVE in the live book", () => {
+    const base = {
+      firstSeenAt: "2026-11-01T00:00:00.000Z",
+      firstCheckAt: null,
+      firstPassedAt: null,
+      lastSweepAt: null,
+      lastKind: "hourly" as const,
+    };
+    const queue = buildFixQueue({
+      role: "owner",
+      approvals: [],
+      isolation: [],
+      audit: [],
+      statusById: new Map([
+        [1, "ACTIVE"],
+        [2, "PAUSED"],
+      ]),
+      checks: [
+        { ...base, campaignId: 1, name: "Vector | Live", findings: ["mailbox_sig: a@x.info has no signature"] },
+        { ...base, campaignId: 2, name: "Vector | Paused", findings: ["mailbox_sig: b@x.info has no signature"] },
+        { ...base, campaignId: 3, name: "Vector | Deleted", findings: ["mailbox_sig: c@x.info has no signature"] },
+      ],
+    });
+    assert.deepEqual(queue.items.map((item) => item.id), ["audit:1:mailbox_sig"]);
+    assert.equal(queue.counts.audit, 1);
+  });
 });

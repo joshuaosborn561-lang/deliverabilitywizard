@@ -38,6 +38,7 @@ export const CAMPAIGN_CHECK_KINDS = [
   "missing_breakup_step",
   "below_launch_bar",
   "merge_tag_blank",
+  "unverified",
 ] as const;
 
 export type CampaignCheckKind = (typeof CAMPAIGN_CHECK_KINDS)[number];
@@ -66,6 +67,62 @@ export function isFirstCheckBlocking(kind: CampaignCheckKind): boolean {
 
 export function firstCheckPassed(findings: CampaignFinding[]): boolean {
   return findings.every((finding) => !isFirstCheckBlocking(finding.kind));
+}
+
+/**
+ * Findings that come from reading the campaign's sequences. When the
+ * sequence read fails (Smartlead 429, timeout, 5xx) the pass cannot judge
+ * them, so the last stored ones are carried forward instead of silently
+ * dropping to "clean".
+ */
+export const SEQUENCE_DERIVED_KINDS: ReadonlySet<string> = new Set([
+  "step2_delay",
+  "missing_breakup_step",
+  "missing_signature_tag",
+  "foreign_brand_in_copy",
+  "merge_tag_blank",
+]);
+
+/** Parse stored `kind: detail` strings back into findings of the given kinds. */
+export function carryStoredFindings(
+  stored: string[] | null | undefined,
+  kinds: ReadonlySet<string>,
+): CampaignFinding[] {
+  const out: CampaignFinding[] = [];
+  for (const row of stored ?? []) {
+    const idx = row.indexOf(":");
+    const kind = (idx >= 0 ? row.slice(0, idx) : row).trim();
+    if (!kinds.has(kind)) continue;
+    out.push({
+      kind: kind as CampaignCheckKind,
+      detail: idx >= 0 ? row.slice(idx + 1).trim() : "",
+    });
+  }
+  return out;
+}
+
+/**
+ * A pass whose Smartlead reads failed is unverified, never clean.
+ * Keeps the prior sequence findings and adds one `unverified` finding.
+ */
+export function unverifiedFindings(input: {
+  error: string;
+  current: CampaignFinding[];
+  priorStored: string[] | null | undefined;
+}): CampaignFinding[] {
+  const out = [...input.current];
+  const seen = new Set(out.map((row) => `${row.kind}:${row.detail}`));
+  for (const row of carryStoredFindings(input.priorStored, SEQUENCE_DERIVED_KINDS)) {
+    const key = `${row.kind}:${row.detail}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  out.push({
+    kind: "unverified",
+    detail: `sequences not read (${input.error}); last sequence findings carried, retry next pass`,
+  });
+  return out;
 }
 
 export function formatFinding(finding: CampaignFinding): string {

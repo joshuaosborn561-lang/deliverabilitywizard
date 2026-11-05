@@ -96,21 +96,23 @@ export function decideIsolationVerdict(
   const unwarmedAlsoFailed = unwarmedCopyFailed(input, canary);
 
   // D158 — content_block + ugly canary prefers COPY even with no mailbox
-  // tag. Known-good failing an ESP is still INFRA.
+  // tag. D93 — known-good failing an ESP is INFRA even with no standing
+  // mailbox-control tag. The ESP score is the reading; the missing tag
+  // must not park a still-ugly campaign on INCONCLUSIVE forever.
   if (control === "INSUFFICIENT") {
-    if (input.contentBlock && input.knownGoodFineAcrossEsps === false) {
+    if (input.knownGoodFineAcrossEsps === false) {
       return {
         verdict: "INFRA",
         control,
-        reason:
-          "Dominant bounce class is content_block, but the known-good email on those domains is also failing an ESP. That is the domain / inbox, not a word in the copy.",
+        reason: input.contentBlock
+          ? "Dominant bounce class is content_block, but the known-good email on those domains is also failing an ESP. That is the domain / inbox, not a word in the copy."
+          : "The campaign copy is not inboxing on an ESP, and the known-good email on those same domains is also failing an ESP. That is the domain / inbox, not a word in the copy. No standing mailbox-control tag yet — the known-good ESP score is enough.",
         startCopyTeardown: false,
         pullInfraDiagnostics: true,
       };
     }
     if (
       input.contentBlock &&
-      input.knownGoodFineAcrossEsps !== false &&
       (canary.lean === "COPY" || input.unwarmedCopyFineAcrossEsps === false)
     ) {
       return {

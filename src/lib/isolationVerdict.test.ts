@@ -100,6 +100,19 @@ describe("isolation verdict", () => {
     assert.equal(result.startCopyTeardown, false);
   });
 
+  it("D93: known-good failing an ESP is INFRA even with no standing mailbox tag", () => {
+    const result = decideIsolationVerdict({
+      campaignInSpam: true,
+      senderControls: ["UNKNOWN"],
+      knownGoodFineAcrossEsps: false,
+    });
+    assert.equal(result.verdict, "INFRA");
+    assert.equal(result.control, "INSUFFICIENT");
+    assert.equal(result.startCopyTeardown, false);
+    assert.equal(result.pullInfraDiagnostics, true);
+    assert.match(result.reason, /known-good email/i);
+  });
+
   it("rig control primary + copy primary is list/offer, not copy", () => {
     const result = decideIsolationVerdict({
       campaignInSpam: true,

@@ -582,3 +582,74 @@ describe("PodTagService D326 — even named split, off-week or idle", () => {
     assert.deepEqual(assigns, []);
   });
 });
+
+describe("PodTagService D326 fix — counts every named seat (Cayden 11/5)", () => {
+  const weekday = new Date("2026-10-05T14:00:00.000Z"); // A on, B off
+  const mk = (id: number, pod: "A" | "B", campaignIds: number[], extra: Array<{ tag_name: string; id?: number }> = [], type = "GMAIL") => ({
+    id,
+    from_email: `s${id}@acme.test`,
+    client_id: 9,
+    type,
+    campaign_ids: campaignIds,
+    tags: [{ tag_name: pod === "A" ? POD_TAG_A : POD_TAG_B }, ...extra],
+  });
+  async function run(accounts: unknown[]) {
+    const state = new StateStore(`/tmp/dw-d326fix-${process.pid}-${Date.now()}-${Math.random()}.json`);
+    await state.load();
+    const writes: number[][] = [];
+    const service = new PodTagService(
+      loadConfig({ DRY_RUN: "false" } as NodeJS.ProcessEnv),
+      {
+        ensureTag: async (name: string) => ({ id: name === POD_TAG_A ? 71 : 72, name }),
+        assignTags: async (ids: number[]) => void writes.push(ids),
+        removeTags: async (ids: number[]) => void writes.push(ids),
+      } as never,
+      state,
+      bookWith([{ id: 50, name: "Acme", status: "ACTIVE", client_id: 9 }], accounts),
+      async () => {},
+    );
+    return { result: await service.run({ now: weekday }), writes };
+  }
+
+  it("idle named seats off the resting list count: real 40/40 is a no-op (old code moved 10 B→A)", async () => {
+    const accounts = [
+      ...Array.from({ length: 20 }, (_, i) => mk(1 + i, "A", [50])),
+      // Idle POD-A seats NOT on the resting list — invisible to the old pod list.
+      ...Array.from({ length: 20 }, (_, i) => mk(100 + i, "A", [])),
+      ...Array.from({ length: 40 }, (_, i) => mk(200 + i, "B", [50])),
+    ];
+    const { result, writes } = await run(accounts);
+    assert.equal(result.rebalanced ?? 0, 0);
+    assert.deepEqual(writes, []);
+  });
+
+  it("excluded seats (GENERIC, CAYDEN-SG, GABE-VM-RESERVED, JEREMY-CIOTOLA, canary, HOLD-UNTIL) neither count nor move", async () => {
+    const excluded = [
+      mk(300, "B", [], [{ tag_name: "GENERIC", id: 510826 }]),
+      mk(301, "B", [], [{ tag_name: "CAYDEN-SG" }]),
+      mk(302, "B", [], [{ tag_name: "JEREMY-CIOTOLA", id: 533700 }]),
+      mk(303, "B", [], [{ tag_name: "HOLD-UNTIL-2026-12-02", id: 547483 }]),
+      mk(304, "B", [], [{ tag_name: "CANARY" }]),
+      mk(305, "B", [], [{ tag_name: "GABE-VM-RESERVED" }]),
+    ];
+    const accounts = [
+      ...Array.from({ length: 10 }, (_, i) => mk(1 + i, "A", [50])),
+      ...Array.from({ length: 10 }, (_, i) => mk(200 + i, "B", [50])),
+      ...excluded,
+    ];
+    const { result, writes } = await run(accounts);
+    assert.equal(result.rebalanced ?? 0, 0, "10/10 named — reserved seats are not counted");
+    // (D244 first-tag separately strips POD tags off GABE-VM-RESERVED; not D326.)
+    const touched = writes.flat();
+    assert.ok(excluded.filter((a) => a.id !== 305).every((a) => !touched.includes(a.id)));
+  });
+
+  it("still fixes a real lopsided split from the full count", async () => {
+    const accounts = [
+      ...Array.from({ length: 10 }, (_, i) => mk(1 + i, "A", [50])),
+      ...Array.from({ length: 30 }, (_, i) => mk(200 + i, "B", [])),
+    ];
+    const { result } = await run(accounts);
+    assert.equal(result.rebalanced, 10, "10/30 → 20/20");
+  });
+});

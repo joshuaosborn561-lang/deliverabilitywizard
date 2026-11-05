@@ -31,6 +31,17 @@ import {
   variantTestSuffix,
 } from "../lib/sequenceVariants.js";
 
+/**
+ * SmartDelivery server crash when resolving sequence_mapping_id into copy —
+ * their code sets email_body on a null sequence row. Incomplete / mid-edit
+ * campaigns hit this; next scan retries. A remediator cannot fix their null.
+ */
+export function isSmartDeliveryEmailBodyNullError(message: string): boolean {
+  return /cannot set properties of null\s*\(setting ['"]email_body['"]\)/i.test(
+    message,
+  );
+}
+
 export interface ScanResult {
   scanned: number;
   eligible: number;
@@ -474,6 +485,7 @@ export class CampaignScanner {
       try {
         for (const variant of variants) {
         const variantLabel = variantTestSuffix(variant, plan.variantTotal ?? variants.length);
+        let emailBodyNull = false;
         for (let i = 0; i < plan.batches.length; i += 1) {
           throwIfAborted(options.signal);
           let batch = plan.batches[i]!;
@@ -557,9 +569,19 @@ export class CampaignScanner {
                   continue;
                 }
               }
+              // SmartDelivery crashed resolving the mapping into copy —
+              // skip this variant; keep sibling variants going.
+              if (isSmartDeliveryEmailBodyNullError(message)) {
+                console.log(
+                  `[scan] Skipping campaign ${plan.campaign.id} variant ${variant.label} — SmartDelivery sequence row is null (email_body) mapping=${variant.mappingId}`,
+                );
+                emailBodyNull = true;
+                break;
+              }
               throw error;
             }
           }
+          if (emailBodyNull) break;
 
           const id = String(created!.id);
           createdIds.push(id);
@@ -570,25 +592,39 @@ export class CampaignScanner {
           );
           await sleep(500, options.signal);
         }
+        if (emailBodyNull) {
+          result.skipped += 1;
+          continue;
+        }
         createdVariantKeys.push(variant.key);
         }
 
-        this.state.markCampaignTested({
-          campaignId: plan.campaign.id,
-          campaignName: plan.campaign.name || `Campaign ${plan.campaign.id}`,
-          testedAt: new Date().toISOString(),
-          testIds: createdIds,
-          mailboxCount: plan.senderEmails.length,
-          testsCreated: createdIds.length,
-          variantKeys: createdVariantKeys,
-        });
+        if (createdIds.length) {
+          this.state.markCampaignTested({
+            campaignId: plan.campaign.id,
+            campaignName: plan.campaign.name || `Campaign ${plan.campaign.id}`,
+            testedAt: new Date().toISOString(),
+            testIds: createdIds,
+            mailboxCount: plan.senderEmails.length,
+            testsCreated: createdIds.length,
+            variantKeys: createdVariantKeys,
+          });
+        }
       } catch (error) {
         if (isAbortError(error)) throw error;
         const message = error instanceof Error ? error.message : String(error);
+        result.skipped += 1;
+        // Defense in depth — soft-skip if the email_body-null crash somehow
+        // escaped the per-variant path (noise:scan-email-body-null).
+        if (isSmartDeliveryEmailBodyNullError(message)) {
+          console.log(
+            `[scan] Skipping campaign ${plan.campaign.id} — SmartDelivery sequence row is null (${message})`,
+          );
+          continue;
+        }
         result.errors.push(
           `Failed creating tests for campaign ${plan.campaign.id}: ${message}`,
         );
-        result.skipped += 1;
         // Same provider_ids are used for every campaign this run — further
         // creates will fail the same way. Stop and surface once.
         if (

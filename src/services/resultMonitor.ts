@@ -24,6 +24,11 @@ import {
   shouldRequeueIsolation,
 } from "../lib/placementSuspect.js";
 import { prioritizeTestIdsForReports } from "../lib/testIdPriority.js";
+import { sameEspProvidersFromSenderReport } from "../lib/sameEspFromSenders.js";
+import {
+  isCanaryCopyTestName,
+  isIsolationManagedTestName,
+} from "../lib/isolationNames.js";
 import type { StateStore } from "../state/store.js";
 import type {
   BlacklistedDomainHit,
@@ -299,7 +304,7 @@ export class ResultMonitor {
   ): Promise<number> {
     const report = await this.smartDelivery.getProviderwiseReport(testId);
     const rows = report.result ?? [];
-    const providers: Array<{ name: string; inboxPercent: number }> = [];
+    let providers: Array<{ name: string; inboxPercent: number }> = [];
     for (const row of rows) {
       const score = providerInboxRate(row);
       if (score === undefined) continue;
@@ -316,6 +321,34 @@ export class ResultMonitor {
       return 0;
     }
 
+    // Providerwise rows are grouped by *seed* provider, so a Google
+    // sender's Outlook-seed junk reads as "Outlook under 80%". Canon
+    // same-ESP is sender ESP → seed ESP: re-score from the
+    // sender-account-wise report (one read, only on a would-be alert).
+    // Live 2026-11-05: Ciotola 569161–569169 read 50–62% providerwise
+    // while same-ESP was 100% for both families.
+    try {
+      const senderReport = await this.smartDelivery.getSenderAccountReport(testId);
+      const sameEsp = sameEspProvidersFromSenderReport(senderReport);
+      if (sameEsp.length) {
+        providers = sameEsp;
+        if (!sameEspInboxUgly(providers, this.config.remediationInboxThreshold)) {
+          console.log(
+            `[monitor] test ${testId} providerwise under ${this.config.remediationInboxThreshold}% but same-ESP ok (${sameEsp
+              .map((p) => `${p.name} ${p.inboxPercent.toFixed(1)}%`)
+              .join(", ")}) — not queued`,
+          );
+          return 0;
+        }
+      }
+    } catch (error) {
+      if (isReportReadsPaused(error)) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[monitor] sender-account-wise read failed for ${testId} — falling back to providerwise: ${message}`,
+      );
+    }
+
     const campaigns = await this.getCampaigns();
     let target = liveCampaignForPlacementTrigger({
       testName: test?.test_name,
@@ -327,6 +360,35 @@ export class ResultMonitor {
       if (canaryCampaignId != null) {
         target = liveCampaignForPlacementTrigger({
           testName: `Canary copy: #${canaryCampaignId}`,
+          campaigns,
+        });
+      }
+    }
+    if (!target && !isCanaryOrIsolationName(test?.test_name)) {
+      // The report list omits campaign_id, so a plain "Auto:" test had no
+      // target and logged "no ACTIVE live campaign to queue". Fall back to
+      // the Wizard's own test → campaign record, then the test details.
+      const recorded = campaignIdForTestedTestId(
+        this.state.get().testedCampaigns ?? {},
+        testId,
+      );
+      let campaignId: string | number | undefined = recorded ?? undefined;
+      if (campaignId == null) {
+        try {
+          const details = await this.smartDelivery.getTestDetails(testId, {
+            retries: 1,
+          });
+          const raw = details.campaign_id ?? (details.data as Record<string, unknown> | undefined)?.campaign_id;
+          if (typeof raw === "number" || typeof raw === "string") campaignId = raw;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.warn(`[monitor] test details read failed for ${testId}: ${message}`);
+        }
+      }
+      if (campaignId != null) {
+        target = liveCampaignForPlacementTrigger({
+          testName: test?.test_name,
+          testCampaignId: campaignId,
           campaigns,
         });
       }
@@ -525,4 +587,22 @@ export async function readAllMailboxSummaryRows(client: {
     offset += rows.length;
   }
   return all;
+}
+
+function isCanaryOrIsolationName(name?: string): boolean {
+  return isCanaryCopyTestName(name) || isIsolationManagedTestName(name);
+}
+
+/** Reverse of state.testedCampaigns: which campaign did we create this test for? */
+export function campaignIdForTestedTestId(
+  testedCampaigns: Record<string, { testIds?: Array<string | number> } | undefined>,
+  testId: string | number,
+): number | null {
+  const want = String(testId);
+  for (const [campaignId, record] of Object.entries(testedCampaigns)) {
+    if (!record?.testIds?.some((id) => String(id) === want)) continue;
+    const id = Number(campaignId);
+    if (Number.isFinite(id) && id > 0) return id;
+  }
+  return null;
 }

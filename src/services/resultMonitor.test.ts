@@ -486,3 +486,56 @@ describe("ResultMonitor D319 budget and carry-over", () => {
     assert.ok((out.carriedOver ?? 0) > 0 && (out.carriedOver ?? 0) < 5);
   });
 });
+
+describe("ResultMonitor same-ESP is sender ESP → seed ESP", () => {
+  const LIVE = { id: 4289735, name: "Ciotola Named Leaders", status: "ACTIVE" };
+  const reply = (folder: string, seedOutlook: boolean) => ({
+    reply: {
+      mail_folder: folder,
+      rdns_result: { rdns: seedOutlook ? "x.inbound.protection.outlook.com" : "mail-sor.google.com" },
+      spf_result: { spf: `${seedOutlook ? "protection.outlook.com" : "google.com"}: domain of a@x.com designates 209.85.220.41 as permitted sender` },
+      dkim_result: { dkim: "dkim=pass header.i=@x.com header.s=google" },
+    },
+  });
+  const smartDelivery = (opts: { sameEspFolder: string }) =>
+    ({
+      listTests: async () => [{ id: "569161", test_name: "Auto: Ciotola Named Leaders" }],
+      getProviderwiseReport: async () => ({
+        result: [{ provider_name: "Outlook", inbox_rate: 50 }],
+      }),
+      getSenderAccountReport: async () => [
+        {
+          email: "a@x.com",
+          details: [
+            ...Array.from({ length: 4 }, () => reply(opts.sameEspFolder, false)),
+            ...Array.from({ length: 4 }, () => reply("Spam", true)),
+          ],
+        },
+      ],
+      getTestDetails: async () => ({ campaign_id: LIVE.id }),
+      getDomainBlacklist: async () => [],
+      getIpBlacklist: async () => [],
+      getMailboxSummary: async () => [],
+      reportReadsPaused: () => false,
+      reportParallelism: () => 1,
+    }) as unknown as SmartDeliveryClient;
+  const smartlead = { listCampaigns: async () => [LIVE] } as unknown as SmartleadClient;
+
+  it("does not queue when providerwise is low but same-ESP is 100%", async () => {
+    const state = new StateStore(`/tmp/dw-monitor-sameesp-${process.pid}-${Date.now()}.json`);
+    await state.load();
+    const monitor = new ResultMonitor(config, smartDelivery({ sameEspFolder: "Inbox" }), smartlead, fakeSlack(), state);
+    const result = await monitor.run();
+    assert.equal(result.lowDeliverabilityAlerts, 0);
+    assert.equal(state.listCopySuspects().length, 0);
+  });
+
+  it("queues the campaign from test details when the list row has no campaign_id", async () => {
+    const state = new StateStore(`/tmp/dw-monitor-target-${process.pid}-${Date.now()}.json`);
+    await state.load();
+    const monitor = new ResultMonitor(config, smartDelivery({ sameEspFolder: "Spam" }), smartlead, fakeSlack(), state);
+    const result = await monitor.run();
+    assert.equal(result.lowDeliverabilityAlerts, 1);
+    assert.equal(state.listCopySuspects()[0]?.campaignId, LIVE.id);
+  });
+});

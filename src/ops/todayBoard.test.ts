@@ -61,7 +61,8 @@ describe("today board", () => {
     assert.equal(board.checksPassing, 21);
     assert.equal(board.rows[1]?.clientName, "Vector");
     assert.equal(board.rows[0]?.cells.placement.ok, false);
-    assert.equal(board.rows[0]?.cells.placement.failures.length, 2);
+    // The running (UNKNOWN, unscored) test is pending, not a second red.
+    assert.equal(board.rows[0]?.cells.placement.failures.length, 1);
     assert.equal(board.hourlySweep, "on");
     assert.equal(board.canonCheck, "every 15 min");
     assert.equal(board.alertsLabel, "Slack");
@@ -112,6 +113,73 @@ describe("today board", () => {
       ],
     });
     assert.equal(board.rows[0]?.cells.placement.ok, true);
+  });
+
+  it("shows an unscored placement test as pending (grey), not a failure", () => {
+    const board = buildTodayBoard({
+      now: new Date("2026-11-05T17:00:00.000Z"),
+      hourlySweepEnabled: true,
+      cronHealth: "*/15 * * * *",
+      restRollover: rollover,
+      clients: [{ id: 1, name: "Ciotola" }],
+      campaigns: [{ id: 10, name: "Ciotola", status: "ACTIVE", client_id: 1 }],
+      checks: [check({ campaignId: 10, name: "Ciotola" })],
+      placements: [{ id: "569845", campaignId: 10, campaignName: "Ciotola", status: "UNKNOWN" }],
+      placementsGeneratedAt: "2026-11-05T16:30:00.000Z",
+      statusById: new Map([[10, "ACTIVE"]]),
+    });
+    const cell = board.rows[0]!.cells.placement;
+    assert.equal(cell.ok, true);
+    assert.equal(cell.pending, 1);
+    assert.equal(board.checksFailing, 0);
+  });
+
+  it("ignores placement rows for non-ACTIVE campaigns and stale snapshots", () => {
+    const base = {
+      now: new Date("2026-11-05T17:00:00.000Z"),
+      hourlySweepEnabled: true,
+      cronHealth: "*/15 * * * *",
+      restRollover: rollover,
+      clients: [{ id: 1, name: "Ciotola" }],
+      campaigns: [
+        { id: 10, name: "Ciotola A", status: "ACTIVE", client_id: 1 },
+        { id: 11, name: "Ciotola B", status: "PAUSED", client_id: 1 },
+      ],
+      checks: [check({ campaignId: 10, name: "Ciotola A" })],
+      statusById: new Map([
+        [10, "ACTIVE"],
+        [11, "PAUSED"],
+      ]),
+    };
+    const paused = buildTodayBoard({
+      ...base,
+      placements: [{ id: "p", campaignId: 11, campaignName: "Ciotola B", status: "UNKNOWN" }],
+      placementsGeneratedAt: "2026-11-05T16:30:00.000Z",
+    });
+    assert.equal(paused.rows[0]!.cells.placement.pending, undefined);
+    const stale = buildTodayBoard({
+      ...base,
+      placements: [{ id: "s", campaignId: 10, campaignName: "Ciotola A", status: "UNKNOWN" }],
+      placementsGeneratedAt: "2026-11-04T22:00:00.000Z",
+    });
+    assert.equal(stale.rows[0]!.cells.placement.pending, undefined);
+    assert.equal(stale.rows[0]!.cells.placement.ok, true);
+  });
+
+  it("shows generic_idle as info, not a failing Generics cell", () => {
+    const board = buildTodayBoard({
+      hourlySweepEnabled: true,
+      cronHealth: "*/15 * * * *",
+      restRollover: rollover,
+      clients: [{ id: 418274, name: "Parlay" }],
+      campaigns: [{ id: 10, name: "Parlay", status: "ACTIVE", client_id: 418274 }],
+      checks: [check({ campaignId: 10, name: "Parlay", findings: ["generic_idle: a@x.com idle on client 418274"] })],
+      genericFindings: ["generic_idle: b@x.com idle on client 418274"],
+    });
+    const cell = board.rows[0]!.cells.generics;
+    assert.equal(cell.ok, true);
+    assert.ok((cell.info ?? 0) >= 1);
+    assert.equal(board.checksFailing, 0);
   });
 
   it("schedules the next sweep on the following hour", () => {

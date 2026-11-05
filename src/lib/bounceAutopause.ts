@@ -9,8 +9,9 @@
  * fleet-wide "100" and null writes that all returned ok). There is no
  * GET for it either. Never write or read that field from here: the
  * off-switch is the campaign SETUP page in the UI, and the pause
- * attribution surface is `campaign_activity_logs.paused_reason:
- * "bounce protection"` on GET /campaigns. The name-band helpers stay
+ * Attribution surface is `campaign_activity_logs.paused_reason:
+ * "bounce protection"` on LIST GET /campaigns (live shape is one object;
+ * older fixtures used an array). The name-band helpers stay
  * deleted (D129) — campaign names never pick a bounce threshold.
  */
 

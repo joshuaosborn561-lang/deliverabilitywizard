@@ -1,6 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { SlackClient } from "./slack.js";
+import {
+  RECONNECT_SLACK_LIST_CAP,
+  SlackClient,
+  slackReconnectBullets,
+} from "./slack.js";
 import { slackJargonHits } from "../lib/slackPlainEnglish.js";
 
 function capture() {
@@ -191,5 +195,83 @@ describe("Slack copy is plain English (D47)", () => {
     for (const [i, text] of sent.entries()) {
       assertPlain(text, `message ${i}`);
     }
+  });
+});
+
+describe("notifyReconnect lists every mailbox (D94)", () => {
+  const reconnected = [
+    "keithramos@trygetintroduced.info",
+    "laurenrodriguez@trygetintroduced.info",
+    "heatherortiz@trygetintroduced.info",
+    "alexanderalvarez@usequickconnectsales.info",
+    "nicolecollins@gogetintroduced.info",
+    "samuelhoward@goquickconnectsales.info",
+    "nicholaskelly@getintroducedpro.info",
+    "kellycarter@goquickconnectsales.info",
+    "dianewood@getintroducedhq.info",
+    "sandrabailey@mygetintroduced.info",
+    "sandrajohnson@myquickconnectsales.info",
+    "joyceadams@getintroducedlab.info",
+    "williamdiaz@getintroducedpro.info",
+  ];
+  const failed = [
+    "sarah.morgan41@provascowarranty.info",
+    "mia.collins37@labvascowarranty.info",
+    "nicole.collins29@myvascowarranty.info",
+    "ryan.brooks28@myvascowarranty.info",
+    "rachel.collins27@usevascowarranty.info",
+    "megan.collins25@usevascowarranty.info",
+    "sarah.collins21@vascowarrantygo.info",
+    "mia.parker17@govascowarranty.info",
+    "nicole.parker9@tryvascowarranty.info",
+    "ryan.carter8@tryvascowarranty.info",
+    "rachel.parker7@vascowarrantyget.info",
+    "megan.parker5@vascowarrantyget.info",
+  ];
+
+  it("posts all 13 reconnects and all 12 failures from the 2026-09-28 pass", async () => {
+    const { client, sent } = capture();
+    await client.notifyReconnect({
+      scanned: 955,
+      disconnected: 25,
+      reconnected: reconnected.length,
+      skippedAlreadyConnected: 0,
+      failed: failed.length,
+      inboxkitReexports: 0,
+      errors: [],
+      actions: [
+        ...reconnected.map((email) => ({
+          email,
+          message: "reconnected",
+          reauthenticated: true,
+        })),
+        ...failed.map((email) => ({
+          email,
+          message: "Failed to reconnect email account",
+          reauthenticated: false,
+        })),
+      ],
+    });
+    assert.equal(sent.length, 1);
+    const text = sent[0] ?? "";
+    assert.match(text, /Reconnected 13:/);
+    assert.match(text, /Couldn't reconnect 12/);
+    for (const email of [...reconnected, ...failed]) {
+      assert.match(text, new RegExp(email.replace(/\./g, "\\.")), email);
+    }
+    assert.doesNotMatch(text, /and \d+ more/);
+    assertPlain(text, "reconnect full list");
+  });
+
+  it("names the leftover count instead of dropping rows past the Slack cap", () => {
+    const items = Array.from(
+      { length: RECONNECT_SLACK_LIST_CAP + 3 },
+      (_, i) => `• \`box${i}@example.info\``,
+    );
+    const lines = slackReconnectBullets(items);
+    assert.equal(lines.length, RECONNECT_SLACK_LIST_CAP + 1);
+    assert.equal(lines.at(-1), "• …and 3 more");
+    assert.ok(lines.includes("• `box0@example.info`"));
+    assert.ok(!lines.includes(`• \`box${RECONNECT_SLACK_LIST_CAP}@example.info\``));
   });
 });

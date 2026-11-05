@@ -96,6 +96,16 @@ export function isInboxkitOneEspNoise(message: string): boolean {
   );
 }
 
+/**
+ * SmartDelivery crashed setting email_body on a null sequence row while
+ * creating a placement test. Scan skips; do not page Slack.
+ */
+export function isScanEmailBodyNullNoise(message: string): boolean {
+  return /cannot set properties of null\s*\(setting ['"]email_body['"]\)/i.test(
+    message,
+  );
+}
+
 /** Rate limits/timeouts + approval gates + gone tests — skip Slack paging. */
 export function isBenignOpsNoise(message: string): boolean {
   return (
@@ -105,7 +115,8 @@ export function isBenignOpsNoise(message: string): boolean {
     isRetryRemovalNoise(message) ||
     isBurnChecklistNoise(message) ||
     isSenderNotInCampaignNoise(message) ||
-    isInboxkitOneEspNoise(message)
+    isInboxkitOneEspNoise(message) ||
+    isScanEmailBodyNullNoise(message)
   );
 }
 
@@ -159,6 +170,10 @@ export function humanizeAlertError(message: string): string {
 
   if (isInboxkitOneEspNoise(raw)) {
     return "InboxKit allows only one email platform per domain — that domain is already locked to Google or Microsoft. Isolation-buy skips the other ESP.";
+  }
+
+  if (isScanEmailBodyNullNoise(raw)) {
+    return "SmartDelivery could not load that campaign's sequence copy (null email body). We'll retry next scan.";
   }
 
   if (bounceStats && /\b404\b/i.test(raw)) {

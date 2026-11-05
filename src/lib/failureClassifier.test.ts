@@ -117,6 +117,25 @@ describe("classifyFailure", () => {
     assert.equal(c.autoRemediate, true);
   });
 
+  it("treats SmartDelivery null email_body crashes as non-remediable noise", () => {
+    // Production fingerprint was collapsing to
+    // unknown:scan:scan-failed-creating-tests-for-campaign-n-cannot.
+    const c = classifyFailure(
+      "scan",
+      "Failed creating tests for campaign 4289196: Cannot set properties of null (setting 'email_body')",
+    );
+    assert.equal(c.class, "noise");
+    assert.equal(c.autoRemediate, false);
+    assert.equal(c.fingerprint, "noise:scan-email-body-null");
+    assert.match(c.summary, /null email_body/i);
+
+    const other = classifyFailure(
+      "scan",
+      "Failed creating tests for campaign 999999: Cannot set properties of null (setting 'email_body')",
+    );
+    assert.equal(other.fingerprint, c.fingerprint);
+  });
+
   it("does not auto-remediate auth/access problems", () => {
     const c = classifyFailure(
       "scan",

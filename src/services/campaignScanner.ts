@@ -16,6 +16,7 @@ import { type EspFamily, normalizeSenderEspFamily } from "../lib/esp.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { isAbortError, throwIfAborted } from "../lib/abortWork.js";
 import { chunkArray, sleep } from "../lib/http.js";
+import { isGabeFollowUpCampaign } from "../lib/pocClient.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
 import { quotaWouldBlock, remainingTestSlots } from "../lib/testQuota.js";
 import type { StateStore } from "../state/store.js";
@@ -24,6 +25,18 @@ import type {
   SmartleadCampaign,
   SmartleadEmailAccount,
 } from "../types/index.js";
+
+/**
+ * SmartDelivery refuses to schedule when the campaign has no lead on the
+ * chosen (or lower) sequence — common for CALLER FOLLOW-UP / Gabe Calls
+ * campaigns that only get a lead when a voicemail lands, and for any live
+ * campaign that is still empty. Next scan retries once leads exist.
+ */
+export function isNoLeadsOnSequenceError(message: string): boolean {
+  return /no leads available for the selected or lower sequence/i.test(
+    message,
+  );
+}
 
 export interface ScanResult {
   scanned: number;
@@ -293,6 +306,10 @@ export class CampaignScanner {
 
     const candidates = campaigns.filter((campaign) => {
       if (isAnyShellCampaign(campaign)) return false;
+      // D242 — CALLER FOLLOW-UP / Gabe Calls often have zero leads until a
+      // voicemail lands. Campaign-check already skips no_placement_test for
+      // them; do not bill SmartDelivery creates that will fail the same way.
+      if (isGabeFollowUpCampaign(campaign)) return false;
       if (!creationStatusSet.has(String(campaign.status ?? "").toUpperCase())) {
         return false;
       }
@@ -542,10 +559,18 @@ export class CampaignScanner {
       } catch (error) {
         if (isAbortError(error)) throw error;
         const message = error instanceof Error ? error.message : String(error);
+        result.skipped += 1;
+        // Empty sequence — expected until leads land. Soft-skip; do not page
+        // remediator / treat as a create failure (noise:scan-no-leads).
+        if (isNoLeadsOnSequenceError(message)) {
+          console.log(
+            `[scan] Skipping campaign ${plan.campaign.id} — no leads on sequence yet (${message})`,
+          );
+          continue;
+        }
         result.errors.push(
           `Failed creating tests for campaign ${plan.campaign.id}: ${message}`,
         );
-        result.skipped += 1;
         // Same provider_ids are used for every campaign this run — further
         // creates will fail the same way. Stop and surface once.
         if (

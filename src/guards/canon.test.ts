@@ -7322,8 +7322,8 @@ describe("owner intent — D181 Goliath retires like any other client", () => {
   });
 });
 
-describe("owner intent — D182 standing send window is Mon–Thu 8am–7pm ET", () => {
-  it("D182: skill + CANON ship ET 08:00–19:00 Mon–Thu; no Chicago 9–18; no Friday; no window overwrite", async () => {
+describe("owner intent — D182 standing send window is Mon–Thu Eastern, start 7am (D327)", () => {
+  it("D182/D327: skill + CANON ship ET 07:00–19:00 Mon–Thu; no Chicago standing window; no Friday", async () => {
     const { readFile } = await import("node:fs/promises");
     const skill = await readFile(
       new URL("../ops/smartlead-campaign-settings.SKILL.md", import.meta.url),
@@ -7352,10 +7352,18 @@ describe("owner intent — D182 standing send window is Mon–Thu 8am–7pm ET",
     );
     assert.match(
       skill,
+      /"start_hour": "07:00"/,
+      stop(
+        "The build skill starts the window at 07:00 ET (D327).",
+        "smartlead-campaign-settings.SKILL.md lost start_hour 07:00.",
+      ),
+    );
+    assert.doesNotMatch(
+      skill,
       /"start_hour": "08:00"/,
       stop(
-        "The build skill starts the window at 08:00 ET (D182).",
-        "smartlead-campaign-settings.SKILL.md lost start_hour 08:00.",
+        "The 08:00 standing start is retired (D327).",
+        "smartlead-campaign-settings.SKILL.md still ships start_hour 08:00.",
       ),
     );
     assert.match(
@@ -7432,10 +7440,18 @@ describe("owner intent — D182 standing send window is Mon–Thu 8am–7pm ET",
     );
     assert.match(
       canon,
+      /Monday–Thursday\s+\*\*07:00–19:00 America\/New_York\*\*/,
+      stop(
+        "CANON states the ET Mon–Thu 7am–7pm send window (D327).",
+        "CANON.md lost the D327 send window.",
+      ),
+    );
+    assert.doesNotMatch(
+      canon,
       /Monday–Thursday\s+08:00–19:00 America\/New_York/,
       stop(
-        "CANON states the ET Mon–Thu 8am–7pm send window (D182).",
-        "CANON.md lost the D182 send window.",
+        "The 08:00 standing start is retired (D327).",
+        "CANON.md still states Monday–Thursday 08:00–19:00 America/New_York.",
       ),
     );
     assert.match(
@@ -7927,12 +7943,12 @@ describe("owner intent — D186 step 2 delay is 2 days", () => {
         "campaignCheck.ts no longer writes sequences for D186.",
       ),
     );
-    assert.match(
+    assert.doesNotMatch(
       check,
-      /formatBreakupStepFinding/,
+      /formatBreakupStepFinding|missing_breakup_step|breakupStep/,
       stop(
-        "Campaign-check flags the breakup step (D306).",
-        "campaignCheck.ts lost formatBreakupStepFinding.",
+        "Campaign-check does not flag a step 3 (D327).",
+        "campaignCheck.ts still requires a breakup step.",
       ),
     );
     assert.doesNotMatch(
@@ -7975,20 +7991,20 @@ describe("owner intent — D186 step 2 delay is 2 days", () => {
         "CANON.md dropped step2_delay.",
       ),
     );
-    assert.match(
+    assert.doesNotMatch(
       canon,
       /missing_breakup_step/,
       stop(
-        "CANON names the missing_breakup_step finding (D306).",
-        "CANON.md dropped missing_breakup_step.",
+        "CANON does not require a missing-step-3 finding (D327).",
+        "CANON.md still names missing_breakup_step.",
       ),
     );
     assert.match(
       canon,
-      /check only, never write sequences/,
+      /exactly \*\*2 messages\*\*/,
       stop(
-        "CANON says the breakup check never writes sequences (D306).",
-        "CANON.md lost the check-only clause.",
+        "CANON states sequences are exactly 2 messages (D327).",
+        "CANON.md lost the two-message rule.",
       ),
     );
     assert.match(
@@ -19159,7 +19175,7 @@ describe("owner intent — D326 named POD rebalance even split", () => {
       { maxMoves: 50 },
     );
     assert.equal(plan.moves.length, 19);
-    assert.match(canon, /Canon as of \*\*D326\*\*/);
+    assert.match(canon, /Canon as of \*\*D327\*\*/);
     assert.match(canon, /supersedes D203 never-retag/);
     assert.match(canon, /BPLTG 21\/59/);
     assert.match(canon, /5\.7\.233/);
@@ -19171,15 +19187,14 @@ describe("owner intent — D326 named POD rebalance even split", () => {
   });
 });
 
-describe("owner intent — D306 14-day warmup, breakup check, send-window converge", () => {
-  it("D306: 14-day defaults, breakup check-only, schedule never status", async () => {
+describe("owner intent — D306 14-day warmup and send-window converge", () => {
+  it("D306: 14-day defaults, schedule never status, no step-3 check", async () => {
     const { readFile } = await import("node:fs/promises");
     const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
     const canon = await read("../../CANON.md");
     const locked = await read("../../docs/LOCKED-CANON.md");
     const ledger = await read("../../DECISIONS.md");
     const config = await read("../config.ts");
-    const breakup = await read("../lib/breakupStep.ts");
     const send = await read("../lib/campaignSendCanon.ts");
     const check = await read("../services/campaignCheck.ts");
 
@@ -19193,18 +19208,72 @@ describe("owner intent — D306 14-day warmup, breakup check, send-window conver
     assert.match(config, /poolWarmupDays: z\.coerce\.number\(\)\.int\(\)\.positive\(\)\.default\((?:14|DEFAULT_WARMUP_DAYS)\)/);
     assert.match(config, /campaignMinWarmupDays: z\.coerce\.number\(\)\.int\(\)\.positive\(\)\.default\((?:14|DEFAULT_WARMUP_DAYS)\)/);
     assert.match(config, /freshInboxWarmupDays: z\.coerce\.number\(\)\.int\(\)\.positive\(\)\.default\((?:14|DEFAULT_WARMUP_DAYS)\)/);
-    assert.match(breakup, /never writes sequences/i);
-    assert.match(check, /formatBreakupStepFinding/);
-    assert.doesNotMatch(breakup, /updateCampaignSequences/);
+    assert.doesNotMatch(check, /formatBreakupStepFinding|missing_breakup_step|breakupStep/);
+    assert.match(send, /SEND_WINDOW_START_HOUR = "07:00"/);
     assert.match(send, /standingSendWindowBody/);
     assert.doesNotMatch(send, /updateCampaignStatus|\/status/);
     assert.match(canon, /Custom windows are overwritten/);
     assert.match(canon, /Calls \|/);
     assert.match(canon, /Booking Follow Up/);
+    assert.match(canon, /Test campaigns/);
     assert.match(send, /isCallsCampaign/);
     assert.match(send, /isBookingFollowUpCampaign/);
+    assert.match(send, /isTestCampaign/);
     assert.match(ledger, /8:08pm CT/);
     assert.match(check, /convergeSendCanon\(/);
+  });
+});
+
+describe("owner intent — D327 two messages and Mon–Thu 7am–7pm ET", () => {
+  it("D327: exactly 2 messages, 07:00 ET start, exemptions stay, no Chicago standing window", async () => {
+    const { access, readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const canon = await read("../../CANON.md");
+    const ledger = await read("../../DECISIONS.md");
+    const skill = await read("../ops/smartlead-campaign-settings.SKILL.md");
+    const send = await read("../lib/campaignSendCanon.ts");
+    const check = await read("../services/campaignCheck.ts");
+    const board = await read("../ops/todayBoard.ts");
+    const alerts = await read("../services/opsAlerts.ts");
+    await assert.rejects(() => access(new URL("../lib/breakupStep.ts", import.meta.url)));
+    assert.match(ledger, /## D327 — /);
+    assert.match(ledger, /^\| D327 \|/m);
+    assert.match(canon, /Canon as of \*\*D327\*\*/);
+    assert.match(canon, /exactly \*\*2 messages\*\*/);
+    assert.match(canon, /Monday–Thursday \*\*07:00–19:00 America\/New_York\*\*/);
+    assert.match(canon, /Not America\/Chicago/);
+    assert.doesNotMatch(canon, /missing_breakup_step/);
+    assert.match(skill, /exactly 2 messages/i);
+    assert.match(skill, /"start_hour": "07:00"/);
+    assert.match(skill, /"timezone": "America\/New_York"/);
+    assert.doesNotMatch(skill, /"start_hour": "08:00"/);
+    assert.doesNotMatch(skill, /"timezone": "America\/Chicago"/);
+    assert.doesNotMatch(skill, /missing_breakup_step/);
+    assert.doesNotMatch(skill, /3 \(breakup\)/);
+    assert.match(skill, /keep their own windows/);
+    assert.match(send, /SEND_WINDOW_START_HOUR = "07:00"/);
+    assert.match(send, /SEND_WINDOW_TIMEZONE = "America\/New_York"/);
+    assert.doesNotMatch(send, /SEND_WINDOW_TIMEZONE = "America\/Chicago"/);
+    assert.doesNotMatch(check, /missing_breakup_step|breakupStep/);
+    assert.doesNotMatch(board, /missing_breakup_step/);
+    assert.doesNotMatch(alerts, /missing_breakup_step|breakupMissText/);
+    const { campaignHasSendWindowRule } = await import("../lib/campaignSendCanon.js");
+    assert.equal(
+      campaignHasSendWindowRule({ name: "Cayden Calls | SalesGlider", status: "ACTIVE" }),
+      false,
+    );
+    assert.equal(
+      campaignHasSendWindowRule({ name: "Booking Follow Up - SalesGlider", status: "ACTIVE" }),
+      false,
+    );
+    assert.equal(
+      campaignHasSendWindowRule({ name: "1-step test", status: "ACTIVE" }),
+      false,
+    );
+    assert.equal(
+      campaignHasSendWindowRule({ name: "Goliath Education", status: "ACTIVE" }),
+      true,
+    );
   });
 });
 

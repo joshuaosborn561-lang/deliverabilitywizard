@@ -13,7 +13,7 @@ import {
   type SendCanonCampaign,
 } from "./campaignSendCanon.js";
 
-const cron = { tz: "America/New_York", days: [1, 2, 3, 4], startHour: "08:00", endHour: "19:00" };
+const cron = { tz: "America/New_York", days: [1, 2, 3, 4], startHour: "07:00", endHour: "19:00" };
 const chicago = { tz: "America/Chicago", days: [1, 2, 3, 4], startHour: "09:00", endHour: "18:00" };
 
 function writer() {
@@ -88,7 +88,7 @@ describe("D304 send canon (ESP matching ON + 10m gap)", () => {
     assert.deepEqual(body, {
       timezone: "America/New_York",
       days_of_the_week: [1, 2, 3, 4],
-      start_hour: "08:00",
+      start_hour: "07:00",
       end_hour: "19:00",
       min_time_btw_emails: 10,
       max_new_leads_per_day: 100,
@@ -152,12 +152,12 @@ describe("D304 send canon (ESP matching ON + 10m gap)", () => {
 });
 
 describe("D306 send-window converge", () => {
-  it("standing body is Mon–Thu 08:00–19:00 ET at 10000 leads and never has status", () => {
+  it("standing body is Mon–Thu 07:00–19:00 ET at 10000 leads and never has status", () => {
     const body = standingSendWindowBody();
     assert.deepEqual(body, {
       timezone: "America/New_York",
       days_of_the_week: [1, 2, 3, 4],
-      start_hour: "08:00",
+      start_hour: "07:00",
       end_hour: "19:00",
       min_time_btw_emails: 10,
       max_new_leads_per_day: 10000,
@@ -430,6 +430,57 @@ describe("D306 send-window converge", () => {
       min_time_btw_emails: 10,
       max_new_leads_per_day: 500,
     });
+  });
+
+  it("moves an 08:00 Eastern start to 07:00 and leaves test campaigns alone", async () => {
+    const w = writer();
+    const out = await convergeSendCanon(
+      {
+        id: 40,
+        name: "Goliath Education",
+        status: "ACTIVE",
+        enable_ai_esp_matching: true,
+        min_time_btwn_emails: 10,
+        scheduler_cron_value: {
+          tz: "America/New_York",
+          days: [1, 2, 3, 4],
+          startHour: "08:00",
+          endHour: "19:00",
+        },
+        max_leads_per_day: 10000,
+      },
+      w,
+      { dryRun: false },
+    );
+    assert.deepEqual(out?.fixed, ["window"]);
+    assert.equal(w.calls.length, 1);
+    assert.equal(w.calls[0]![2].timezone, "America/New_York");
+    assert.deepEqual(w.calls[0]![2].days_of_the_week, [1, 2, 3, 4]);
+    assert.equal(w.calls[0]![2].start_hour, "07:00");
+    assert.equal(w.calls[0]![2].end_hour, "19:00");
+    assert.equal("status" in w.calls[0]![2], false);
+
+    const testWriter = writer();
+    const testOut = await convergeSendCanon(
+      {
+        id: 41,
+        name: "1-step test",
+        status: "ACTIVE",
+        enable_ai_esp_matching: true,
+        min_time_btwn_emails: 10,
+        scheduler_cron_value: {
+          tz: "America/Chicago",
+          days: [1, 2, 3, 4, 5],
+          startHour: "09:00",
+          endHour: "17:00",
+        },
+        max_leads_per_day: 100,
+      },
+      testWriter,
+      { dryRun: false },
+    );
+    assert.equal(testOut, null);
+    assert.equal(testWriter.calls.length, 0);
   });
 
   it("never calls a status writer", async () => {

@@ -196,10 +196,10 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D179 | Live | A known-retired domain never opens a fresh actionable Retire ask or a second replacement buy when old / recurrent 5.1.8 evidence reappears; confirm is a fail-safe no-op |
 | D180 | Live | Merge tags / custom fields cannot silently send blank — campaign-check samples sequences vs lead `custom_fields` (multi-offset, ~80% fill) and cheap sent-body holes; `merge_tag_blank` is a core CANON finding and Slack miss; never auto-edits live copy or remaps leads |
 | D181 | Live — Cayden Retire/Buy CTA and strike Slack silence added by D190 | Goliath / Smartlead client 548611 burned domains follow the normal Retire ask — D174 never-retire / never-burn / cover-only convert is reversed |
-| D182 | Live — no-converge clause superseded by D306 | Standing send window is Monday–Thursday 08:00–19:00 America/New_York — no Friday; gap 10 and max_leads 10000 unchanged; custom windows are now overwritten (D306) |
+| D182 | Live — no-converge clause superseded by D306; 08:00 start superseded by D327 (07:00 ET) | Standing send window is Monday–Thursday America/New_York — no Friday; start is 07:00 (D327, was 08:00); end 19:00; gap 10 and max_leads 10000 unchanged; custom windows overwritten (D306) except Calls, Booking Follow Up, and test campaigns |
 | D183 | Live | Outlook / Microsoft Smartlead senders converge to 15 campaign emails/day; Gmail/SMTP stay at MESSAGE_PER_DAY=30 |
 | D184 | Superseded by D192 — exclusive-blank Insight staff inside 345263 is obsolete; never revive | Insight campaigns staff only seats not on ACTIVE SalesGlider; exclusive Insight may be empty-signed; NEVER blank ACTIVE SG staff; QA flags shared staff or SalesGlider-in-sig; no salesglider* fleet-empty |
-| D186 | Live — step-3 "don't touch" superseded for check purposes by D306 | Client campaign sequence step 2 waits 2 days (`seq_delay_details.delay_in_days = 2`); step 1 stays 0; shells / 1-step skipped; campaign-check flags `step2_delay` and auto-fixes via `sequencesForWrite`; D306 flags step 3 (check only, never writes) |
+| D186 | Live — step 2 delay stays; D306 step-3 check retired by D327 | Client campaign sequence step 2 waits 2 days (`seq_delay_details.delay_in_days = 2`); step 1 stays 0; shells / 1-step skipped; campaign-check flags `step2_delay` and auto-fixes via `sequencesForWrite`. D327: exactly 2 messages; do not build, require, or flag a step 3; do not rewrite live copy |
 | D187 | Live | Ops Placement lists up to 80 ACTIVE live tests (was 40) |
 | D189 | Superseded by D229 — Insight rests like any named client; off-week unlinks (D228 on-week-only campaigns) | Client-rest does not unlink or bench mailboxes off Insight campaigns (client 345263); D184 exclusive staff survives the A/B fortnight |
 | D190 | Live | Burned-domain Slack pages once per strike; Cayden (or Josh) taps Retire / cover Buy; leftover D174 protected copy is healed and silent |
@@ -297,7 +297,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D303 | Live | LOCKED canon change (Josh 2026-10-25): per-variant placement + canary-copy tests; mailboxes-summary paged to every mailbox; on-week POD ESP mix auto-rebalanced (1-for-1, warm, same client, ledger generics); mailbox rest-then-burn (14-day rest, generic covers, rest_count, burn on repeat or >3) replaces kill-only for mailbox-cause INFRA. POD-40, Insight no-generics, no cross-client generics, 21-day warmup unchanged. Rest length amended to 28 days by D310. |
 | D301 | Live | POD ESP mix matches each client's InboxKit Google/Microsoft split (±max(2, 10% of the POD) of round(POD × Microsoft share)); 1/3 floor is fallback only when InboxKit has no row. SMTP smtp.gmail.com and type:google are Gmail; type:m365 / type:azure are Microsoft. min-40 / campaign top-up pick generics toward that split. Finding text shows the client's target. Parlay ~54%, EMCOR ~60%, Peterson ~35%. LOCKED section unchanged. |
 | D304 | Live — LOCKED; caller-follow-up 10m gap restored to 3 by D306 | Every Smartlead campaign: enable_ai_esp_matching ON and min_time_btw_emails 10. Campaign-check (hourly/all) flags and fixes drift on every non-STOPPED campaign: ESP via POST /settings, gap via POST /schedule. Never status. D306 restores D242's 3m gap on caller follow-ups and overwrites custom send windows. |
-| D306 | Live — LOCKED | Warmup is 14 days for every seat (named and generic). Breakup-step CHECK ONLY (`missing_breakup_step` if no seq_number 3 or step 3 delay is not 2). Send-window converge Mon–Thu 08:00–19:00 America/New_York; custom windows overwritten; skip Calls | / D242 / Booking Follow Up / shells / tests / STOPPED; never status. Josh: "Take [21] down to fourteen days. So that everything gets fourteen." |
+| D306 | Live — LOCKED warmup; breakup-step check and 08:00 start superseded by D327 | Warmup is 14 days for every seat (named and generic). Breakup-step check retired by D327 (sequences are exactly 2 messages; do not flag step 3). Send-window converge Mon–Thu 07:00–19:00 America/New_York (D327 start; was 08:00); custom windows overwritten; skip Calls, D242, Booking Follow Up, shells, tests, STOPPED; never status; not America/Chicago. Josh: "Take [21] down to fourteen days. So that everything gets fourteen." |
 | D307 | Live | Tests that persist age-pruned ledgers (placement scores, copy suspects) stamp fixture times relative to now so D257's 14-day placement-score retention cannot drop a living row. Production prune windows and isolation sidecar persist are unchanged. LOCKED section unchanged. |
 | D308 | Live | Drain mode (A0): `POST /drain?action=on` skips every NEW cron tick, post-pass retry and manual `/run` while in-flight work finishes; `/health` reports `drain`, `activeJobs`, `idleNow` and `safeToDeploy` (drain on AND nothing running). Auto-expires (30m default, 120m max). Changes no campaigns, mailboxes, settings or WRITE_ENABLED. LOCKED section unchanged. |
 | D309 | Live | Copy-canary idempotent: one live "Canary copy" SmartDelivery test per campaign. Single-flight per campaign, a 3h create cooldown (also after a failed, maybe-landed create), stored test kept when the list hits the 5,000-test page cap, and each attach pass STOPS (never deletes) extra living canaries for a campaign, keeping the one with readings. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
@@ -317,6 +317,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D324 | Live | CAYDEN-SG seats stay on Booking Follow Up campaigns only. That membership does not confer client membership, so fan-out does not spread them. They are not D242 class senders: POD-A stays, and Booking Follow Up keeps the 10-minute gap and its current window. D316 does not retag them. LOCKED section unchanged. |
 | D325 | Live | JEREMY-CIOTOLA (tag 533700) seats sit under SalesGlider 345263 but are only eligible for Ciotola campaigns (name `Ciotola` / `Gabe Calls | Ciotola`, or ids 4289735–4289738 / 4236534). The gate keys off JEREMY-CIOTOLA, not a POD tag (POD-A / POD-B / none). Ciotola is its own client for POD counts (virtual 900345263) and never takes pool generics. Non-Jeremy seats never go onto Ciotola except GABE-VM-RESERVED on Gabe Calls | Ciotola 4236534. `/health` `client_seat_crossover` when a Jeremy seat is on a non-Ciotola campaign. LOCKED section unchanged. |
 | D326 | Live | Moving named inboxes between POD-A and POD-B to balance a lopsided client is allowed and preferred over covering the gap with generics (Josh 11/4, supersedes D203 never-retag / PR #242). Example: BPLTG 21/59 → even ESP-balanced split. Only the off-week POD's named seats, or seats not linked to ACTIVE campaigns, may move. A 24h 5.7.233 / TERRL stop keeps its POD tag. Generics only top each POD up to 40. D316's 15% path now targets even. `mayWritePodTag` still refuses every other writer. LOCKED section unchanged. **11/5 amendment:** counts every named seat (sweep exclusions), acts only when total or per-ESP is outside 15%, no-op otherwise; honours approved exceptions and PowerGRYD hands-off. |
+| D327 | Live | Sequences are exactly 2 messages. No third / breakup email: do not build, require, or flag a step 3. Step 2 delay stays 2 days (D186). Standing send window is Monday–Thursday 07:00–19:00 America/New_York (was 08:00). Not America/Chicago. Calls, Booking Follow Up, and test campaigns keep their own windows. Josh, 2026-11-05 ~9:39am CT. |
 
 ---
 
@@ -11851,3 +11852,49 @@ off-week leftover ACTIVE links.
 `src/services/podTags.test.ts` (D326),
 `src/services/min40TopUp.test.ts` (D326),
 `src/guards/canon.test.ts` D326.
+
+## D327 — Sequences are 2 messages; send window starts 7am ET
+
+**Decision (Josh, 2026-11-05 ~9:39am CT, to Coding for Cayden's
+deliverability portal / campaign settings).**
+
+1. Sequences are exactly 2 messages. There is no third message
+   and no breakup email. Do not build, require, or flag a step 3.
+   Step 2 still waits 2 days (D186). Campaign-check does not emit
+   a missing-step-3 finding, does not page one, and does not write
+   sequence copy to add or remove a step. Existing live copy is
+   left alone.
+
+2. The standing send window is Monday–Thursday 07:00–19:00
+   America/New_York. No Friday, no weekends. End stays 19:00.
+   Gap 10 and max_leads 10000 unchanged. D306's converge of the
+   standard window moves from 08:00 to 07:00 and stays
+   America/New_York, Monday–Thursday. Do not move the standing
+   window to America/Chicago. The unmerged Nov 1 Chicago draft
+   is not this rule and is not incorporated.
+
+**Exemptions (unchanged).** Campaigns whose names contain
+`Calls |` (Gabe Calls, Cayden Calls, any future caller), D242
+CALLER FOLLOW-UP, Booking Follow Up, and test campaigns keep
+their own send windows. Shells, canaries, word-hunt, and STOPPED
+stay skipped. Never the status endpoint. Never rewrite sequence
+copy.
+
+**Why.** Josh told Coding the portal path Cayden uses is two
+emails and a 7am–7pm Eastern day, Monday through Thursday.
+Requiring a breakup step and starting at 8am were the standing
+rules; both are retired for new builds and for the standard-window
+converge. Caller-follow-up Chicago windows are a different class
+and stay put.
+
+**Supersedes / amends.** Supersedes D306's breakup-step check.
+Supersedes D182/D306's 08:00 start (end, days, and timezone stay).
+Does not adopt a Chicago standing window. Does not change D242's
+Mon–Fri 07:00–20:00 America/Chicago caller-follow-up window,
+D186's step-2 delay, D304's 10-minute gap, or the Calls /
+Booking Follow Up / test exemptions.
+
+**Guards.** `src/lib/campaignSendCanon.test.ts`;
+`src/services/campaignCheck.test.ts` D327;
+`src/guards/canon.test.ts` D327. `src/lib/breakupStep.ts` is
+deleted.

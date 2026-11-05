@@ -126,11 +126,6 @@ describe("campaign check first-pass helpers", () => {
       true,
       "D186 auto-fixes step-2 delay; it does not block first-check identity",
     );
-    assert.equal(
-      firstCheckPassed([{ kind: "missing_breakup_step", detail: "step 3 missing" }]),
-      true,
-      "D306 breakup check does not block first-check identity",
-    );
   });
 
   it("D81/D193: Goliath is a POC client; Slack approve does not staff a named client", () => {
@@ -276,7 +271,7 @@ describe("CampaignCheckService", () => {
         if (fail) throw new Error("HTTP 429");
         return [
           { seq_number: 1, seq_delay_details: { delay_in_days: 0 }, email_body: "<div>Hi</div><div>%signature%</div>" },
-          { seq_number: 2, seq_delay_details: { delay_in_days: 2 }, email_body: "<div>Bump</div><div>%signature%</div>" },
+          { seq_number: 2, seq_delay_details: { delay_in_days: 3 }, email_body: "<div>Bump</div><div>%signature%</div>" },
         ];
       },
     } as unknown as SmartleadClient;
@@ -284,13 +279,14 @@ describe("CampaignCheckService", () => {
     await service.run({ mode: "first" });
     await service.run({ mode: "hourly" });
     const before = state.getCampaignCheck(4256612)?.findings ?? [];
-    assert.ok(before.some((row) => row.startsWith("missing_breakup_step")), "baseline has the breakup finding");
+    assert.ok(before.some((row) => row.startsWith("step2_delay")), "baseline has the step-2 delay finding");
+    assert.equal(before.some((row) => row.startsWith("missing_breakup_step")), false);
 
     fail = true;
     const hourly = await service.run({ mode: "hourly" });
     const after = state.getCampaignCheck(4256612)?.findings ?? [];
     assert.ok(after.some((row) => row.startsWith("unverified:")), "429 marks the campaign unverified");
-    assert.ok(after.some((row) => row.startsWith("missing_breakup_step")), "prior sequence finding is carried, not cleared");
+    assert.ok(after.some((row) => row.startsWith("step2_delay")), "prior sequence finding is carried, not cleared");
     const row = hourly.findings.find((r) => r.campaignId === 4256612);
     assert.ok(row && row.findings.length > 0, "a failed read is never reported as clean");
   });
@@ -2115,8 +2111,8 @@ describe("D186 — step 2 delay must be 2 days", () => {
   });
 });
 
-describe("D306 — breakup-step check only", () => {
-  const threeStep = (step3Delay: number | undefined) => [
+describe("D327 — sequences are 2 messages; no step-3 flag", () => {
+  const steps = (withThird: boolean) => [
     {
       seq_number: 1,
       email_body: "<div>Hi</div><div>%signature%</div>",
@@ -2127,119 +2123,54 @@ describe("D306 — breakup-step check only", () => {
       email_body: "<div>Follow up</div><div>%signature%</div>",
       seq_delay_details: { delay_in_days: 2 },
     },
-    ...(step3Delay == null
-      ? []
-      : [
+    ...(withThird
+      ? [
           {
             seq_number: 3,
-            email_body: "<div>Breakup</div><div>%signature%</div>",
-            seq_delay_details: { delay_in_days: step3Delay },
+            email_body: "<div>Older third step</div><div>%signature%</div>",
+            seq_delay_details: { delay_in_days: 4 },
           },
-        ]),
+        ]
+      : []),
   ];
 
-  const mkSl = (opts: {
-    name?: string;
-    sequences: unknown[];
-    writes: unknown[][];
-  }) =>
+  const mkSl = (sequences: unknown[], writes: unknown[][]) =>
     ({
       listCampaigns: async () => [
         {
           id: 910,
-          name: opts.name ?? "Goliath Education Receipts",
+          name: "Goliath Education Receipts",
           status: "ACTIVE",
           client_id: 548611,
         },
       ],
       listAllEmailAccounts: async () => [],
       listClients: async () => [goliath],
-      getCampaignSequences: async () => opts.sequences,
-      updateCampaignSequences: async (_id: number, sequences: unknown[]) => {
-        opts.writes.push(sequences);
+      getCampaignSequences: async () => sequences,
+      updateCampaignSequences: async (_id: number, next: unknown[]) => {
+        writes.push(next);
       },
     }) as unknown as SmartleadClient;
 
-  it("flags a missing or wrong step 3 and never writes sequences", async () => {
-    const state = new StateStore(stateFile());
-    await state.load();
-    const writes: unknown[][] = [];
-    const missing = mkCheck(
-      loadConfig({} as NodeJS.ProcessEnv),
-      mkSl({ sequences: threeStep(undefined), writes }),
-      delivery(),
-      state,
-    );
-    const missingResult = await missing.run({ mode: "all" });
-    const missingRow = missingResult.findings.find((r) => r.campaignId === 910);
-    assert.ok(
-      (missingRow?.findings ?? []).some((f) => f.kind === "missing_breakup_step"),
-    );
-    assert.deepEqual(writes, [], "breakup check must not write sequences");
-
-    const state2 = new StateStore(stateFile());
-    await state2.load();
-    const wrongWrites: unknown[][] = [];
-    const wrong = mkCheck(
-      loadConfig({} as NodeJS.ProcessEnv),
-      mkSl({ sequences: threeStep(4), writes: wrongWrites }),
-      delivery(),
-      state2,
-    );
-    const wrongResult = await wrong.run({ mode: "all" });
-    const wrongRow = wrongResult.findings.find((r) => r.campaignId === 910);
-    assert.match(
-      wrongRow?.findings.find((f) => f.kind === "missing_breakup_step")?.detail ?? "",
-      /4d/,
-    );
-    assert.deepEqual(wrongWrites, []);
-  });
-
-  it("skips Gabe caller follow-ups and 1-step tests", async () => {
-    const state = new StateStore(stateFile());
-    await state.load();
-    const writes: unknown[][] = [];
-    const gabe = mkCheck(
-      loadConfig({} as NodeJS.ProcessEnv),
-      mkSl({
-        name: "Gabe Calls | SalesGlider",
-        sequences: threeStep(undefined),
-        writes,
-      }),
-      delivery(),
-      state,
-    );
-    const gabeResult = await gabe.run({ mode: "all" });
-    const gabeRow = gabeResult.findings.find((r) => r.campaignId === 910);
-    assert.equal(
-      (gabeRow?.findings ?? []).some((f) => f.kind === "missing_breakup_step"),
-      false,
-    );
-
-    const state2 = new StateStore(stateFile());
-    await state2.load();
-    const oneWrites: unknown[][] = [];
-    const one = mkCheck(
-      loadConfig({} as NodeJS.ProcessEnv),
-      mkSl({
-        sequences: [
-          {
-            seq_number: 1,
-            email_body: "<div>Hi</div><div>%signature%</div>",
-            seq_delay_details: { delay_in_days: 0 },
-          },
-        ],
-        writes: oneWrites,
-      }),
-      delivery(),
-      state2,
-    );
-    const oneResult = await one.run({ mode: "all" });
-    const oneRow = oneResult.findings.find((r) => r.campaignId === 910);
-    assert.equal(
-      (oneRow?.findings ?? []).some((f) => f.kind === "missing_breakup_step"),
-      false,
-    );
+  it("does not flag or rewrite a 2-step sequence or an existing third step", async () => {
+    for (const withThird of [false, true]) {
+      const state = new StateStore(stateFile());
+      await state.load();
+      const writes: unknown[][] = [];
+      const service = mkCheck(
+        loadConfig({} as NodeJS.ProcessEnv),
+        mkSl(steps(withThird), writes),
+        delivery(),
+        state,
+      );
+      const result = await service.run({ mode: "all" });
+      const row = result.findings.find((r) => r.campaignId === 910);
+      assert.equal(
+        (row?.findings ?? []).some((f) => /step 3|breakup/i.test(f.detail)),
+        false,
+      );
+      assert.deepEqual(writes, [], "campaign-check must not write sequence copy");
+    }
   });
 });
 

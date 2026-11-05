@@ -65,7 +65,7 @@ describe("today board", () => {
     assert.equal(board.hourlySweep, "on");
     assert.equal(board.canonCheck, "every 15 min");
     assert.equal(board.alertsLabel, "Slack");
-    assert.match(campaignSettingsHint(), /Mon–Thu 8a–7p ET/);
+    assert.match(campaignSettingsHint(), /Mon–Thu 7a–7p ET/);
     assert.match(board.columns.find((column) => column.id === "isolation")?.hint ?? "", /queues isolation/);
     assert.equal(board.lastSweepAt, "2026-11-04T17:00:00.000Z");
   });
@@ -82,7 +82,7 @@ describe("today board", () => {
           campaignId: 10,
           name: "Vector",
           findings: [
-            "missing_breakup_step: step 3 missing (want delay 2d so it lands on day 4)",
+            "unverified: sequence read failed",
             "step2_delay: step 2 delay 3d (want 2)",
           ],
         }),

@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D328** (2026-11-06). One page of current truth. When a new
+Canon as of **D329** (2026-11-06). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -9,6 +9,8 @@ guard in `src/guards/meta.test.ts` enforces both).
 and every reversal, and most of it is **superseded**. Do not derive behaviour
 from it. Derive behaviour from this file; use the ledger only to understand
 *why* a rule here exists (each rule cites its decision numbers).
+
+**D329.** An Insight seat (Smartlead client 582890) whose sender is Josh Osborn or Joshua Osborn has mailbox signature exactly `Josh Osborn` / `Strategic Account Executive` / `Insight` (newlines). The signature pass must not rebuild that as `from_name` plus the title line. `desiredMailboxSignature` and `mailboxSignatureMismatch` treat that three-line string as the target and as in sync. Other clients are unchanged, including SalesGlider `Name\nSalesGlider` and the D328 Ciotola name-only signature. LOCKED section unchanged.
 
 **D328.** A mailbox tagged `JEREMY-CIOTOLA` (tag id 533700), or whose sender name is exactly `Jeremy Ciotola`, has mailbox signature exactly `Jeremy Ciotola`. No SalesGlider line and no other brand line. These seats still sit under Smartlead client 345263; the signature pass must not rebuild `Name\nSalesGlider` for them. Every other client is unchanged: SalesGlider stays `Name\nSalesGlider`, Insight stays `Josh Osborn` / `Strategic Account Executive` / `Insight`, EMCOR keeps its existing brand line, and `Calls |` plus Booking Follow Up keep their exemptions. LOCKED section unchanged.
 
@@ -298,6 +300,11 @@ Caps ramp manually (35 on Oct 12).
   `First Last\n{Client Brand}` (D31). **D328:** a `JEREMY-CIOTOLA`
   seat, or a sender named exactly `Jeremy Ciotola`, signs with
   `Jeremy Ciotola` alone — never `Jeremy Ciotola\nSalesGlider`.
+  **D329:** an Insight client 582890 seat sending as Josh Osborn or
+  Joshua Osborn signs with exactly `Josh Osborn` /
+  `Strategic Account Executive` / `Insight`. The signature pass
+  must not collapse that to `Joshua Osborn` / `Strategic Account
+  Executive`.
   On a living campaign, an empty,
   one-line, extra-line, or foreign-client signature is a `mailbox_sig`
   finding and is **written on that check pass** (D74/D125) — never left

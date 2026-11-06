@@ -319,6 +319,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D326 | Live | Moving named inboxes between POD-A and POD-B to balance a lopsided client is allowed and preferred over covering the gap with generics (Josh 11/4, supersedes D203 never-retag / PR #242). Example: BPLTG 21/59 → even ESP-balanced split. Only the off-week POD's named seats, or seats not linked to ACTIVE campaigns, may move. A 24h 5.7.233 / TERRL stop keeps its POD tag. Generics only top each POD up to 40. D316's 15% path now targets even. `mayWritePodTag` still refuses every other writer. LOCKED section unchanged. **11/5 amendment:** counts every named seat (sweep exclusions), acts only when total or per-ESP is outside 15%, no-op otherwise; honours approved exceptions and PowerGRYD hands-off. |
 | D327 | Live | Sequences are exactly 2 messages. No third / breakup email: do not build, require, or flag a step 3. Step 2 delay stays 2 days (D186). Standing send window is Monday–Thursday 07:00–19:00 America/New_York (was 08:00). Not America/Chicago. Calls, Booking Follow Up, and test campaigns keep their own windows. Josh, 2026-11-05 ~9:39am CT. |
 | D328 | Live | A `JEREMY-CIOTOLA` seat (tag 533700), or a mailbox whose sender name is exactly `Jeremy Ciotola`, has mailbox signature `Jeremy Ciotola` alone. No SalesGlider line. Other clients stay on their own signature rules. Josh, 2026-11-05. |
+| D329 | Live | An Insight seat (client 582890) sending as Josh Osborn or Joshua Osborn has mailbox signature exactly `Josh Osborn` / `Strategic Account Executive` / `Insight`. The signature pass must not drop the Insight line or switch the name to from_name. Josh, 2026-10-12 / 2026-11-04. |
 
 ---
 
@@ -11933,3 +11934,34 @@ exemptions, or D325's attach gate. LOCKED section unchanged.
 **Guards.** `src/lib/mailboxSignature.test.ts` (D328),
 `src/lib/ciotolaClient.test.ts` (D328),
 `src/guards/canon.test.ts` D328.
+
+## D329 — Insight mailbox signature stays the three-line Josh Osborn close
+
+**Date.** 2026-11-06.
+
+**Decision.** Josh (2026-10-12 / 2026-11-04): an Insight mailbox
+signature is exactly `Josh Osborn` / `Strategic Account Executive`
+/ `Insight`, and Insight sends only from Josh Osborn inboxes.
+On 2026-11-06 the mailbox-signature pass rewrote Insight client
+582890 seats whose from_name is `Joshua Osborn` from that
+three-line string to `Joshua Osborn` / `Strategic Account
+Executive`. `resolveSignatureBrand` treated the title line as the
+brand and `desiredMailboxSignature` emitted `from_name` plus that
+line. Same class of bug as D328.
+
+**Rule.** When the seat is Insight client 582890, or the caller
+passes `insightSeat`, and the sender is Josh Osborn or Joshua
+Osborn, `desiredMailboxSignature` returns exactly
+`Josh Osborn\nStrategic Account Executive\nInsight`.
+`mailboxSignatureMismatch` treats that string as in sync.
+Campaign-check, campaign-audit, mailbox settings, and one-client
+pass the flag from the account's `client_id`. SalesGlider seats
+named Joshua Osborn stay `Name\nSalesGlider`. D328 Ciotola stays
+the name alone. EMCOR's existing brand line is unchanged.
+
+**Does not amend.** D184 exclusive-Insight blanking, D192/D255
+Insight copy, D282 sender gate, D31 for every other client, or
+the LOCKED section.
+
+**Guards.** `src/lib/mailboxSignature.test.ts` (D329),
+`src/guards/canon.test.ts` D329.

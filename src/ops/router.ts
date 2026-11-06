@@ -332,6 +332,7 @@ export function createOpsRouter(opts: {
         campaigns: inventory?.campaigns ?? [],
         clients: inventory?.clients ?? [],
         placements,
+        placementsGeneratedAt: state.placementResults?.generatedAt ?? null,
         isolation,
         callingLanes: board.calling ? callingLanes(board.calling) : undefined,
         linkedinLanes: board.linkedin ? linkedInLanes(board.linkedin) : undefined,

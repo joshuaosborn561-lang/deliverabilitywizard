@@ -199,6 +199,7 @@ describe("CampaignCheckService", () => {
         updateEmailAccount: async (_id: number, fields: { signature?: string }) => {
           if (fields.signature) mailboxSigs.push(fields.signature);
         },
+        getEmailAccount: async () => ({ signature: mailboxSigs.at(-1) }),
       } as unknown as SmartleadClient,
       delivery(),
       state,
@@ -869,6 +870,7 @@ describe("CampaignCheckService", () => {
         updateEmailAccount: async (_id: number, fields: { signature?: string }) => {
           if (fields.signature) mailboxSigs.push(fields.signature);
         },
+        getEmailAccount: async () => ({ signature: mailboxSigs.at(-1) }),
       } as unknown as SmartleadClient,
       delivery(),
       state,
@@ -887,6 +889,71 @@ describe("CampaignCheckService", () => {
     assert.equal(
       result.findings[0]?.findings.some((finding) => finding.kind === "mailbox_sig"),
       false,
+    );
+  });
+
+  it("a mailbox signature that does not read back keeps its mailbox_sig finding", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertCampaignCheck({
+      campaignId: 92,
+      name: "Goliath Displacement L",
+      firstSeenAt: "2026-08-25T00:00:00.000Z",
+      firstCheckAt: "2026-08-25T00:00:00.000Z",
+      firstPassedAt: "2026-08-25T00:05:00.000Z",
+      lastSweepAt: "2026-08-25T01:00:00.000Z",
+      lastKind: "hourly",
+      findings: ["mailbox_sig: leila@goliath.com has no signature"],
+    });
+    const told: string[] = [];
+    const mailboxSigs: string[] = [];
+    const sequencesUpdated: number[] = [];
+    const service = mkCheck(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          { id: 92, name: "Goliath Displacement L", status: "ACTIVE", client_id: 548611 },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 9,
+            from_email: "leila@goliath.com",
+            from_name: "Leila Sanchez",
+            signature: "",
+            client_id: 548611,
+            campaign_ids: [92],
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+        ],
+        listClients: async () => [goliath, peterson],
+        getCampaignSequences: async () => [
+          { seq_number: 1, email_body: "<div>Hi</div><div>%signature%</div>" },
+        ],
+        updateCampaignSequences: async (id: number) => {
+          sequencesUpdated.push(id);
+        },
+        updateEmailAccount: async (_id: number, fields: { signature?: string }) => {
+          if (fields.signature) mailboxSigs.push(fields.signature);
+        },
+        getEmailAccount: async () => ({ signature: "" }),
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+      {
+        notifyActionResult: async (text: string) => {
+          told.push(text);
+        },
+        send: async () => undefined,
+      } as never,
+    );
+
+    const result = await service.run({ mode: "first" });
+    assert.equal(mailboxSigs.length, 1, "the write was attempted");
+    assert.equal(
+      result.findings[0]?.findings.some((finding) => finding.kind === "mailbox_sig"),
+      true,
+      "write that did not stick is not marked fixed",
     );
   });
 
@@ -962,6 +1029,7 @@ describe("CampaignCheckService", () => {
         updateEmailAccount: async (_id: number, fields: { signature?: string }) => {
           if (fields.signature) mailboxSigs.push(fields.signature);
         },
+        getEmailAccount: async () => ({ signature: mailboxSigs.at(-1) }),
       } as unknown as SmartleadClient,
       delivery(),
       state,

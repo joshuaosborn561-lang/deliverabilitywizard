@@ -27,6 +27,7 @@ import {
 import {
   countOwnedClientPods,
   formatPodUnderstaffedDetail,
+  isAcceptedUnderstaffed,
 } from "../lib/podOwnedInventory.js";
 import {
   canonStaffableVerdict,
@@ -636,7 +637,12 @@ export class CampaignCheckService {
           );
         }
         if (sigApplied.wroteMailbox && !sigApplied.skipMailbox) {
-          findings = findings.filter((finding) => finding.kind !== "mailbox_sig");
+          const unverified = sigApplied.unverifiedEmails ?? [];
+          findings = findings.filter(
+            (finding) =>
+              finding.kind !== "mailbox_sig" ||
+              unverified.some((email) => finding.detail.startsWith(`${email} `)),
+          );
         }
         // D95 — tell Josh the first time we write a campaign. A leftover
         // backfill already notified does not ping again every pass.
@@ -861,6 +867,8 @@ export class CampaignCheckService {
     const detailsByClient = new Map<number, string[]>();
     for (const row of owned) {
       if (row.shortBy <= 1e-9) continue;
+      // Approved exceptions (e.g. Insight 39/40) are not a finding.
+      if (isAcceptedUnderstaffed(row)) continue;
       const client = clientsById.get(row.clientId);
       const clientName = clientDisplayName(client ?? { id: row.clientId });
       const list = detailsByClient.get(row.clientId) ?? [];
@@ -960,6 +968,8 @@ export class CampaignCheckService {
     wroteMailbox: boolean;
     skipMailbox: boolean;
     blankedEmails: string[];
+    /** Mailboxes whose signature did not read back as written. */
+    unverifiedEmails?: string[];
   } | null> {
     const needTag = input.findings.some(
       (finding) => finding.kind === "missing_signature_tag",
@@ -1007,6 +1017,7 @@ export class CampaignCheckService {
       }
       let wroteMailbox = false;
       const blankedEmails: string[] = [];
+      const unverifiedEmails: string[] = [];
       const insightCampaign = isInsightCampaign({ id: input.campaignId }, rows);
       const attached = this.attachedAccounts(
         input.campaignId,
@@ -1066,7 +1077,25 @@ export class CampaignCheckService {
           if (typeof account.id !== "number") continue;
           await this.smartlead.updateEmailAccount(account.id, { signature: desired });
           await sleep(WRITE_GAP_MS);
-          wroteMailbox = true;
+          // Read the signature back: a write that returned 200 but did not
+          // stick keeps its mailbox_sig finding instead of being cleared.
+          const email = accountEmail(account);
+          let stuck = false;
+          try {
+            const after = await this.smartlead.getEmailAccount(account.id);
+            stuck =
+              extractSignatureLines(after?.signature).join("\n") === want;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.warn(
+              `[campaign-check] signature read-back failed #${input.campaignId} account ${account.id}: ${message}`,
+            );
+          }
+          if (stuck) {
+            wroteMailbox = true;
+          } else if (email) {
+            unverifiedEmails.push(email);
+          }
         }
       }
       console.log(
@@ -1078,6 +1107,7 @@ export class CampaignCheckService {
         wroteMailbox,
         skipMailbox: insightCampaign,
         blankedEmails,
+        unverifiedEmails,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

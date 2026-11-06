@@ -29,6 +29,22 @@ export const JEREMY_CIOTOLA_TAG = "JEREMY-CIOTOLA";
 export const JEREMY_CIOTOLA_TAG_ID = 533700;
 
 /**
+ * D328 — mailbox signature for a Ciotola sender. Exactly this
+ * string: no SalesGlider line, no agency footer, no brand line.
+ * These seats still live under Smartlead client 345263.
+ */
+export const CIOTOLA_MAILBOX_SIGNATURE = "Jeremy Ciotola";
+
+/** Tag JEREMY-CIOTOLA, or the sender name is exactly that signature. */
+export function ciotolaNameOnlySignature(input: {
+  account?: CiotolaTagAccount | null;
+  fromName?: string | null;
+}): boolean {
+  if (isJeremyCiotolaSeat(input.account)) return true;
+  return (input.fromName ?? "").trim() === CIOTOLA_MAILBOX_SIGNATURE;
+}
+
+/**
  * Virtual owner for POD counts / rest / fan-out. Not a Smartlead
  * client record — Ciotola campaigns still carry `client_id` 345263.
  */

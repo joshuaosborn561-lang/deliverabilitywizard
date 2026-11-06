@@ -19175,7 +19175,7 @@ describe("owner intent — D326 named POD rebalance even split", () => {
       { maxMoves: 50 },
     );
     assert.equal(plan.moves.length, 19);
-    assert.match(canon, /Canon as of \*\*D327\*\*/);
+    assert.match(canon, /Canon as of \*\*D328\*\*/);
     assert.match(canon, /supersedes D203 never-retag/);
     assert.match(canon, /BPLTG 21\/59/);
     assert.match(canon, /5\.7\.233/);
@@ -19238,7 +19238,7 @@ describe("owner intent — D327 two messages and Mon–Thu 7am–7pm ET", () => 
     await assert.rejects(() => access(new URL("../lib/breakupStep.ts", import.meta.url)));
     assert.match(ledger, /## D327 — /);
     assert.match(ledger, /^\| D327 \|/m);
-    assert.match(canon, /Canon as of \*\*D327\*\*/);
+    assert.match(canon, /Canon as of \*\*D328\*\*/);
     assert.match(canon, /exactly \*\*2 messages\*\*/);
     assert.match(canon, /Monday–Thursday \*\*07:00–19:00 America\/New_York\*\*/);
     assert.match(canon, /Not America\/Chicago/);
@@ -19434,5 +19434,39 @@ describe("owner intent — D310 28-day rest and D311 reply-rate drop (LOCKED)", 
       assert.match(decisions, new RegExp(`## ${n} — `), `DECISIONS.md has no ${n} entry`);
       assert.match(decisions, new RegExp(`^\\| ${n} \\|`, "m"), `status index has no ${n} row (D127)`);
     }
+  });
+});
+
+describe("owner intent — D328 Ciotola signature is the name alone", () => {
+  it("D328: JEREMY-CIOTOLA signs as Jeremy Ciotola, not Name / SalesGlider", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const [canon, decisions, signature] = await Promise.all([
+      read("../../CANON.md"),
+      read("../../DECISIONS.md"),
+      read("../lib/mailboxSignature.ts"),
+    ]);
+    const { desiredMailboxSignature } = await import("../lib/mailboxSignature.js");
+    assert.equal(
+      desiredMailboxSignature({
+        fromName: "Jeremy Ciotola",
+        signature: "Jeremy Ciotola\nSalesGlider",
+        clientBrand: "SalesGlider",
+      }),
+      "Jeremy Ciotola",
+    );
+    assert.equal(
+      desiredMailboxSignature({
+        fromName: "Joshua Osborn",
+        clientBrand: "SalesGlider",
+      }),
+      "Joshua Osborn\nSalesGlider",
+    );
+    assert.match(signature, /return `\$\{name\}\\n\$\{brand\}`/);
+    assert.equal(signature.includes("Insight"), false);
+    assert.match(canon, /Canon as of \*\*D328\*\*/);
+    assert.match(canon, /exactly `Jeremy Ciotola`/);
+    assert.match(decisions, /## D328 — /);
+    assert.match(decisions, /^\| D328 \|/m);
   });
 });

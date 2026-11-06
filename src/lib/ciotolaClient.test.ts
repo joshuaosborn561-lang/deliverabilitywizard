@@ -9,7 +9,9 @@ import {
   ciotolaCrossoverCampaignIds,
   ciotolaExemptFromGenericTopUp,
   ciotolaExemptFromSenderTopUp,
+  CIOTOLA_MAILBOX_SIGNATURE,
   ciotolaMayAttach,
+  ciotolaNameOnlySignature,
   ciotolaOwnedClientId,
   ciotolaStrayCampaignIds,
   isCiotolaCampaign,
@@ -131,5 +133,18 @@ describe("D325 Ciotola / JEREMY-CIOTOLA isolation", () => {
       }),
       [4289735],
     );
+  });
+
+  it("names the mailbox signature as Jeremy Ciotola alone (D328)", () => {
+    assert.equal(CIOTOLA_MAILBOX_SIGNATURE, "Jeremy Ciotola");
+    assert.equal(
+      ciotolaNameOnlySignature({ account: jeremy, fromName: "J. Ciotola" }),
+      true,
+    );
+    assert.equal(
+      ciotolaNameOnlySignature({ account: reserved, fromName: "Gabe" }),
+      false,
+    );
+    assert.equal(ciotolaNameOnlySignature({ fromName: "Jeremy Ciotola" }), true);
   });
 });

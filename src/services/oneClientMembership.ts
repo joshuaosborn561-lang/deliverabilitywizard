@@ -36,6 +36,7 @@ import {
   canAttachMailboxToCampaign,
   mailboxIsExclusiveInsightStaff,
 } from "../lib/insightCampaigns.js";
+import { ciotolaNameOnlySignature } from "../lib/ciotolaClient.js";
 import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
 import {
   countStaffableMemberships,
@@ -457,6 +458,10 @@ export class OneClientMembershipService {
             signature: account.signature,
             clientBrand,
             otherClientBrands: allBrands.filter((brand) => brand !== clientBrand),
+            ciotolaSeat: ciotolaNameOnlySignature({
+              account,
+              fromName: account.from_name,
+            }),
           })
         : null;
       // D184 — do not rewrite exclusive Insight mailboxes to SalesGlider.

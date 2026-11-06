@@ -47,6 +47,29 @@ export const INSIGHT_MAILBOX_SIGNATURE_BLANK = "";
 /** Title line on the Insight mailbox signature (D255). */
 export const INSIGHT_MAILBOX_TITLE = "Strategic Account Executive";
 
+/**
+ * D329 — the only mailbox signature an Insight Josh seat may carry.
+ * Stored with newlines. `desiredMailboxSignature` must return this
+ * and must not collapse it to from_name + the title line.
+ */
+export const INSIGHT_CANON_MAILBOX_SIGNATURE = `Josh Osborn\n${INSIGHT_MAILBOX_TITLE}\nInsight`;
+
+/**
+ * D329 — Insight client 582890 (or a caller-supplied seat flag) whose
+ * sender is Josh / Joshua Osborn. The signature pass keeps
+ * `INSIGHT_CANON_MAILBOX_SIGNATURE` and does not rebuild from from_name.
+ */
+export function insightCanonSignatureSeat(input: {
+  clientId?: number | null;
+  fromName?: string | null;
+  insightSeat?: boolean;
+}): boolean {
+  const insight =
+    input.insightSeat === true || input.clientId === INSIGHT_CLIENT_ID;
+  if (!insight) return false;
+  return INSIGHT_JOSH_FROM_NAME.test((input.fromName ?? "").trim());
+}
+
 const INSIGHT_SECOND_BRANDS = ["SalesGlider", "SalesGlider Growth"];
 
 export function isInsightCampaignId(id: number | null | undefined): boolean {

@@ -19175,7 +19175,7 @@ describe("owner intent — D326 named POD rebalance even split", () => {
       { maxMoves: 50 },
     );
     assert.equal(plan.moves.length, 19);
-    assert.match(canon, /Canon as of \*\*D328\*\*/);
+    assert.match(canon, /Canon as of \*\*D329\*\*/);
     assert.match(canon, /supersedes D203 never-retag/);
     assert.match(canon, /BPLTG 21\/59/);
     assert.match(canon, /5\.7\.233/);
@@ -19238,7 +19238,7 @@ describe("owner intent — D327 two messages and Mon–Thu 7am–7pm ET", () => 
     await assert.rejects(() => access(new URL("../lib/breakupStep.ts", import.meta.url)));
     assert.match(ledger, /## D327 — /);
     assert.match(ledger, /^\| D327 \|/m);
-    assert.match(canon, /Canon as of \*\*D328\*\*/);
+    assert.match(canon, /Canon as of \*\*D329\*\*/);
     assert.match(canon, /exactly \*\*2 messages\*\*/);
     assert.match(canon, /Monday–Thursday \*\*07:00–19:00 America\/New_York\*\*/);
     assert.match(canon, /Not America\/Chicago/);
@@ -19464,9 +19464,53 @@ describe("owner intent — D328 Ciotola signature is the name alone", () => {
     );
     assert.match(signature, /return `\$\{name\}\\n\$\{brand\}`/);
     assert.equal(signature.includes("Insight"), false);
-    assert.match(canon, /Canon as of \*\*D328\*\*/);
+    assert.match(canon, /Canon as of \*\*D329\*\*/);
     assert.match(canon, /exactly `Jeremy Ciotola`/);
     assert.match(decisions, /## D328 — /);
     assert.match(decisions, /^\| D328 \|/m);
+  });
+});
+
+describe("owner intent — D329 Insight signature is the three-line close", () => {
+  it("D329: Insight Josh seats sign Josh Osborn / Strategic Account Executive / Insight", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const [canon, decisions] = await Promise.all([
+      read("../../CANON.md"),
+      read("../../DECISIONS.md"),
+    ]);
+    const { desiredMailboxSignature, mailboxSignatureMismatch } = await import(
+      "../lib/mailboxSignature.js"
+    );
+    const canonSig = "Josh Osborn\nStrategic Account Executive\nInsight";
+    assert.equal(
+      desiredMailboxSignature({
+        fromName: "Joshua Osborn",
+        signature: "Joshua Osborn\nStrategic Account Executive",
+        clientBrand: "SalesGlider",
+        insightSeat: true,
+      }),
+      canonSig,
+    );
+    assert.equal(
+      mailboxSignatureMismatch({
+        fromName: "Joshua Osborn",
+        signature: canonSig,
+        clientBrand: "Insight",
+        insightSeat: true,
+      }),
+      null,
+    );
+    assert.equal(
+      desiredMailboxSignature({
+        fromName: "Joshua Osborn",
+        clientBrand: "SalesGlider",
+      }),
+      "Joshua Osborn\nSalesGlider",
+    );
+    assert.match(canon, /Canon as of \*\*D329\*\*/);
+    assert.match(canon, /Strategic Account Executive/);
+    assert.match(decisions, /## D329 — /);
+    assert.match(decisions, /^\| D329 \|/m);
   });
 });

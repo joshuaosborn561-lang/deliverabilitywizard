@@ -51,6 +51,7 @@ import { inboxkitWorkspaceForClient } from "../lib/inboxkitClientSplit.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import {
   INSIGHT_MAILBOX_SIGNATURE_BLANK,
+  insightCanonSignatureSeat,
   insightDualSignatureMismatch,
   insightSenderEmail,
   isInsightCampaign,
@@ -1053,6 +1054,10 @@ export class CampaignCheckService {
               account,
               fromName: account.from_name,
             }),
+            insightSeat: insightCanonSignatureSeat({
+              clientId: account.client_id,
+              fromName: account.from_name,
+            }),
           });
           if (!desired) continue;
           const actual = extractSignatureLines(account.signature).join("\n");
@@ -1369,6 +1374,10 @@ export class CampaignCheckService {
           otherClientBrands: input.allBrands,
           ciotolaSeat: ciotolaNameOnlySignature({
             account,
+            fromName: account.from_name,
+          }),
+          insightSeat: insightCanonSignatureSeat({
+            clientId: account.client_id,
             fromName: account.from_name,
           }),
         });

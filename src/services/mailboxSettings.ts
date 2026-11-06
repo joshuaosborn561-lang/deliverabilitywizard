@@ -15,6 +15,7 @@ import {
   findForeignBrand,
 } from "../lib/clientBrand.js";
 import {
+  insightCanonSignatureSeat,
   mailboxIsExclusiveInsightStaff,
   mailboxStaffsActiveSalesGlider,
 } from "../lib/insightCampaigns.js";
@@ -233,6 +234,10 @@ export class MailboxSettingsService {
         otherClientBrands: otherBrands,
         ciotolaSeat: ciotolaNameOnlySignature({
           account,
+          fromName: account.from_name,
+        }),
+        insightSeat: insightCanonSignatureSeat({
+          clientId: account.client_id,
           fromName: account.from_name,
         }),
       });

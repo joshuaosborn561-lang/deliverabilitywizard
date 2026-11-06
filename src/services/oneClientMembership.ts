@@ -34,6 +34,7 @@ import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isolationEmailsOf, isIsolationEmail } from "../lib/isolationDomain.js";
 import {
   canAttachMailboxToCampaign,
+  insightCanonSignatureSeat,
   mailboxIsExclusiveInsightStaff,
 } from "../lib/insightCampaigns.js";
 import { ciotolaNameOnlySignature } from "../lib/ciotolaClient.js";
@@ -460,6 +461,10 @@ export class OneClientMembershipService {
             otherClientBrands: allBrands.filter((brand) => brand !== clientBrand),
             ciotolaSeat: ciotolaNameOnlySignature({
               account,
+              fromName: account.from_name,
+            }),
+            insightSeat: insightCanonSignatureSeat({
+              clientId: account.client_id,
               fromName: account.from_name,
             }),
           })

@@ -11,6 +11,7 @@ import {
 } from "../clients/smartlead.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import {
+  insightCanonSignatureSeat,
   insightDualSignatureMismatch,
   isInsightCampaign,
   mailboxActiveSalesGliderCampaigns,
@@ -454,6 +455,10 @@ export class CampaignAuditService {
                 otherClientBrands: input.allBrands,
                 ciotolaSeat: ciotolaNameOnlySignature({
                   account,
+                  fromName: account.from_name,
+                }),
+                insightSeat: insightCanonSignatureSeat({
+                  clientId: account.client_id,
                   fromName: account.from_name,
                 }),
               })

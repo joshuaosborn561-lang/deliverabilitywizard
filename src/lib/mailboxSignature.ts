@@ -9,7 +9,11 @@
 
 import { findForeignBrand } from "./clientBrand.js";
 import { CIOTOLA_MAILBOX_SIGNATURE } from "./ciotolaClient.js";
+import { INSIGHT_CANON_MAILBOX_SIGNATURE } from "./insightCampaigns.js";
 import { isCompanySenderName, isPlaceholderPersonName } from "./personaName.js";
+
+/** Josh / Joshua Osborn (D282 / D329). Kept here so this file does not name the client. */
+const JOSH_OSBORN_SENDER = /^josh(ua)?\s+osborn$/i;
 
 export { brandFromClientDisplayName } from "./clientBrand.js";
 
@@ -72,10 +76,18 @@ export function desiredMailboxSignature(opts: {
    * client 345263; do not append that brand.
    */
   ciotolaSeat?: boolean;
+  /**
+   * D329 — client 582890 Josh / Joshua Osborn seat. Signature is the
+   * three-line canon string, never from_name plus the title line.
+   */
+  insightSeat?: boolean;
 }): string | null {
   const name = (opts.fromName ?? "").trim();
   if (opts.ciotolaSeat || name === CIOTOLA_MAILBOX_SIGNATURE) {
     return CIOTOLA_MAILBOX_SIGNATURE;
+  }
+  if (opts.insightSeat && JOSH_OSBORN_SENDER.test(name)) {
+    return INSIGHT_CANON_MAILBOX_SIGNATURE;
   }
   if (!name) return null;
   const brand = resolveSignatureBrand(opts);
@@ -101,6 +113,8 @@ export function mailboxSignatureMismatch(opts: {
   otherClientBrands?: string[];
   /** D328 — see desiredMailboxSignature. */
   ciotolaSeat?: boolean;
+  /** D329 — see desiredMailboxSignature. */
+  insightSeat?: boolean;
 }): string | null {
   // D321 — a blank or placeholder sender name is a mismatch, never "in sync".
   // (The company name as the sender is fine: Josh, "just send as the company".)

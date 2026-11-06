@@ -160,6 +160,64 @@ describe("mailboxSignature", () => {
     );
   });
 
+  it("keeps the three-line Josh Osborn signature on an Insight seat (D329)", () => {
+    const canon = "Josh Osborn\nStrategic Account Executive\nInsight";
+    assert.equal(
+      desiredMailboxSignature({
+        fromName: "Joshua Osborn",
+        signature: canon,
+        clientBrand: "SalesGlider",
+        otherClientBrands: ["SalesGlider", "Insight", "Emcor"],
+        insightSeat: true,
+      }),
+      canon,
+    );
+    assert.equal(
+      desiredMailboxSignature({
+        fromName: "Josh Osborn",
+        signature: "Joshua Osborn\nStrategic Account Executive",
+        clientBrand: "Insight",
+        insightSeat: true,
+      }),
+      canon,
+    );
+    assert.equal(
+      mailboxSignatureMismatch({
+        fromName: "Joshua Osborn",
+        signature: canon,
+        clientBrand: "Insight",
+        insightSeat: true,
+      }),
+      null,
+    );
+    assert.match(
+      mailboxSignatureMismatch({
+        fromName: "Joshua Osborn",
+        signature: "Joshua Osborn\nStrategic Account Executive",
+        clientBrand: "Insight",
+        insightSeat: true,
+      }) ?? "",
+      /want Josh Osborn \/ Strategic Account Executive \/ Insight/,
+    );
+    assert.equal(
+      desiredMailboxSignature({
+        fromName: "Joshua Osborn",
+        signature: canon,
+        clientBrand: "SalesGlider",
+      }),
+      "Joshua Osborn\nStrategic Account Executive",
+    );
+    assert.equal(
+      desiredMailboxSignature({
+        fromName: "Owen Sanchez",
+        signature: "",
+        clientBrand: "Insight",
+        insightSeat: true,
+      }),
+      "Owen Sanchez\nInsight",
+    );
+  });
+
   it("strips person suffix from client display names", () => {
     assert.equal(
       brandFromClientDisplayName("Bolder Cyber Partners (Mike Trpkosh)"),

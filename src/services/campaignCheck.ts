@@ -62,7 +62,11 @@ import {
   mailboxStaffsActiveSalesGlider,
 } from "../lib/insightCampaigns.js";
 import { isGabeVmReserved } from "../lib/canaryLock.js";
-import { isCiotolaCampaign, isJeremyCiotolaSeat } from "../lib/ciotolaClient.js";
+import {
+  ciotolaNameOnlySignature,
+  isCiotolaCampaign,
+  isJeremyCiotolaSeat,
+} from "../lib/ciotolaClient.js";
 import {
   callerFollowUpAlertKey,
   callerFollowUpBridgeRemovalAlert,
@@ -1045,6 +1049,10 @@ export class CampaignCheckService {
             signature: account.signature,
             clientBrand: input.brand,
             otherClientBrands: input.otherClientBrands,
+            ciotolaSeat: ciotolaNameOnlySignature({
+              account,
+              fromName: account.from_name,
+            }),
           });
           if (!desired) continue;
           const actual = extractSignatureLines(account.signature).join("\n");
@@ -1359,6 +1367,10 @@ export class CampaignCheckService {
           signature: account.signature,
           clientBrand: expected,
           otherClientBrands: input.allBrands,
+          ciotolaSeat: ciotolaNameOnlySignature({
+            account,
+            fromName: account.from_name,
+          }),
         });
         if (mismatch) {
           findings.push({

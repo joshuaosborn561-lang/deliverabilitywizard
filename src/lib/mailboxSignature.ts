@@ -8,6 +8,7 @@
  */
 
 import { findForeignBrand } from "./clientBrand.js";
+import { CIOTOLA_MAILBOX_SIGNATURE } from "./ciotolaClient.js";
 import { isCompanySenderName, isPlaceholderPersonName } from "./personaName.js";
 
 export { brandFromClientDisplayName } from "./clientBrand.js";
@@ -65,8 +66,17 @@ export function desiredMailboxSignature(opts: {
   signature?: string | null;
   clientBrand?: string | null;
   otherClientBrands?: string[];
+  /**
+   * D328 — JEREMY-CIOTOLA tag (or the Ciotola sender name). The
+   * signature is the name alone. These seats sit under SalesGlider
+   * client 345263; do not append that brand.
+   */
+  ciotolaSeat?: boolean;
 }): string | null {
   const name = (opts.fromName ?? "").trim();
+  if (opts.ciotolaSeat || name === CIOTOLA_MAILBOX_SIGNATURE) {
+    return CIOTOLA_MAILBOX_SIGNATURE;
+  }
   if (!name) return null;
   const brand = resolveSignatureBrand(opts);
   // Real-persona rule: never stamp "<placeholder name>\n<brand>" — that
@@ -89,6 +99,8 @@ export function mailboxSignatureMismatch(opts: {
   signature?: string | null;
   clientBrand?: string | null;
   otherClientBrands?: string[];
+  /** D328 — see desiredMailboxSignature. */
+  ciotolaSeat?: boolean;
 }): string | null {
   // D321 — a blank or placeholder sender name is a mismatch, never "in sync".
   // (The company name as the sender is fine: Josh, "just send as the company".)

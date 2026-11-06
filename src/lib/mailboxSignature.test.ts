@@ -107,6 +107,59 @@ describe("mailboxSignature", () => {
     );
   });
 
+  it("signs a JEREMY-CIOTOLA seat as the name alone (D328)", () => {
+    assert.equal(
+      desiredMailboxSignature({
+        fromName: "Jeremy Ciotola",
+        signature: "Jeremy Ciotola\nSalesGlider",
+        clientBrand: "SalesGlider",
+        otherClientBrands: ["SalesGlider", "Insight", "Emcor"],
+      }),
+      "Jeremy Ciotola",
+    );
+    assert.equal(
+      desiredMailboxSignature({
+        fromName: "J. Ciotola",
+        signature: "",
+        clientBrand: "SalesGlider",
+        ciotolaSeat: true,
+      }),
+      "Jeremy Ciotola",
+    );
+    assert.equal(
+      mailboxSignatureMismatch({
+        fromName: "Jeremy Ciotola",
+        signature: "Jeremy Ciotola",
+        clientBrand: "SalesGlider",
+      }),
+      null,
+    );
+    assert.match(
+      mailboxSignatureMismatch({
+        fromName: "Jeremy Ciotola",
+        signature: "Jeremy Ciotola\nSalesGlider",
+        clientBrand: "SalesGlider",
+      }) ?? "",
+      /want Jeremy Ciotola\)$/,
+    );
+    assert.equal(
+      desiredMailboxSignature({
+        fromName: "Joshua Osborn",
+        signature: "",
+        clientBrand: "SalesGlider",
+      }),
+      "Joshua Osborn\nSalesGlider",
+    );
+    assert.equal(
+      desiredMailboxSignature({
+        fromName: "Alicia Sheridan",
+        signature: "Alicia Sheridan\nEmcor Mesa Energy Systems",
+        clientBrand: "Emcor",
+      }),
+      "Alicia Sheridan\nEmcor Mesa Energy Systems",
+    );
+  });
+
   it("strips person suffix from client display names", () => {
     assert.equal(
       brandFromClientDisplayName("Bolder Cyber Partners (Mike Trpkosh)"),

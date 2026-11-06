@@ -18,6 +18,8 @@
  * placeholder ("Pool User") is never written. Nothing here invents a name.
  */
 
+import { CIOTOLA_MAILBOX_SIGNATURE } from "./ciotolaClient.js";
+
 /** Whole-word tokens that mark a name as a placeholder, not a person. */
 export const PLACEHOLDER_NAME_TOKENS: readonly string[] = [
   "pool",
@@ -178,9 +180,16 @@ export function resolveSendIdentity(input: {
   });
   if (persona) {
     const fromName = `${persona.firstName} ${persona.lastName}`.trim();
+    // D328 — Ciotola sender identity signs with the name alone.
+    const signature =
+      fromName === CIOTOLA_MAILBOX_SIGNATURE
+        ? CIOTOLA_MAILBOX_SIGNATURE
+        : brand
+          ? `${fromName}\n${brand}`
+          : fromName;
     return {
       fromName,
-      signature: brand ? `${fromName}\n${brand}` : fromName,
+      signature,
       firstName: persona.firstName,
       lastName: persona.lastName,
       source: persona.source,

@@ -19,6 +19,7 @@ import {
   mailboxStaffsActiveSalesGlider,
 } from "../lib/insightCampaigns.js";
 import { isGabeVmReserved, isLockedCanarySeat } from "../lib/canaryLock.js";
+import { ciotolaNameOnlySignature } from "../lib/ciotolaClient.js";
 import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
 import { signatureHay } from "../lib/signatureQa.js";
 import type { SmartleadCampaign } from "../types/index.js";
@@ -230,6 +231,10 @@ export class MailboxSettingsService {
         signature: account.signature,
         clientBrand,
         otherClientBrands: otherBrands,
+        ciotolaSeat: ciotolaNameOnlySignature({
+          account,
+          fromName: account.from_name,
+        }),
       });
       // D184 — exclusive Insight staff: do not converge back to
       // SalesGlider. Mailboxes on ACTIVE SG campaigns are never

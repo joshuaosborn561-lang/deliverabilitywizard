@@ -501,3 +501,33 @@ export function ownedPodMap(
   for (const row of rows) out.set(clientPodKey(row.clientId, row.pod), row);
   return out;
 }
+
+/**
+ * Approved understaffed exceptions: a POD at or above `minOwned` owned
+ * senders is accepted short of the floor and not raised as a finding.
+ * Add a row only with Cayden's approval and say who/when in `note`.
+ */
+export const ACCEPTED_UNDERSTAFFED: ReadonlyArray<{
+  clientId: number;
+  pod?: string;
+  minOwned: number;
+  note: string;
+}> = [
+  {
+    clientId: 582890,
+    minOwned: 39,
+    note: "Insight at 39/40 accepted — Cayden, 2026-11-05",
+  },
+];
+
+export function isAcceptedUnderstaffed(
+  row: Pick<OwnedPodCount, "clientId" | "pod" | "owned">,
+  exceptions = ACCEPTED_UNDERSTAFFED,
+): boolean {
+  return exceptions.some(
+    (rule) =>
+      rule.clientId === row.clientId &&
+      (rule.pod == null || String(rule.pod) === String(row.pod)) &&
+      row.owned >= rule.minOwned,
+  );
+}

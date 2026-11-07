@@ -11,6 +11,7 @@ import {
 } from "../clients/smartlead.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import {
+  insightCanonSignatureSeat,
   insightDualSignatureMismatch,
   isInsightCampaign,
   mailboxActiveSalesGliderCampaigns,
@@ -22,6 +23,7 @@ import {
   formatPodUnderstaffedDetail,
   type OwnedPodCount,
 } from "../lib/podOwnedInventory.js";
+import { ciotolaNameOnlySignature } from "../lib/ciotolaClient.js";
 import { mailboxSignatureMismatch } from "../lib/mailboxSignature.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
@@ -451,6 +453,14 @@ export class CampaignAuditService {
                 signature: account.signature,
                 clientBrand: expected,
                 otherClientBrands: input.allBrands,
+                ciotolaSeat: ciotolaNameOnlySignature({
+                  account,
+                  fromName: account.from_name,
+                }),
+                insightSeat: insightCanonSignatureSeat({
+                  clientId: account.client_id,
+                  fromName: account.from_name,
+                }),
               })
             : null;
         if (!mismatch) continue;

@@ -865,3 +865,12 @@ describe("podOwnedInventory (D285)", () => {
     }), CIOTOLA_CLIENT_ID);
   });
 });
+
+describe("accepted understaffed exceptions", () => {
+  it("accepts Insight at 39 owned, not 38, and never another client", async () => {
+    const { isAcceptedUnderstaffed } = await import("./podOwnedInventory.js");
+    assert.equal(isAcceptedUnderstaffed({ clientId: 582890, pod: "A", owned: 39 }), true);
+    assert.equal(isAcceptedUnderstaffed({ clientId: 582890, pod: "B", owned: 38 }), false);
+    assert.equal(isAcceptedUnderstaffed({ clientId: 418274, pod: "A", owned: 39 }), false);
+  });
+});

@@ -137,6 +137,14 @@ async function loadToday() {
       const td = document.createElement("td");
       if (cell.idle) {
         td.append(make("span", "mark idle", "—"));
+      } else if (cell.ok && cell.pending) {
+        const mark = make("span", "mark idle", "…");
+        mark.title = `${cell.pending} placement test(s) still running`;
+        td.append(mark);
+      } else if (cell.ok && cell.info) {
+        const mark = make("span", "mark ok", "✓ i");
+        mark.title = `${cell.info} informational note(s), e.g. idle generics`;
+        td.append(mark);
       } else if (cell.ok) {
         td.append(make("span", "mark ok", "✓"));
       } else {
@@ -202,7 +210,15 @@ function loadTodayFromCache() {
       const cell = client.cells[column.id];
       const td = document.createElement("td");
       if (cell.idle) td.append(make("span", "mark idle", "—"));
-      else if (cell.ok) td.append(make("span", "mark ok", "✓"));
+      else if (cell.ok && cell.pending) {
+        const mark = make("span", "mark idle", "…");
+        mark.title = `${cell.pending} placement test(s) still running`;
+        td.append(mark);
+      } else if (cell.ok && cell.info) {
+        const mark = make("span", "mark ok", "✓ i");
+        mark.title = `${cell.info} informational note(s), e.g. idle generics`;
+        td.append(mark);
+      } else if (cell.ok) td.append(make("span", "mark ok", "✓"));
       else {
         const button = make("button", "mark bad", "✕");
         button.type = "button";

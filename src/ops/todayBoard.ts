@@ -31,6 +31,10 @@ export interface TodayCell {
   ok: boolean;
   /** No calling or LinkedIn lane for this client. Not a pass and not a fail. */
   idle?: boolean;
+  /** Placement tests still running (no score yet). Grey, not a fail. */
+  pending?: number;
+  /** Informational findings (e.g. idle generics). Not a fail. */
+  info?: number;
   failures: TodayFailure[];
 }
 
@@ -111,7 +115,18 @@ interface ClientBucket {
   clientId: string;
   clientName: string;
   failures: Map<TodayColumnId, TodayFailure[]>;
+  pending: Map<TodayColumnId, number>;
+  info: Map<TodayColumnId, number>;
 }
+
+/**
+ * Findings shown as information, never a red: an idle generic is spare
+ * capacity in the pool, not a broken client.
+ */
+export const TODAY_INFO_KINDS: ReadonlySet<string> = new Set(["generic_idle"]);
+
+/** A placement snapshot older than this is not shown on Today at all. */
+export const TODAY_PLACEMENT_SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
 const COLUMN_KINDS: Record<TodayColumnId, readonly string[]> = {
   pods: ["understaffed"],
@@ -296,6 +311,8 @@ export function buildTodayBoard(input: {
   campaigns?: TodayCampaignRef[];
   clients?: SmartleadClientRecord[];
   placements?: TodayPlacementRow[];
+  /** generatedAt of the placement snapshot; stale snapshots are skipped. */
+  placementsGeneratedAt?: string | null;
   isolation?: TodayIsolationHit[];
   callingLanes?: TodayLaneHit[];
   linkedinLanes?: TodayLaneHit[];
@@ -341,6 +358,8 @@ export function buildTodayBoard(input: {
       clientId,
       clientName,
       failures: new Map(),
+      pending: new Map(),
+      info: new Map(),
     };
     buckets.set(clientId, created);
     return created;
@@ -380,6 +399,11 @@ export function buildTodayBoard(input: {
       const column = columnForKind(kind);
       if (!column) continue;
       const detail = finding.slice(kind.length + 1).trim() || finding;
+      if (TODAY_INFO_KINDS.has(kind)) {
+        const infoBucket = bucketFor(who.clientId, who.clientName);
+        infoBucket.info.set(column, (infoBucket.info.get(column) ?? 0) + 1);
+        continue;
+      }
       const action = actionFor(kind);
       pushFailure(who.clientId, who.clientName, column, {
         id: `${record.campaignId}:${kind}:${detail}`.slice(0, 180),
@@ -402,6 +426,11 @@ export function buildTodayBoard(input: {
         })
       : [];
     for (const target of targets) {
+      if (TODAY_INFO_KINDS.has(kind)) {
+        const infoBucket = bucketFor(target.clientId, target.clientName);
+        infoBucket.info.set(column, (infoBucket.info.get(column) ?? 0) + 1);
+        continue;
+      }
       const action = actionFor(kind);
       pushFailure(target.clientId, target.clientName, column, {
         id: `pool:${kind}:${detail}`.slice(0, 180),
@@ -411,19 +440,29 @@ export function buildTodayBoard(input: {
     }
   }
 
-  for (const row of input.placements ?? []) {
+  // A test with no score yet is still running: grey "pending", never a
+  // red. Only ACTIVE campaigns count, and a stale snapshot (the
+  // Placements tab not opened for hours) is skipped rather than shown.
+  const snapshotMs = input.placementsGeneratedAt
+    ? Date.parse(input.placementsGeneratedAt)
+    : Number.NaN;
+  const snapshotFresh =
+    !input.placementsGeneratedAt ||
+    (Number.isFinite(snapshotMs) &&
+      now.getTime() - snapshotMs <= TODAY_PLACEMENT_SNAPSHOT_MAX_AGE_MS);
+  for (const row of snapshotFresh ? (input.placements ?? []) : []) {
     if (!placementStillUnknown(row) || row.campaignId == null) continue;
+    if (input.statusById) {
+      const status = String(input.statusById.get(row.campaignId) ?? "").toUpperCase();
+      if (status !== "ACTIVE") continue;
+    }
     const who = resolveCampaign(
       row.campaignId,
       row.campaignName || `Campaign ${row.campaignId}`,
     );
     if (!who) continue;
-    const action = actionFor("placement_unknown");
-    pushFailure(who.clientId, who.clientName, "placement", {
-      id: `placement-unknown:${row.id}`,
-      text: `${row.campaignName || `Campaign ${row.campaignId}`}: placement status unknown`,
-      ...action,
-    });
+    const bucket = bucketFor(who.clientId, who.clientName);
+    bucket.pending.set("placement", (bucket.pending.get("placement") ?? 0) + 1);
   }
 
   const laneHits = { calling: new Set<string>(), linkedin: new Set<string>() };
@@ -487,7 +526,14 @@ export function buildTodayBoard(input: {
         const laneBacked = column.id === "calling" || column.id === "linkedin";
         const supplied = laneBacked && (column.id === "calling" ? input.callingLanes : input.linkedinLanes);
         const idle = Boolean(supplied && !laneHits[column.id as "calling" | "linkedin"].has(bucket.clientId) && failures.length === 0);
-        cells[column.id] = { ok: failures.length === 0, idle, failures };
+        const pending = bucket.pending.get(column.id) ?? 0;
+        cells[column.id] = {
+          ok: failures.length === 0,
+          idle,
+          ...(pending && failures.length === 0 ? { pending } : {}),
+          ...(bucket.info.get(column.id) ? { info: bucket.info.get(column.id) } : {}),
+          failures,
+        };
       }
       return {
         clientId: bucket.clientId,

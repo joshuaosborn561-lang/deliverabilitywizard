@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D327** (2026-11-05). One page of current truth. When a new
+Canon as of **D329** (2026-11-06). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -9,6 +9,10 @@ guard in `src/guards/meta.test.ts` enforces both).
 and every reversal, and most of it is **superseded**. Do not derive behaviour
 from it. Derive behaviour from this file; use the ledger only to understand
 *why* a rule here exists (each rule cites its decision numbers).
+
+**D329.** An Insight seat (Smartlead client 582890) whose sender is Josh Osborn or Joshua Osborn has mailbox signature exactly `Josh Osborn` / `Strategic Account Executive` / `Insight` (newlines). The signature pass must not rebuild that as `from_name` plus the title line. `desiredMailboxSignature` and `mailboxSignatureMismatch` treat that three-line string as the target and as in sync. Other clients are unchanged, including SalesGlider `Name\nSalesGlider` and the D328 Ciotola name-only signature. LOCKED section unchanged.
+
+**D328.** A mailbox tagged `JEREMY-CIOTOLA` (tag id 533700), or whose sender name is exactly `Jeremy Ciotola`, has mailbox signature exactly `Jeremy Ciotola`. No SalesGlider line and no other brand line. These seats still sit under Smartlead client 345263; the signature pass must not rebuild `Name\nSalesGlider` for them. Every other client is unchanged: SalesGlider stays `Name\nSalesGlider`, Insight stays `Josh Osborn` / `Strategic Account Executive` / `Insight`, EMCOR keeps its existing brand line, and `Calls |` plus Booking Follow Up keep their exemptions. LOCKED section unchanged.
 
 **D327.** Sequences are exactly two messages. There is no third message: do not build one, do not require one, and do not flag a missing step 3. Step 2 still waits 2 days (D186). Campaign-check does not write sequence copy to add or remove a step; live copy that already has a third step is left alone. The standing send window is Monday–Thursday **07:00–19:00 America/New_York** (D327 moves D182's 08:00 start to 07:00). Not America/Chicago. No Friday. Eligible campaigns converge onto that window. Campaigns whose names contain `Calls |`, Booking Follow Up campaigns, and test campaigns keep their own windows. Shells, canaries, word-hunt, and STOPPED stay skipped. Never the status endpoint. LOCKED section unchanged.
 
@@ -293,7 +297,15 @@ Caps ramp manually (35 on Oct 12).
   class senders (`GABE-VM-RESERVED` today) skip that cap write —
   their `message_per_day` is manual (D241/D242). warmup ON for every mailbox **except the
   canary fleet, which is forced OFF** (D83), plain two-line signature
-  `First Last\n{Client Brand}` (D31). On a living campaign, an empty,
+  `First Last\n{Client Brand}` (D31). **D328:** a `JEREMY-CIOTOLA`
+  seat, or a sender named exactly `Jeremy Ciotola`, signs with
+  `Jeremy Ciotola` alone — never `Jeremy Ciotola\nSalesGlider`.
+  **D329:** an Insight client 582890 seat sending as Josh Osborn or
+  Joshua Osborn signs with exactly `Josh Osborn` /
+  `Strategic Account Executive` / `Insight`. The signature pass
+  must not collapse that to `Joshua Osborn` / `Strategic Account
+  Executive`.
+  On a living campaign, an empty,
   one-line, extra-line, or foreign-client signature is a `mailbox_sig`
   finding and is **written on that check pass** (D74/D125) — never left
   waiting for the 6-hour converge. **Insight sequences get

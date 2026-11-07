@@ -11,6 +11,7 @@ import {
   CampaignScanner,
   dropSendersFromBatches,
   interleaveSendersByEsp,
+  isCampaignSequenceNotFoundError,
   OPEN_ENDED_TEST_DAYS,
   parseSendersNotUsedInCampaign,
   schedulerCronValue,
@@ -35,6 +36,22 @@ describe("parseSendersNotUsedInCampaign", () => {
       parseSendersNotUsedInCampaign("No seed accounts found for the provided provider IDs"),
       null,
     );
+  });
+});
+
+describe("isCampaignSequenceNotFoundError", () => {
+  it("matches the SmartDelivery missing-sequence refusal", () => {
+    assert.equal(
+      isCampaignSequenceNotFoundError("Campaign sequence not found"),
+      true,
+    );
+    assert.equal(
+      isCampaignSequenceNotFoundError(
+        "Failed creating tests for campaign 4289737: Campaign sequence not found",
+      ),
+      true,
+    );
+    assert.equal(isCampaignSequenceNotFoundError("No seed accounts found"), false);
   });
 });
 
@@ -623,6 +640,60 @@ describe("CampaignScanner — status re-check before creation", () => {
     assert.equal(result.quotaBlocked, true);
     assert.equal(created.length, 0);
     assert.equal(quotaNotices, 1);
+  });
+
+  it("soft-skips when SmartDelivery says campaign sequence not found", async () => {
+    const config = loadConfig({});
+    let createCalls = 0;
+
+    const smartlead = {
+      listCampaigns: async () => [
+        campaign(4289737, "ACTIVE"),
+        campaign(101, "ACTIVE"),
+      ],
+      getCampaignEmailAccounts: async () => [
+        { id: 10, from_email: "sender@example.com" },
+      ],
+      getCampaignSequences: async () => [
+        { id: 500, seq_number: 1, subject: "Hi" },
+      ],
+    } as unknown as SmartleadClient;
+
+    const smartDelivery = {
+      assertAccessActive: async () => "ok",
+      listTests: async () => [],
+      enrichCampaignIds: async <T,>(tests: T[]) => tests,
+      resolveProviderIds: async () => [],
+      createAutomatedPlacement: async (input: { campaign_id?: number }) => {
+        createCalls += 1;
+        if (input.campaign_id === 4289737) {
+          throw new Error("Campaign sequence not found");
+        }
+        return { id: "ok-101" };
+      },
+      createManualPlacement: async () => ({ id: "manual-id" }),
+    } as unknown as SmartDeliveryClient;
+
+    const result = await new CampaignScanner(
+      config,
+      smartlead,
+      smartDelivery,
+      fakeSlack(),
+      fakeState(),
+    ).run({ trigger: "manual" });
+
+    assert.equal(
+      createCalls,
+      2,
+      "must continue to the next campaign after a sequence-not-found skip",
+    );
+    assert.equal(result.created, 1);
+    assert.ok(result.skipped >= 1);
+    assert.equal(
+      result.errors.length,
+      0,
+      "sequence-not-found must not land in result.errors (remediator noise)",
+    );
   });
 });
 

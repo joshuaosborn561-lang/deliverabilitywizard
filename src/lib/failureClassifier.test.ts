@@ -178,6 +178,25 @@ describe("classifyFailure", () => {
     assert.match(c.summary, /one-ESP/i);
   });
 
+  it("treats Campaign sequence not found as non-remediable noise", () => {
+    // Production fingerprint was collapsing to
+    // unknown:scan:scan-failed-creating-tests-for-campaign-n-campai.
+    const c = classifyFailure(
+      "scan",
+      "Failed creating tests for campaign 4289737: Campaign sequence not found",
+    );
+    assert.equal(c.class, "noise");
+    assert.equal(c.autoRemediate, false);
+    assert.equal(c.fingerprint, "noise:scan-sequence-missing");
+    assert.match(c.summary, /sequence mapping/i);
+
+    const other = classifyFailure(
+      "scan",
+      "Failed creating tests for campaign 999999: Campaign sequence not found",
+    );
+    assert.equal(other.fingerprint, c.fingerprint);
+  });
+
   it("treats denied/pending teardown approval as non-remediable noise", () => {
     const denied = classifyFailure(
       "remediation",

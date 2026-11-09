@@ -236,6 +236,31 @@ export function noteStaffableDetach(
   );
 }
 
+/** Mirror of noteStaffableDetach for a confirmed on-week attach (D330). */
+export function noteStaffableAttach(
+  counts: Map<number, number>,
+  campaignId: number,
+  account: Pick<
+    SmartleadEmailAccount,
+    | "is_smtp_success"
+    | "is_imap_success"
+    | "warmup_details"
+    | "type"
+    | "from_email"
+    | "email"
+    | "tags"
+  >,
+  email: string,
+  state: PeelStaffableState = {},
+): void {
+  if (!accountIsPeelStaffable(account, email, state)) return;
+  const weight = mailboxStaffableWeight(account);
+  counts.set(
+    campaignId,
+    roundStaffableWeight((counts.get(campaignId) ?? 0) + weight),
+  );
+}
+
 /**
  * True when taking one more *staffable* seat off this campaign would
  * break the standing 40 (D197/D199/D207). `remainingBeforeDetach` is

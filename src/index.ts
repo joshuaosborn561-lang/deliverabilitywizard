@@ -116,6 +116,7 @@ import { CampaignBounceAutostopService } from "./services/campaignBounceAutostop
 import { parseSchedules } from "./services/sendVolume.js";
 import { ClientDayBriefService } from "./services/clientDayBrief.js";
 import { ClientRestService } from "./services/clientRest.js";
+import { podSwapSignal } from "./lib/podSwapProgress.js";
 import { GenericSendRestService } from "./services/genericSendRest.js";
 import { MailboxSettingsService } from "./services/mailboxSettings.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
@@ -1003,10 +1004,10 @@ async function main(): Promise<void> {
     const restResult = config.enableClientRest
       ? await stage(
           "client-rest",
-          () =>
+          (signal) =>
             (weekendIdle
               ? Promise.resolve({ skipped: true as const, reason: weekendIdle })
-              : clientRest.run({ inventory, joshLive })) as Promise<unknown>,
+              : clientRest.run({ inventory, joshLive, signal })) as Promise<unknown>,
           {
             skipIfFreshMs,
             skipIfBeforeStage,
@@ -3432,7 +3433,15 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       ...currentDeployState(),
       mutationQueue: mutationQueue.snapshot(),
       smartleadLimiter: smartlead.limiterSnapshot(),
+      podSwap: podSwapSignal(s.podSwap),
     });
+  });
+
+  // D330 — campaign-watchdog and the other Smartlead callers read this
+  // while a weekly POD swap is unfinished and back off. Same object as
+  // /health podSwap.
+  app.get("/pod-swap", (_req, res) => {
+    res.json(podSwapSignal(state.get().podSwap));
   });
 
   app.get("/status", (req, res) => {

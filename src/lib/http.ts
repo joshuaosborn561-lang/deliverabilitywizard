@@ -6,6 +6,37 @@ import { parseFileOffThread } from "./jsonOffThread.js";
 import { pauseWhileSlackInteraction } from "./healthCpuPause.js";
 import { yieldEventLoop } from "./stringifyYielding.js";
 
+/**
+ * D330 — cap a Retry-After wait so one header cannot pin a stage
+ * for the rest of the hour. Smartlead's bucket is one minute;
+ * two minutes covers the header without outrunning the 15-minute
+ * client-rest ceiling on a single call.
+ */
+export const RETRY_AFTER_CAP_MS = 120_000;
+
+/**
+ * Parse a Retry-After header (delta-seconds or HTTP-date) into a
+ * millisecond delay. Undefined when the header is missing or not
+ * a delay we can read.
+ */
+export function retryAfterDelayMs(
+  header: string | null | undefined,
+  now = Date.now(),
+): number | undefined {
+  if (header == null) return undefined;
+  const raw = header.trim();
+  if (!raw) return undefined;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(Math.round(seconds * 1000), RETRY_AFTER_CAP_MS);
+  }
+  const date = Date.parse(raw);
+  if (Number.isFinite(date)) {
+    return Math.min(Math.max(0, date - now), RETRY_AFTER_CAP_MS);
+  }
+  return undefined;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -221,12 +252,20 @@ export async function apiRequest<T>(
           });
 
       if (transient) {
+        const exponential = Math.min(30_000, 500 * 2 ** attempt);
+        const headerMs =
+          response.status === 429
+            ? retryAfterDelayMs(response.headers.get("retry-after"))
+            : undefined;
+        // D330 — a 429 with Retry-After waits that long (capped).
+        // The shared limiter learns the same delay so the rest of
+        // the process backs off with this call.
+        const backoff = headerMs != null ? headerMs : exponential;
         if (response.status === 429) {
           logSmartleadRateLimit(baseUrl, method, path);
-          onRateLimit?.(Math.min(30_000, 500 * 2 ** attempt));
+          onRateLimit?.(backoff);
         }
         if (attempt < retries) {
-          const backoff = Math.min(30_000, 500 * 2 ** attempt);
           await sleep(backoff, signal);
           continue;
         }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { apiRequest } from "./http.js";
+import { apiRequest, RETRY_AFTER_CAP_MS, retryAfterDelayMs } from "./http.js";
 
 const originalFetch = globalThis.fetch;
 
@@ -176,6 +176,55 @@ describe("apiRequest timeouts", () => {
       },
     );
     assert.equal(fetches, 1, "a cancelled stage must not retry the hung fetch");
+  });
+});
+
+describe("D330 Retry-After", () => {
+  it("reads delta-seconds and HTTP-date, and caps a huge wait", () => {
+    assert.equal(retryAfterDelayMs("2"), 2_000);
+    assert.equal(retryAfterDelayMs("0"), 0);
+    assert.equal(retryAfterDelayMs(null), undefined);
+    assert.equal(retryAfterDelayMs("not-a-date"), undefined);
+    const later = new Date(Date.now() + 5_000).toUTCString();
+    const delay = retryAfterDelayMs(later);
+    assert.ok(delay != null && delay >= 4_000 && delay <= 6_000, String(delay));
+    assert.equal(retryAfterDelayMs("999999"), RETRY_AFTER_CAP_MS);
+  });
+
+  it("waits the Retry-After delay and tells the limiter", async () => {
+    let calls = 0;
+    let pausedFor: number | undefined;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(JSON.stringify({ message: "rate limited" }), {
+          status: 429,
+          headers: {
+            "Content-Type": "application/json",
+            "Retry-After": "0",
+          },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const body = await apiRequest<{ ok: boolean }>(
+      "https://server.smartlead.ai/api/v1/",
+      "key",
+      "campaigns/1/email-accounts",
+      {
+        retries: 1,
+        onRateLimit: (ms) => {
+          pausedFor = ms;
+        },
+      },
+    );
+    assert.equal(body.ok, true);
+    assert.equal(calls, 2);
+    assert.equal(pausedFor, 0);
   });
 });
 

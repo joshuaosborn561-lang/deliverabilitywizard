@@ -29,6 +29,7 @@ import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import {
   assignClientCohorts,
   isOffWeek,
+  isoWeekNumberNy,
   onWeekCohort,
   type RestCohort,
 } from "../lib/restCohort.js";
@@ -43,6 +44,7 @@ import {
 import {
   countStaffableMemberships,
   detachWouldBreakStaffableFloor,
+  noteStaffableAttach,
   noteStaffableDetach,
   ON_WEEK_MIN_SENDERS,
 } from "../lib/clientStaffFloor.js";
@@ -50,6 +52,7 @@ import { isExcluded } from "./campaignTopUp.js";
 import {
   dropMembership,
   fetchInventory,
+  isSmartleadRateLimit,
   recordMembership,
   type InventorySnapshot,
 } from "./inventory.js";
@@ -58,6 +61,14 @@ import {
   clientIdFromRestGroupKey,
   isPodRotationSkippedClient,
 } from "../lib/podRotation.js";
+import {
+  POD_SWAP_PASS_BUDGET_MS,
+  freshPodSwap,
+  podSwapAttachKey,
+  podSwapDetachKey,
+  podSwapForWeek,
+  type PodSwapProgress,
+} from "../lib/podSwapProgress.js";
 
 /**
  * D43 — per-client A/B rest. Half of that client's inboxes sit for two
@@ -85,11 +96,18 @@ import {
  * holds: Insight staff never restore onto ACTIVE SalesGlider,
  * and ACTIVE SG staff never restore onto Insight.
  *
+ * D330 — for each campaign, attach the on-week pod and confirm
+ * those adds before any off-week detach. A budget stop or a 429
+ * saves a cursor and resumes; it does not empty the campaign
+ * first. The 15-minute stage ceiling stays (D317). While the
+ * swap is unfinished, state.podSwap / GET /pod-swap say so.
+ *
  * D197 / D199 / D207 / D209 / D228 — the on-week campaign floor
  * stays ≥40 *on-week* staffable senders. Off-week named (and
  * off-week assigned generics) unlink from those campaigns even
  * when total linked staffable is already 40 — the peel floor
- * does not protect leftover off-week seats. Raw membership
+ * does not protect leftover off-week seats, once the on-week
+ * attach for that campaign is confirmed (D330). Raw membership
  * leftovers do not count as surplus. A rest record on a
  * still-attached seat does not shrink the floor or exempt an
  * on-week peel (D209). Dedicated named-client generics rest
@@ -134,6 +152,8 @@ export interface ClientRestResult {
   restored: Array<{ email: string; campaignIds: number[] }>;
   skipped: string[];
   errors: string[];
+  /** D330 — this pass stopped early; the next one resumes the cursor. */
+  partial?: boolean;
 }
 
 /**
@@ -158,6 +178,16 @@ export function isExcludedOnlyMembership(
   );
 }
 
+type RestWork = {
+  account: SmartleadAccountWithCampaigns;
+  email: string;
+  groupKey: string;
+  cohort: RestCohort;
+  existing: ReturnType<StateStore["getRestingInbox"]>;
+  detachable: number[];
+  alreadyOnActive: number[];
+};
+
 export function clientRestGroupKey(
   account: SmartleadAccountWithCampaigns,
   email: string,
@@ -178,6 +208,26 @@ export function clientRestGroupKey(
   return null;
 }
 
+function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const name = "name" in error ? String((error as { name?: unknown }).name) : "";
+  return name === "AbortError";
+}
+
+function linkAbort(
+  parent: AbortSignal | undefined,
+  child: AbortController,
+): () => void {
+  if (!parent) return () => undefined;
+  if (parent.aborted) {
+    child.abort();
+    return () => undefined;
+  }
+  const onAbort = (): void => child.abort();
+  parent.addEventListener("abort", onAbort, { once: true });
+  return () => parent.removeEventListener("abort", onAbort);
+}
+
 export class ClientRestService {
   constructor(
     private readonly config: AppConfig,
@@ -192,6 +242,12 @@ export class ClientRestService {
       now?: Date;
       inventory?: InventorySnapshot;
       joshLive?: boolean;
+      /** D330 — stage abort. A budget stop returns; it does not throw. */
+      signal?: AbortSignal;
+      /** D330 — pass budget. Defaults to POD_SWAP_PASS_BUDGET_MS. */
+      budgetMs?: number;
+      /** D330 — test clock. Production uses Date.now. */
+      monoNow?: () => number;
     } = {},
   ): Promise<ClientRestResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
@@ -392,15 +448,6 @@ export class ClientRestService {
       applyCohorts(inboxes, taggedByEmail);
     }
 
-    type RestWork = {
-      account: SmartleadAccountWithCampaigns;
-      email: string;
-      groupKey: string;
-      cohort: RestCohort;
-      existing: ReturnType<StateStore["getRestingInbox"]>;
-      detachable: number[];
-      alreadyOnActive: number[];
-    };
     const offWeek: RestWork[] = [];
     const onWeek: RestWork[] = [];
 
@@ -471,125 +518,20 @@ export class ClientRestService {
       else onWeek.push(work);
     }
 
-    // Off-week first so last-account on ACTIVE still sees on-week members.
-    for (const row of offWeek) {
-      if (!row.detachable.length && row.existing) continue;
-      const removed = await this.detachFromCampaigns(
-        row.account,
-        row.email,
-        row.detachable,
-        membership,
-        dryRun,
-        result,
-        campaignById,
-        true,
-      );
-      // D209 — only write a rest record after a successful detach, or
-      // when the seat is already idle (nothing detachable). Marking a
-      // floor-blocked still-attached seat as resting made the next
-      // pass treat it as non-staffable and peel it below 40
-      // (2026-09-29 BCP/Parlay/EMCOR same-client generics).
-      if (removed.length) {
-        const record = {
-          accountId: row.account.id,
-          email: row.email,
-          clientId: row.groupKey,
-          cohort: row.cohort,
-          kind: "client" as const,
-          restingSince: row.existing?.restingSince ?? now.toISOString(),
-          removedFromCampaigns: [
-            ...new Set([
-              ...(row.existing?.removedFromCampaigns ?? []),
-              ...removed,
-            ]),
-          ],
-          lastSameEspInbox: row.existing?.lastSameEspInbox ?? null,
-        };
-        if (!dryRun) this.state.markRestingInbox(record);
-        result.benched.push({ email: row.email, campaignIds: removed });
-      } else if (!row.existing && !row.detachable.length) {
-        const record = {
-          accountId: row.account.id,
-          email: row.email,
-          clientId: row.groupKey,
-          cohort: row.cohort,
-          kind: "client" as const,
-          restingSince: now.toISOString(),
-          removedFromCampaigns: [],
-          lastSameEspInbox: null,
-        };
-        if (!dryRun) this.state.markRestingInbox(record);
-      }
-    }
-
-    for (const row of onWeek) {
-      // D154 / D139 — under-warmed inboxes are not on-week staff. Restoring
-      // them onto every ACTIVE client campaign handed the warmup gate its
-      // next pull every health pass (Parlay ×16, Culturefits ×1).
-      if (owesWarmup(row.account, row.email, this.config, this.state)) {
-        result.skipped.push(`${row.email}: owes warmup (D139)`);
-        continue;
-      }
-
-      const clientId =
-        typeof row.account.client_id === "number" ? row.account.client_id : null;
-      const parsedId = row.groupKey.startsWith("id:")
-        ? Number(row.groupKey.slice(3))
-        : clientId;
-      // D59 / D207 — on-week named seats **and** that client's generics
-      // sit on every ACTIVE campaign for that client.
-      const targets = this.onWeekTargets(
-        Number.isFinite(parsedId) ? parsedId : null,
-        row.groupKey,
-        campaigns as SmartleadCampaign[],
-        activeByClient,
-      );
-      const added: number[] = [];
-      for (const campaignId of targets) {
-        if (row.alreadyOnActive.includes(campaignId)) continue;
-        const target = campaignById.get(campaignId);
-        if (
-          target &&
-          !canAttachMailboxToCampaign(row.account, target, campaignById, {
-            insightRequiresExisting: true,
-          })
-        ) {
-          result.skipped.push(
-            `${row.email}: Insight / ACTIVE SalesGlider staffing split (D184)`,
-          );
-          continue;
-        }
-        const classAttach = callerFollowUpMayAttach({
-          email: row.email,
-          account: row.account,
-          campaign: target,
-          warmed: !owesWarmup(row.account, row.email, this.config, this.state),
-          policy: callerFollowUpPolicyFromConfig(this.config),
-        });
-        if (!classAttach.ok) {
-          result.skipped.push(`${row.email}: ${classAttach.reason}`);
-          continue;
-        }
-        try {
-          if (!dryRun) {
-            await this.smartlead.addEmailAccountsToCampaign(campaignId, [
-              row.account.id,
-            ]);
-            await sleep(150);
-            recordMembership(row.account, campaignId);
-          }
-          added.push(campaignId);
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          result.errors.push(`${row.email} restore #${campaignId}: ${message}`);
-        }
-      }
-      if (!dryRun) this.state.clearRestingInbox(row.email);
-      if (added.length || row.existing) {
-        result.restored.push({ email: row.email, campaignIds: added });
-      }
-    }
+    await this.swapPods({
+      dryRun,
+      now,
+      result,
+      offWeek,
+      onWeek,
+      membership,
+      campaignById,
+      campaigns: campaigns as SmartleadCampaign[],
+      activeByClient,
+      signal: opts.signal,
+      budgetMs: opts.budgetMs,
+      monoNow: opts.monoNow,
+    });
 
     if (!dryRun) await this.state.save();
 
@@ -605,6 +547,402 @@ export class ClientRestService {
       );
     }
     return result;
+  }
+
+  /**
+   * D330 — per campaign, confirm on-week attaches before off-week
+   * detaches. A budget stop or 429 leaves a cursor and does not
+   * take seats off a campaign whose on-week pod is not confirmed.
+   */
+  private async swapPods(input: {
+    dryRun: boolean;
+    now: Date;
+    result: ClientRestResult;
+    offWeek: RestWork[];
+    onWeek: RestWork[];
+    membership: Map<number, number>;
+    campaignById: Map<number, SmartleadCampaign>;
+    campaigns: SmartleadCampaign[];
+    activeByClient: Map<number, SmartleadCampaign[]>;
+    signal?: AbortSignal;
+    budgetMs?: number;
+    monoNow?: () => number;
+  }): Promise<void> {
+    const {
+      dryRun,
+      now,
+      result,
+      offWeek,
+      onWeek,
+      membership,
+      campaignById,
+      campaigns,
+      activeByClient,
+    } = input;
+
+    for (const row of offWeek) {
+      if (row.detachable.length || row.existing) continue;
+      if (!dryRun) {
+        this.state.markRestingInbox({
+          accountId: row.account.id,
+          email: row.email,
+          clientId: row.groupKey,
+          cohort: row.cohort,
+          kind: "client",
+          restingSince: now.toISOString(),
+          removedFromCampaigns: [],
+          lastSameEspInbox: null,
+        });
+      }
+    }
+
+    const warmupSkipped = new Set<string>();
+    const plannedAttaches: Array<{ row: RestWork; campaignId: number }> = [];
+    for (const row of onWeek) {
+      // D154 / D139 — under-warmed inboxes are not on-week staff.
+      if (owesWarmup(row.account, row.email, this.config, this.state)) {
+        result.skipped.push(`${row.email}: owes warmup (D139)`);
+        warmupSkipped.add(row.email);
+        continue;
+      }
+      const clientId =
+        typeof row.account.client_id === "number" ? row.account.client_id : null;
+      const parsedId = row.groupKey.startsWith("id:")
+        ? Number(row.groupKey.slice(3))
+        : clientId;
+      const targets = this.onWeekTargets(
+        Number.isFinite(parsedId) ? parsedId : null,
+        row.groupKey,
+        campaigns,
+        activeByClient,
+      );
+      for (const campaignId of targets) {
+        if (row.alreadyOnActive.includes(campaignId)) continue;
+        plannedAttaches.push({ row, campaignId });
+      }
+    }
+    const plannedDetaches: Array<{ row: RestWork; campaignId: number }> = [];
+    for (const row of offWeek) {
+      for (const campaignId of row.detachable) {
+        plannedDetaches.push({ row, campaignId });
+      }
+    }
+    plannedAttaches.sort(
+      (a, b) => a.campaignId - b.campaignId || a.row.account.id - b.row.account.id,
+    );
+    plannedDetaches.sort(
+      (a, b) => a.campaignId - b.campaignId || a.row.account.id - b.row.account.id,
+    );
+
+    const campaignIds = [
+      ...new Set([
+        ...plannedAttaches.map((plan) => plan.campaignId),
+        ...plannedDetaches.map((plan) => plan.campaignId),
+      ]),
+    ].sort((a, b) => a - b);
+
+    const live =
+      !dryRun && typeof this.state.getPodSwap === "function";
+    const stored = live ? this.state.getPodSwap() : null;
+    let progress = podSwapForWeek(
+      stored,
+      isoWeekNumberNy(now),
+      result.onWeekCohort,
+      now.toISOString(),
+    );
+    if (!live) progress = freshPodSwap(progress.isoWeek, progress.onWeekCohort, progress.startedAt);
+
+    const confirmed = new Set(progress.confirmedAttaches);
+    const confirmedDetaches = new Set(progress.confirmedDetaches);
+    const settled = new Set(progress.confirmedAttaches);
+    const retry = new Set(progress.retryCampaignIds);
+    const addedByEmail = new Map<string, number[]>();
+
+    const budgetMs = input.budgetMs ?? POD_SWAP_PASS_BUDGET_MS;
+    const mono = input.monoNow ?? (() => Date.now());
+    const started = mono();
+    const overBudget = (): boolean => mono() - started >= budgetMs;
+    const budgetCtrl = new AbortController();
+    const unlinkParent = linkAbort(input.signal, budgetCtrl);
+    let budgetTimer: ReturnType<typeof setTimeout> | undefined;
+    if (!input.monoNow) {
+      budgetTimer = setTimeout(() => budgetCtrl.abort(), budgetMs);
+    }
+    const signal = budgetCtrl.signal;
+
+    const persist = (): void => {
+      if (!live) return;
+      this.state.setPodSwap(progress);
+    };
+
+    let stopped = false;
+    let stoppedAt: number | null = null;
+
+    const shouldStop = (): boolean =>
+      overBudget() || signal.aborted || input.signal?.aborted === true;
+
+    try {
+      if (campaignIds.length && live) {
+        progress = { ...progress, finishedAt: null, phase: "attach" };
+        persist();
+      }
+
+      const workIds = campaignIds.filter(
+        (id) =>
+          progress.cursorCampaignId == null ||
+          id >= progress.cursorCampaignId ||
+          retry.has(id),
+      );
+
+      for (const campaignId of workIds) {
+        if (shouldStop()) {
+          stopped = true;
+          stoppedAt = campaignId;
+          break;
+        }
+        let blocked = false;
+        const attaches = plannedAttaches.filter((plan) => plan.campaignId === campaignId);
+        for (const plan of attaches) {
+          if (shouldStop()) {
+            stopped = true;
+            stoppedAt = campaignId;
+            break;
+          }
+          const key = podSwapAttachKey(campaignId, plan.row.account.id);
+          if (confirmed.has(key)) {
+            settled.add(key);
+            continue;
+          }
+          const outcome = await this.tryAttachOnWeek(
+            plan.row,
+            campaignId,
+            campaignById,
+            membership,
+            dryRun,
+            result,
+            signal,
+          );
+          if (outcome === "added") {
+            confirmed.add(key);
+            settled.add(key);
+            const added = addedByEmail.get(plan.row.email) ?? [];
+            added.push(campaignId);
+            addedByEmail.set(plan.row.email, added);
+          } else if (outcome === "skipped") {
+            settled.add(key);
+          } else if (outcome === "failed") {
+            blocked = true;
+          } else {
+            stopped = true;
+            stoppedAt = campaignId;
+            break;
+          }
+        }
+        if (stopped) break;
+        if (blocked) {
+          retry.add(campaignId);
+          continue;
+        }
+        retry.delete(campaignId);
+        const detaches = plannedDetaches.filter((plan) => plan.campaignId === campaignId);
+        for (const plan of detaches) {
+          if (shouldStop()) {
+            stopped = true;
+            stoppedAt = campaignId;
+            break;
+          }
+          const key = podSwapDetachKey(campaignId, plan.row.account.id);
+          if (confirmedDetaches.has(key)) continue;
+          try {
+            const removed = await this.detachFromCampaigns(
+              plan.row.account,
+              plan.row.email,
+              [campaignId],
+              membership,
+              dryRun,
+              result,
+              campaignById,
+              true,
+              signal,
+            );
+            if (removed.includes(campaignId)) {
+              confirmedDetaches.add(key);
+              this.commitBench(plan.row, removed, dryRun, now, result);
+            }
+          } catch (error) {
+            if (isAbortError(error) || isSmartleadRateLimit(error)) {
+              stopped = true;
+              stoppedAt = campaignId;
+              break;
+            }
+            throw error;
+          }
+        }
+        if (stopped) break;
+      }
+    } finally {
+      if (budgetTimer) clearTimeout(budgetTimer);
+      unlinkParent();
+    }
+
+    const outstanding = plannedAttaches.some((plan) => {
+      const key = podSwapAttachKey(plan.campaignId, plan.row.account.id);
+      return !settled.has(key);
+    });
+    const done =
+      campaignIds.length === 0 ||
+      (!stopped && retry.size === 0 && !outstanding);
+    if (campaignIds.length || (live && stored && stored.phase !== "done")) {
+      if (done) {
+        progress = {
+          ...progress,
+          phase: "done",
+          finishedAt: now.toISOString(),
+          cursorCampaignId: null,
+          retryCampaignIds: [],
+          confirmedAttaches: [],
+          confirmedDetaches: [],
+        };
+      } else if (campaignIds.length) {
+        const resumeAt = [
+          ...(stoppedAt != null ? [stoppedAt] : []),
+          ...retry,
+        ];
+        progress = {
+          ...progress,
+          phase: outstanding ? "attach" : "detach",
+          finishedAt: null,
+          cursorCampaignId: resumeAt.length ? Math.min(...resumeAt) : null,
+          retryCampaignIds: [...retry],
+          confirmedAttaches: [...confirmed],
+          confirmedDetaches: [...confirmedDetaches],
+        };
+      }
+      persist();
+    }
+    result.partial = Boolean(campaignIds.length && !done);
+
+    for (const row of onWeek) {
+      if (warmupSkipped.has(row.email)) continue;
+      const plans = plannedAttaches.filter((plan) => plan.row === row);
+      const seatDone = plans.every((plan) =>
+        settled.has(podSwapAttachKey(plan.campaignId, plan.row.account.id)),
+      );
+      if (!seatDone) continue;
+      if (!dryRun) this.state.clearRestingInbox(row.email);
+      const added = addedByEmail.get(row.email) ?? [];
+      if (added.length || row.existing) {
+        result.restored.push({ email: row.email, campaignIds: added });
+      }
+    }
+
+    if (result.partial) {
+      console.log(
+        `[client-rest] swap partial — resume next pass onWeek=${result.onWeekCohort} cursor=${progress.cursorCampaignId ?? "none"}`,
+      );
+    }
+  }
+
+  private async tryAttachOnWeek(
+    row: RestWork,
+    campaignId: number,
+    campaignById: Map<number, SmartleadCampaign>,
+    membership: Map<number, number>,
+    dryRun: boolean,
+    result: ClientRestResult,
+    signal: AbortSignal,
+  ): Promise<"added" | "skipped" | "failed" | "stop"> {
+    const target = campaignById.get(campaignId);
+    if (
+      target &&
+      !canAttachMailboxToCampaign(row.account, target, campaignById, {
+        insightRequiresExisting: true,
+      })
+    ) {
+      result.skipped.push(
+        `${row.email}: Insight / ACTIVE SalesGlider staffing split (D184)`,
+      );
+      return "skipped";
+    }
+    const classAttach = callerFollowUpMayAttach({
+      email: row.email,
+      account: row.account,
+      campaign: target,
+      warmed: !owesWarmup(row.account, row.email, this.config, this.state),
+      policy: callerFollowUpPolicyFromConfig(this.config),
+    });
+    if (!classAttach.ok) {
+      result.skipped.push(`${row.email}: ${classAttach.reason}`);
+      return "skipped";
+    }
+    try {
+      if (!dryRun) {
+        await this.smartlead.addEmailAccountsToCampaign(
+          campaignId,
+          [row.account.id],
+          { signal },
+        );
+        recordMembership(row.account, campaignId);
+      }
+      noteStaffableAttach(membership, campaignId, row.account, row.email, this.state);
+      if (!row.alreadyOnActive.includes(campaignId)) {
+        row.alreadyOnActive.push(campaignId);
+      }
+      if (!dryRun) {
+        await sleep(150, signal).catch((error: unknown) => {
+          if (!isAbortError(error)) throw error;
+        });
+      }
+      return "added";
+    } catch (error) {
+      if (isAbortError(error)) return "stop";
+      const message = error instanceof Error ? error.message : String(error);
+      result.errors.push(`${row.email} restore #${campaignId}: ${message}`);
+      if (isSmartleadRateLimit(error)) return "stop";
+      return "failed";
+    }
+  }
+
+  /**
+   * D209 — only write a rest record after a successful detach, or
+   * when the seat is already idle (nothing detachable). Marking a
+   * floor-blocked still-attached seat as resting made the next
+   * pass treat it as non-staffable and peel it below 40.
+   */
+  private commitBench(
+    row: RestWork,
+    removed: number[],
+    dryRun: boolean,
+    now: Date,
+    result: ClientRestResult,
+  ): void {
+    if (!removed.length) return;
+    const prior = result.benched.find((entry) => entry.email === row.email);
+    if (prior) {
+      for (const id of removed) {
+        if (!prior.campaignIds.includes(id)) prior.campaignIds.push(id);
+      }
+    } else {
+      result.benched.push({ email: row.email, campaignIds: [...removed] });
+    }
+    const merged = result.benched.find((entry) => entry.email === row.email);
+    if (!dryRun) {
+      this.state.markRestingInbox({
+        accountId: row.account.id,
+        email: row.email,
+        clientId: row.groupKey,
+        cohort: row.cohort,
+        kind: "client",
+        restingSince: row.existing?.restingSince ?? now.toISOString(),
+        removedFromCampaigns: [
+          ...new Set([
+            ...(row.existing?.removedFromCampaigns ?? []),
+            ...(merged?.campaignIds ?? removed),
+          ]),
+        ],
+        lastSameEspInbox: row.existing?.lastSameEspInbox ?? null,
+      });
+    }
   }
 
   private onWeekTargets(
@@ -640,6 +978,7 @@ export class ClientRestService {
     result: ClientRestResult,
     campaignById: Map<number, SmartleadCampaign>,
     offWeekNamedUnlink = false,
+    signal?: AbortSignal,
   ): Promise<number[]> {
     const removed: number[] = [];
     for (const campaignId of campaignIds) {
@@ -667,18 +1006,26 @@ export class ClientRestService {
       }
       try {
         if (!dryRun) {
-          await this.smartlead.removeEmailAccountsFromCampaign(campaignId, [
-            account.id,
-          ]);
-          await sleep(150);
+          await this.smartlead.removeEmailAccountsFromCampaign(
+            campaignId,
+            [account.id],
+            { signal },
+          );
           dropMembership(account, campaignId);
         }
         noteStaffableDetach(membership, campaignId, account, email, this.state);
         removed.push(campaignId);
+        if (!dryRun) {
+          await sleep(150, signal).catch((error: unknown) => {
+            if (!isAbortError(error)) throw error;
+          });
+        }
       } catch (error) {
+        if (isAbortError(error)) throw error;
         const message =
           error instanceof Error ? error.message : String(error);
         result.errors.push(`${email} remove #${campaignId}: ${message}`);
+        if (isSmartleadRateLimit(error)) throw error;
       }
     }
     return removed;

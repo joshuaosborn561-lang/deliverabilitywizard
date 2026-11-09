@@ -19175,7 +19175,7 @@ describe("owner intent — D326 named POD rebalance even split", () => {
       { maxMoves: 50 },
     );
     assert.equal(plan.moves.length, 19);
-    assert.match(canon, /Canon as of \*\*D329\*\*/);
+    assert.match(canon, /Canon as of \*\*D330\*\*/);
     assert.match(canon, /supersedes D203 never-retag/);
     assert.match(canon, /BPLTG 21\/59/);
     assert.match(canon, /5\.7\.233/);
@@ -19238,7 +19238,7 @@ describe("owner intent — D327 two messages and Mon–Thu 7am–7pm ET", () => 
     await assert.rejects(() => access(new URL("../lib/breakupStep.ts", import.meta.url)));
     assert.match(ledger, /## D327 — /);
     assert.match(ledger, /^\| D327 \|/m);
-    assert.match(canon, /Canon as of \*\*D329\*\*/);
+    assert.match(canon, /Canon as of \*\*D330\*\*/);
     assert.match(canon, /exactly \*\*2 messages\*\*/);
     assert.match(canon, /Monday–Thursday \*\*07:00–19:00 America\/New_York\*\*/);
     assert.match(canon, /Not America\/Chicago/);
@@ -19464,7 +19464,7 @@ describe("owner intent — D328 Ciotola signature is the name alone", () => {
     );
     assert.match(signature, /return `\$\{name\}\\n\$\{brand\}`/);
     assert.equal(signature.includes("Insight"), false);
-    assert.match(canon, /Canon as of \*\*D329\*\*/);
+    assert.match(canon, /Canon as of \*\*D330\*\*/);
     assert.match(canon, /exactly `Jeremy Ciotola`/);
     assert.match(decisions, /## D328 — /);
     assert.match(decisions, /^\| D328 \|/m);
@@ -19508,9 +19508,38 @@ describe("owner intent — D329 Insight signature is the three-line close", () =
       }),
       "Joshua Osborn\nSalesGlider",
     );
-    assert.match(canon, /Canon as of \*\*D329\*\*/);
     assert.match(canon, /Strategic Account Executive/);
     assert.match(decisions, /## D329 — /);
     assert.match(decisions, /^\| D329 \|/m);
+  });
+});
+
+describe("owner intent — D330 POD swap attaches before detach", () => {
+  it("D330: add-before-remove, resume cursor, /pod-swap, Retry-After", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const [rest, http, index, progress, canon, decisions] = await Promise.all([
+      readFile(new URL("../services/clientRest.ts", import.meta.url), "utf8"),
+      readFile(new URL("../lib/http.ts", import.meta.url), "utf8"),
+      readFile(new URL("../index.ts", import.meta.url), "utf8"),
+      readFile(new URL("../lib/podSwapProgress.ts", import.meta.url), "utf8"),
+      readFile(new URL("../../CANON.md", import.meta.url), "utf8"),
+      readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8"),
+    ]);
+    assert.match(rest, /confirmedAttaches/, "swap resume keys are gone (D330)");
+    assert.match(rest, /tryAttachOnWeek/, "on-week attach is gone (D330)");
+    assert.match(
+      rest,
+      /exempt: offWeekNamedUnlink/,
+      "Off-week named unlink is peel-floor exempt (D228).",
+    );
+    assert.match(http, /retryAfterDelayMs/, "Retry-After is ignored (D330)");
+    assert.match(index, /app\.get\("\/pod-swap"/, "GET /pod-swap is gone (D330)");
+    assert.match(index, /podSwap: podSwapSignal/, "/health podSwap is gone (D330)");
+    assert.match(progress, /started_at/, "swap signal started_at is gone (D330)");
+    assert.match(progress, /finished_at/, "swap signal finished_at is gone (D330)");
+    assert.match(canon, /Canon as of \*\*D330\*\*/);
+    assert.match(canon, /GET \/pod-swap/);
+    assert.match(decisions, /## D330 — /);
+    assert.match(decisions, /^\| D330 \|/m);
   });
 });

@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D329** (2026-11-06). One page of current truth. When a new
+Canon as of **D330** (2026-11-09). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -9,6 +9,8 @@ guard in `src/guards/meta.test.ts` enforces both).
 and every reversal, and most of it is **superseded**. Do not derive behaviour
 from it. Derive behaviour from this file; use the ledger only to understand
 *why* a rule here exists (each rule cites its decision numbers).
+
+**D330.** Weekly POD rotation attaches the on-week pod and confirms those adds before it detaches the off-week pod on that campaign, so a pass that stops halfway cannot drop the campaign under the 40 on-week staffable floor. The pass returns on its own 12-minute budget, before the 15-minute stage ceiling, and resumes from a saved cursor (confirmed adds and detaches are not repeated). HTTP 429 waits for Retry-After (capped at 2 minutes) and pauses the shared limiter for the same delay. `GET /pod-swap` and `/health` `podSwap` publish `{ in_progress, started_at, finished_at, iso_week, on_week, phase, cursor_campaign_id, attach_confirmed, detach_confirmed }` while the swap is unfinished so other Smartlead callers (campaign-watchdog included) can back off. Pod schedule, seat selection, the D228 off-week unlink exemption once attach is confirmed, generic top-up, and stage thresholds are unchanged. LOCKED section unchanged.
 
 **D329.** An Insight seat (Smartlead client 582890) whose sender is Josh Osborn or Joshua Osborn has mailbox signature exactly `Josh Osborn` / `Strategic Account Executive` / `Insight` (newlines). The signature pass must not rebuild that as `from_name` plus the title line. `desiredMailboxSignature` and `mailboxSignatureMismatch` treat that three-line string as the target and as in sync. Other clients are unchanged, including SalesGlider `Name\nSalesGlider` and the D328 Ciotola name-only signature. LOCKED section unchanged.
 

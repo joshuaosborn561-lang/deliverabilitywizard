@@ -22,6 +22,7 @@ import { runWithStallScopeAsync } from "../lib/eventLoopAttribution.js";
 import { copyIterableYielding } from "../lib/stringifyYielding.js";
 import { pruneStateLedgers } from "../lib/stateRetention.js";
 import { sleep } from "../lib/http.js";
+import type { PodSwapProgress } from "../lib/podSwapProgress.js";
 import { realignStalePoolAssignment } from "../lib/genericPoolRealign.js";
 import {
   currentUtcMonth,
@@ -282,6 +283,8 @@ export interface AppState {
   heldInboxes: Record<string, HeldInboxRecord>;
   /** D41/D43 — client A/B resters and generics on the send-clock sit */
   restingInboxes: Record<string, RestingInboxRecord>;
+  /** D330 — open weekly POD swap, so a retry and other services can see it. */
+  podSwap?: PodSwapProgress | null;
   /** D303 — per-variant canary-copy tests (campaign → variant key → test id). */
   variantCopyCanaryTests?: Record<string, Record<string, string>>;
   /** D303 — mailbox rest-then-burn records (email → record). */
@@ -878,6 +881,7 @@ const EMPTY_STATE: AppState = {
   remediatedKeys: {},
   heldInboxes: {},
   restingInboxes: {},
+  podSwap: null,
   genericSendStartedAt: {},
   poolMailboxes: {},
   activeSwaps: {},
@@ -1227,6 +1231,14 @@ export class StateStore {
     const n = Object.keys(this.state.isolation.mailboxResults).length;
     this.state.isolation.mailboxResults = {};
     return n;
+  }
+
+  getPodSwap(): PodSwapProgress | null {
+    return this.state.podSwap ?? null;
+  }
+
+  setPodSwap(progress: PodSwapProgress | null): void {
+    this.state.podSwap = progress;
   }
 
   markRestingInbox(record: RestingInboxRecord): void {

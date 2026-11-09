@@ -350,11 +350,13 @@ export class SmartleadClient {
   removeEmailAccountsFromCampaign(
     campaignId: number,
     emailAccountIds: number[],
+    opts?: { signal?: AbortSignal },
   ): Promise<unknown> {
     return this.mutate(() =>
       this.request(`campaigns/${campaignId}/email-accounts`, {
         method: "DELETE",
         body: { email_account_ids: emailAccountIds },
+        signal: opts?.signal,
       }),
     );
   }
@@ -413,6 +415,7 @@ export class SmartleadClient {
   addEmailAccountsToCampaign(
     campaignId: number,
     emailAccountIds: number[],
+    opts?: { signal?: AbortSignal },
   ): Promise<unknown> {
     try {
       assertNotIsolationAccountIds(emailAccountIds, {
@@ -432,6 +435,7 @@ export class SmartleadClient {
       this.request(`campaigns/${campaignId}/email-accounts`, {
         method: "POST",
         body: { email_account_ids: emailAccountIds },
+        signal: opts?.signal,
       }),
     );
   }

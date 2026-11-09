@@ -320,6 +320,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D327 | Live | Sequences are exactly 2 messages. No third / breakup email: do not build, require, or flag a step 3. Step 2 delay stays 2 days (D186). Standing send window is Monday–Thursday 07:00–19:00 America/New_York (was 08:00). Not America/Chicago. Calls, Booking Follow Up, and test campaigns keep their own windows. Josh, 2026-11-05 ~9:39am CT. |
 | D328 | Live | A `JEREMY-CIOTOLA` seat (tag 533700), or a mailbox whose sender name is exactly `Jeremy Ciotola`, has mailbox signature `Jeremy Ciotola` alone. No SalesGlider line. Other clients stay on their own signature rules. Josh, 2026-11-05. |
 | D329 | Live | An Insight seat (client 582890) sending as Josh Osborn or Joshua Osborn has mailbox signature exactly `Josh Osborn` / `Strategic Account Executive` / `Insight`. The signature pass must not drop the Insight line or switch the name to from_name. Josh, 2026-10-12 / 2026-11-04. |
+| D330 | Live | Weekly POD swap attaches and confirms the on-week pod before it detaches the off-week pod. A 429 or the pass budget saves a cursor and resumes; the 15-minute stage ceiling stays. `GET /pod-swap` publishes `in_progress`, `started_at`, `finished_at`. HTTP 429 honors Retry-After. Pod schedule, seat rules, D228 exemption after confirm, generic top-up, and thresholds unchanged. |
 
 ---
 
@@ -11965,3 +11966,53 @@ the LOCKED section.
 
 **Guards.** `src/lib/mailboxSignature.test.ts` (D329),
 `src/guards/canon.test.ts` D329.
+
+## D330 — POD swap attaches before it detaches, and resumes
+
+**Date.** 2026-11-09.
+
+**Decision.** The Monday ISO-week flip (week 46, POD-A off, POD-B
+on) ran client-rest detach-first. The stage hit `timeout after
+15m` nine times (06:17Z through 17:35Z) while Smartlead returned
+429s, so campaigns lost the off-week seats and never received the
+on-week pod. Sends dropped until the swap was finished by hand.
+
+Client-rest now, per campaign, attaches the on-week seats and
+confirms the add before it detaches that campaign's off-week
+seats. A pass stops at 12 minutes (under the D317 15-minute
+ceiling, which stays) or on a 429 / abort, writes a cursor, and
+the next pass skips confirmed adds and detaches. HTTP 429 waits
+for the Retry-After header (capped at 2 minutes) and the shared
+limiter pauses for that same delay.
+
+`GET /pod-swap` (and `/health` `podSwap`) is the signal other
+services read:
+
+```json
+{
+  "in_progress": true,
+  "started_at": "2026-11-09T06:02:11.000Z",
+  "finished_at": null,
+  "iso_week": 46,
+  "on_week": "B",
+  "phase": "attach",
+  "cursor_campaign_id": 3815448,
+  "attach_confirmed": 12,
+  "detach_confirmed": 0
+}
+```
+
+`in_progress` is true until that week's walk finishes
+(`finished_at` set, `phase` `done`). Campaign-watchdog should
+back off Smartlead while `in_progress` is true.
+
+**Does not change.** The fortnight schedule, who is on-week,
+seat-selection, the D228 exemption that unlinks leftover
+off-week seats once the on-week attach is confirmed, generic
+top-up, or any Wizard threshold. The 15-minute client-rest
+stage cap stays. LOCKED section unchanged.
+
+**Guards.** `src/services/clientRest.swap.test.ts`,
+`src/lib/podSwapProgress.test.ts`,
+`src/lib/http.test.ts` (Retry-After),
+`src/guards/canon.test.ts` D330.

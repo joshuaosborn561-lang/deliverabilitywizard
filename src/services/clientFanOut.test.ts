@@ -1015,7 +1015,12 @@ describe("ClientFanOutService D325 — JEREMY-CIOTOLA stays on Ciotola", () => {
       addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
         adds.push([campaignId, [...ids]]);
       },
-    }).run({ dryRun: false });
+    }).run({
+      dryRun: false,
+      // POD-A is on-week here. Wall-clock week 46 (2026-11-09) is POD-B,
+      // and an unpinned now skips this POD-A seat as off-week.
+      now: new Date("2026-10-01T17:00:00Z"),
+    });
 
     const targets = adds.map(([id]) => id);
     assert.ok(!targets.includes(3122546), "Jeremy must not land on SalesGlider");

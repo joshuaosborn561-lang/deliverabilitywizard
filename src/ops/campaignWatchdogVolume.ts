@@ -10,7 +10,14 @@
  */
 
 export const WATCHDOG_DAILY_TARGET = 1200;
-export const WATCHDOG_TIMEZONE = "America/Chicago";
+/**
+ * The day "sends today" is counted in. Every live campaign's
+ * `scheduler_cron_value.tz` is America/New_York and the standing send
+ * window is 07:00–19:00 ET (D327), so the send day is the Eastern day.
+ * Between 23:00 and 24:00 Central the Chicago date is still yesterday
+ * while the send day has already rolled over.
+ */
+export const WATCHDOG_TIMEZONE = "America/New_York";
 
 export function ymdInZone(date: Date, timeZone = WATCHDOG_TIMEZONE): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -96,7 +103,12 @@ export function parseTodayVolume(
   return volumeFromRow(root);
 }
 
-/** Remaining leads that can still send: not started plus in progress. */
+/**
+ * Remaining leads that can still send: not started plus in progress, from
+ * `campaign_lead_stats` on `campaigns/{id}/analytics`. A campaign whose
+ * stats say 0 total leads has 0 left (an ACTIVE campaign that ran dry is
+ * the top-up case) — null only when the response carries no lead stats.
+ */
 export function parseWatchdogLeadsLeft(raw: unknown): number | null {
   const root = unwrap(raw);
   if (!root) return null;
@@ -104,26 +116,17 @@ export function parseWatchdogLeadsLeft(raw: unknown): number | null {
     root.campaign_lead_stats ?? root.campaignLeadStats ?? root.lead_stats,
   );
   const total =
-    pick(root, ["total_leads", "totalLeads", "total_count"]) ??
-    (leadStats ? pick(leadStats, ["total", "total_leads"]) : null);
+    (leadStats ? pick(leadStats, ["total", "total_leads"]) : null) ??
+    pick(root, ["total_leads", "totalLeads"]);
   const notStarted =
     (leadStats ? pick(leadStats, ["notStarted", "not_started"]) : null) ??
     pick(root, ["not_started", "leads_not_started"]);
   const inProgress = leadStats
     ? pick(leadStats, ["inprogress", "in_progress", "inProgress"])
     : null;
-  const drafted = pick(root, ["drafted_count", "drafted"]);
-  const contacted = pick(root, [
-    "contacted",
-    "leads_contacted",
-    "contacted_count",
-    "unique_sent_count",
-  ]);
-  if (total == null || total <= 0) return null;
   if (notStarted != null || inProgress != null) {
     return Math.max(0, (notStarted ?? 0) + (inProgress ?? 0));
   }
-  if (drafted != null) return Math.max(0, drafted);
-  if (contacted != null) return Math.max(0, total - contacted);
+  if (total === 0) return 0;
   return null;
 }

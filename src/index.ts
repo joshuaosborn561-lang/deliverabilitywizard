@@ -1431,6 +1431,11 @@ async function main(): Promise<void> {
     // boot). A monitor cron that skipped because health was live also
     // retries here, after the exclusive limiter lane is released.
     kickMonitorResume();
+    if (pendingOpsBoardRetry && runOpsBoardRetry && !drain.shouldSkip("ops-board-retry")) {
+      pendingOpsBoardRetry = false;
+      console.log("[ops-board] retrying skipped hourly reading after health pass");
+      runOpsBoardRetry();
+    }
     if (pendingMonitorRetry && !monitorLock.isLive() && !drain.shouldSkip("monitor-retry")) {
       pendingMonitorRetry = false;
       console.log("[monitor] retrying skipped tick after health pass (D270)");
@@ -1461,6 +1466,11 @@ async function main(): Promise<void> {
 
   let pendingCanonOpsRetry = false;
   let pendingMonitorRetry = false;
+  // The hourly /ops reading yields to a live health pass, then runs once
+  // that pass ends (same pattern as D267 / D270). Skipping outright left
+  // the board hours stale on days the health pass overlapped every :00.
+  let pendingOpsBoardRetry = false;
+  let runOpsBoardRetry: (() => void) | null = null;
   const runCanonOps = async (
     opts: { force?: boolean; retry?: boolean } = {},
   ): Promise<unknown> => {
@@ -2044,16 +2054,22 @@ async function main(): Promise<void> {
     slackToken: () => config.slackBotToken || config.deliverabilitySlackBotToken || "",
     gabeDialsTarget: () => gabeDialsTargetFromEnv(),
   });
-  // Same hourly expression as the campaign sweep. Not a boot kick (D122).
-  scheduleJob("ops-board-hourly", config.cronCampaignCheck, () => {
-    if (healthLock.isLive()) {
-      console.log("[ops-board] Health pass running — skipping overlapping hourly reading");
-      return;
-    }
-    return opsBoardRefresh.run().catch((error) => {
+  const runOpsBoard = (): Promise<unknown> =>
+    opsBoardRefresh.run().catch((error) => {
       const message = error instanceof Error ? error.message : "failed";
       console.error("[ops-board] Unhandled hourly error", message.slice(0, 180));
     });
+  runOpsBoardRetry = () => {
+    void runOpsBoard();
+  };
+  // Same hourly expression as the campaign sweep. Not a boot kick (D122).
+  scheduleJob("ops-board-hourly", config.cronCampaignCheck, () => {
+    if (healthLock.isLive()) {
+      pendingOpsBoardRetry = true;
+      console.log("[ops-board] Health pass running — hourly reading will run after it");
+      return;
+    }
+    return runOpsBoard();
   });
 
   if (config.enableCampaignCheck) {

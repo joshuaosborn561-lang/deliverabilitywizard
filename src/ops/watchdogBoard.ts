@@ -6,6 +6,7 @@
 
 import {
   WATCHDOG_DAILY_TARGET,
+  ymdInZone,
 } from "./campaignWatchdogVolume.js";
 import {
   OPS_BRING_TO_JOSH_LEADS,
@@ -22,8 +23,26 @@ export type WatchdogStatus =
 export interface WatchdogSnapshotClient {
   clientId: string;
   clientName: string;
+  /** Sum over the client's campaigns that have a reading for `day`. */
   sendsToday: number;
+  /** Sum over campaigns with a lead reading; null when none was read. */
   leadsLeft: number | null;
+  /** ACTIVE client campaigns in the pass. Absent on pre-fix snapshots. */
+  campaigns?: number;
+  /** Campaigns counted in `sendsToday` / `leadsLeft`. */
+  sendsRead?: number;
+  leadsRead?: number;
+}
+
+/** One campaign's reading, kept so a short pass can carry it over. */
+export interface WatchdogCampaignReading {
+  id: number;
+  clientId: string;
+  /** Eastern send day the `sendsToday` value belongs to. */
+  day: string;
+  sendsToday: number | null;
+  leadsLeft: number | null;
+  readAt: string;
 }
 
 export interface WatchdogSnapshot {
@@ -33,6 +52,7 @@ export interface WatchdogSnapshot {
   paceTarget: number;
   source: "campaign-watchdog-analytics";
   clients: WatchdogSnapshotClient[];
+  campaigns?: WatchdogCampaignReading[];
 }
 
 export interface WatchdogClient {
@@ -41,6 +61,10 @@ export interface WatchdogClient {
   sendsToday: number | null;
   target: number;
   leadsLeft: number | null;
+  /** ACTIVE campaigns, and how many are counted in each number. */
+  campaigns: number | null;
+  sendsRead: number | null;
+  leadsRead: number | null;
   status: WatchdogStatus;
 }
 
@@ -71,40 +95,69 @@ export interface WatchdogBoard {
   clients: WatchdogClient[];
 }
 
+/**
+ * A sum over only some of a client's campaigns is a floor, not a reading:
+ * leads under a threshold with campaigns unread is "unread", not top-up;
+ * leads over it already clear the threshold. Same for sends vs pace.
+ */
 function statusFor(
   sends: number | null,
+  sendsComplete: boolean,
   target: number,
   leads: number | null,
+  leadsComplete: boolean,
 ): WatchdogStatus {
-  if (leads != null && leads < OPS_BRING_TO_JOSH_LEADS) return "josh";
-  if (leads != null && leads < OPS_TOP_UP_LEADS) return "topup";
+  if (leads == null) return "unread";
+  if (leads < OPS_TOP_UP_LEADS && !leadsComplete) return "unread";
+  if (leads < OPS_BRING_TO_JOSH_LEADS) return "josh";
+  if (leads < OPS_TOP_UP_LEADS) return "topup";
   if (sends == null || target <= 0) return "unread";
-  if (sends < target) return "behind";
-  return "healthy";
+  if (sends >= target) return "healthy";
+  return sendsComplete ? "behind" : "unread";
+}
+
+function finite(value: number | null | undefined): number | null {
+  return value == null || !Number.isFinite(value) ? null : Math.max(0, value);
 }
 
 export function buildWatchdogBoard(input: {
   snapshot?: WatchdogSnapshot | null;
+  now?: Date;
 }): WatchdogBoard {
   const snapshot = input.snapshot ?? null;
   const target = snapshot?.paceTarget || WATCHDOG_DAILY_TARGET;
+  // A snapshot from an earlier send day has no sends for today.
+  const today = ymdInZone(input.now ?? new Date());
+  const sameDay = !snapshot?.day || snapshot.day === today;
   const clients: WatchdogClient[] = (snapshot?.clients ?? [])
     .filter((row) => row.clientName.trim().length > 0)
-    .map((row) => ({
-      clientId: row.clientId,
-      clientName: row.clientName,
-      sendsToday: Number.isFinite(row.sendsToday) ? Math.max(0, row.sendsToday) : null,
-      target,
-      leadsLeft:
-        row.leadsLeft == null || !Number.isFinite(row.leadsLeft)
-          ? null
-          : Math.max(0, row.leadsLeft),
-      status: statusFor(
-        Number.isFinite(row.sendsToday) ? row.sendsToday : null,
+    .map((row) => {
+      const campaigns = finite(row.campaigns);
+      const sendsRead = finite(row.sendsRead);
+      const leadsRead = finite(row.leadsRead);
+      const sendsToday = sameDay ? finite(row.sendsToday) : null;
+      const leadsLeft = finite(row.leadsLeft);
+      // Pre-fix snapshots carry no counts; treat them as complete.
+      const sendsComplete = campaigns == null || sendsRead == null || sendsRead >= campaigns;
+      const leadsComplete = campaigns == null || leadsRead == null || leadsRead >= campaigns;
+      return {
+        clientId: row.clientId,
+        clientName: row.clientName,
+        sendsToday: sendsToday != null && sendsRead === 0 ? null : sendsToday,
         target,
-        row.leadsLeft == null || !Number.isFinite(row.leadsLeft) ? null : row.leadsLeft,
-      ),
-    }))
+        leadsLeft,
+        campaigns,
+        sendsRead,
+        leadsRead,
+        status: statusFor(
+          sendsToday != null && sendsRead === 0 ? null : sendsToday,
+          sendsComplete,
+          target,
+          leadsLeft,
+          leadsComplete,
+        ),
+      };
+    })
     .sort((a, b) => a.clientName.localeCompare(b.clientName));
 
   let sendsToday = 0;
@@ -124,7 +177,14 @@ export function buildWatchdogBoard(input: {
 
   return {
     updatedAt: snapshot?.updatedAt ?? null,
-    partial: Boolean(snapshot?.partial),
+    partial:
+      Boolean(snapshot?.partial) ||
+      !sameDay ||
+      clients.some(
+        (client) =>
+          client.campaigns != null &&
+          ((client.sendsRead ?? 0) < client.campaigns || (client.leadsRead ?? 0) < client.campaigns),
+      ),
     day: snapshot?.day ?? null,
     source: snapshot?.source ?? "campaign-watchdog-analytics",
     paceLabel: `${target.toLocaleString("en-US")}/day`,

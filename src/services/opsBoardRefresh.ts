@@ -16,7 +16,11 @@ import {
   ymdInZone,
 } from "../ops/campaignWatchdogVolume.js";
 import type { LinkedInClientInput, LinkedInLaneInput, LinkedInReason, LinkedInSnapshot } from "../ops/linkedinBoard.js";
-import type { WatchdogSnapshot } from "../ops/watchdogBoard.js";
+import type {
+  WatchdogCampaignReading,
+  WatchdogSnapshot,
+  WatchdogSnapshotClient,
+} from "../ops/watchdogBoard.js";
 import type { StateStore } from "../state/store.js";
 
 const LINKEDIN_REPLIES_CHANNEL = "C0CET7NL485";
@@ -85,7 +89,26 @@ export class OpsBoardRefresh {
     },
   ) {}
 
-  async run(now = this.deps.now?.() ?? new Date()): Promise<{
+  private inFlight: Promise<{
+    watchdogClients: number;
+    callingClients: number;
+    linkedinClients: number;
+  }> | null = null;
+
+  /** One reading at a time: a retry after health joins a pass in flight. */
+  run(now = this.deps.now?.() ?? new Date()): Promise<{
+    watchdogClients: number;
+    callingClients: number;
+    linkedinClients: number;
+  }> {
+    if (this.inFlight) return this.inFlight;
+    this.inFlight = this.runOnce(now).finally(() => {
+      this.inFlight = null;
+    });
+    return this.inFlight;
+  }
+
+  private async runOnce(now: Date): Promise<{
     watchdogClients: number;
     callingClients: number;
     linkedinClients: number;
@@ -120,73 +143,136 @@ export class OpsBoardRefresh {
     };
   }
 
-  private async watchdog(now: Date): Promise<WatchdogSnapshot> {
+  /**
+   * One pass over ACTIVE client campaigns. Each campaign keeps its own
+   * reading; a campaign this pass could not read (429, error, budget)
+   * keeps its last reading — today's sends only from today's pass, leads
+   * for WATCHDOG_LEADS_CARRY_MS — and the client says how many of its
+   * campaigns are counted. A pass never replaces the board with fewer
+   * readings than it had: before this, a starved pass stored zero clients.
+   */
+  private async watchdog(now: Date): Promise<WatchdogSnapshot | null> {
     const day = ymdInZone(now);
-    const controller = new AbortController();
-    const budget = this.deps.budgetMs ?? 8 * 60 * 1000;
-    const timer = setTimeout(() => controller.abort(), budget);
+    const prior = this.priorWatchdog();
+    const priorById = new Map<number, WatchdogCampaignReading>();
+    for (const reading of prior?.campaigns ?? []) priorById.set(reading.id, reading);
+    const priorNames = new Map<string, string>();
+    for (const client of prior?.clients ?? []) priorNames.set(client.clientId, client.clientName);
+
     const names = new Map<number, string>();
     for (const client of this.deps.clients()) {
       const name = brandFromClientDisplayName(clientDisplayName(client));
       if (name) names.set(client.id, name);
     }
-    const grouped = new Map<string, { clientId: string; clientName: string; sendsToday: number; leadsLeft: number }>();
+    const selected = selectWatchdogCampaigns(this.deps.campaigns());
+    if (selected.length === 0) {
+      // Inventory not published yet (or empty) — keep the last board.
+      console.warn("[ops-board] watchdog: no ACTIVE client campaigns in the inventory book — keeping the last reading");
+      return null;
+    }
+    // Oldest reading first, so a pass the budget cuts short still moves
+    // every campaign forward across passes.
+    const order = [...selected].sort(
+      (a, b) => readAt(priorById.get(a.id)) - readAt(priorById.get(b.id)),
+    );
+
+    const controller = new AbortController();
+    const budget = this.deps.budgetMs ?? 8 * 60 * 1000;
+    const timer = setTimeout(() => controller.abort(), budget);
+    const aborted = new Promise<never>((_, reject) => {
+      controller.signal.addEventListener("abort", () => reject(abortError()), { once: true });
+    });
+    aborted.catch(() => undefined);
+    const fresh = new Map<number, WatchdogCampaignReading>();
+    let failed = 0;
     let partial = false;
     try {
-      for (const campaign of this.deps.campaigns()) {
+      for (const campaign of order) {
         if (controller.signal.aborted) {
           partial = true;
           break;
         }
-        const status = String(campaign.status ?? "").toUpperCase();
-        if (status !== "ACTIVE") continue;
-        if (isAnyShellCampaign(campaign)) continue;
-        const clientId = campaign.client_id;
-        if (typeof clientId !== "number" || clientId <= 0) continue;
-        const clientName = names.get(clientId);
-        if (!clientName) continue;
         try {
-          const [todayRaw, leadRaw] = await Promise.all([
-            this.deps.analyticsByDate(campaign.id, day, controller.signal),
-            this.deps.analytics(campaign.id, controller.signal),
+          // The shared limiter queue is not abortable, so race the budget.
+          const [todayRaw, leadRaw] = await Promise.race([
+            Promise.all([
+              this.deps.analyticsByDate(campaign.id, day, controller.signal),
+              this.deps.analytics(campaign.id, controller.signal),
+            ]),
+            aborted,
           ]);
-          const sent = parseTodayVolume(todayRaw, day).sent;
-          const leads = parseWatchdogLeadsLeft(leadRaw);
-          const row = grouped.get(String(clientId)) ?? {
-            clientId: String(clientId),
-            clientName,
-            sendsToday: 0,
-            leadsLeft: 0,
-          };
-          row.sendsToday += Math.max(0, sent);
-          if (leads != null) row.leadsLeft += leads;
-          grouped.set(String(clientId), row);
+          fresh.set(campaign.id, {
+            id: campaign.id,
+            clientId: String(campaign.client_id),
+            day,
+            sendsToday: Math.max(0, parseTodayVolume(todayRaw, day).sent),
+            leadsLeft: parseWatchdogLeadsLeft(leadRaw),
+            readAt: now.toISOString(),
+          });
         } catch (error) {
           if (controller.signal.aborted) {
             partial = true;
             break;
           }
-          console.warn(`[ops-board] campaign ${campaign.id} analytics failed`);
-          void error;
+          failed += 1;
+          partial = true;
+          const message = error instanceof Error ? error.message : "error";
+          console.warn(`[ops-board] campaign ${campaign.id} analytics failed: ${redact(message, "")}`);
         }
         await (this.deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))))(40);
       }
     } finally {
       clearTimeout(timer);
     }
+
+    const leadsFloor = now.getTime() - WATCHDOG_LEADS_CARRY_MS;
+    const campaigns: WatchdogCampaignReading[] = [];
+    const grouped = new Map<string, WatchdogSnapshotClient>();
+    for (const campaign of selected) {
+      const clientId = String(campaign.client_id);
+      const clientName =
+        names.get(campaign.client_id) ?? priorNames.get(clientId) ?? `Client ${clientId}`;
+      const row = grouped.get(clientId) ?? {
+        clientId,
+        clientName,
+        sendsToday: 0,
+        leadsLeft: null,
+        campaigns: 0,
+        sendsRead: 0,
+        leadsRead: 0,
+      };
+      row.campaigns = (row.campaigns ?? 0) + 1;
+      const reading = fresh.get(campaign.id) ?? carryOver(priorById.get(campaign.id), day, leadsFloor);
+      if (reading) {
+        campaigns.push({ ...reading, clientId });
+        if (reading.sendsToday != null) {
+          row.sendsToday += reading.sendsToday;
+          row.sendsRead = (row.sendsRead ?? 0) + 1;
+        }
+        if (reading.leadsLeft != null) {
+          row.leadsLeft = (row.leadsLeft ?? 0) + reading.leadsLeft;
+          row.leadsRead = (row.leadsRead ?? 0) + 1;
+        }
+      }
+      grouped.set(clientId, row);
+    }
+    console.log(
+      `[ops-board] watchdog day=${day} campaigns=${selected.length} read=${fresh.size} failed=${failed} carried=${campaigns.length - fresh.size}${partial ? " partial" : ""}`,
+    );
     return {
       updatedAt: now.toISOString(),
       partial,
       day,
       paceTarget: WATCHDOG_DAILY_TARGET,
       source: "campaign-watchdog-analytics",
-      clients: [...grouped.values()].map((row) => ({
-        clientId: row.clientId,
-        clientName: row.clientName,
-        sendsToday: row.sendsToday,
-        leadsLeft: row.leadsLeft,
-      })),
+      clients: [...grouped.values()],
+      campaigns,
     };
+  }
+
+  private priorWatchdog(): WatchdogSnapshot | null {
+    const state = this.deps.state as Partial<Pick<StateStore, "getOpsBoard">>;
+    return typeof state.getOpsBoard === "function" ? state.getOpsBoard().watchdog ?? null : null;
   }
 
   private async calling(now: Date): Promise<CallingSnapshot | null> {
@@ -258,7 +344,7 @@ export class OpsBoardRefresh {
   }
 
   private async linkedin(now: Date): Promise<LinkedInSnapshot> {
-    const day = ymdInZone(now);
+    const day = ymdInZone(now, "America/Chicago");
     const repliesToday = await this.replies(now);
     const supabase = this.deps.supabase();
     const clients: LinkedInClientInput[] = [];
@@ -442,7 +528,7 @@ function mismatchReason(value: unknown): CallingSnapshot["clients"][number]["mis
 }
 
 function chicagoMidnight(now: Date): Date {
-  const ymd = ymdInZone(now);
+  const ymd = ymdInZone(now, "America/Chicago");
   const sample = new Date(`${ymd}T12:00:00Z`);
   const offset = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Chicago",
@@ -526,4 +612,43 @@ function laneReason(campaign: { status: string; pending: number | null; inProgre
 function laneLabel(name: string, index: number): string {
   if (name.includes("@")) return `Sender ${index + 1}`;
   return name.slice(0, 80);
+}
+
+/** Leads change slowly; a lead reading is reused for up to six hours. */
+export const WATCHDOG_LEADS_CARRY_MS = 6 * 60 * 60 * 1000;
+
+/** ACTIVE, non-shell campaigns that belong to a Smartlead client. */
+export function selectWatchdogCampaigns(
+  campaigns: OpsCampaignRef[],
+): Array<OpsCampaignRef & { client_id: number }> {
+  return campaigns.filter(
+    (campaign): campaign is OpsCampaignRef & { client_id: number } =>
+      String(campaign.status ?? "").toUpperCase() === "ACTIVE" &&
+      !isAnyShellCampaign(campaign) &&
+      typeof campaign.client_id === "number" &&
+      campaign.client_id > 0,
+  );
+}
+
+function readAt(reading: WatchdogCampaignReading | undefined): number {
+  const at = reading ? Date.parse(reading.readAt) : NaN;
+  return Number.isFinite(at) ? at : 0;
+}
+
+function carryOver(
+  reading: WatchdogCampaignReading | undefined,
+  day: string,
+  leadsFloorMs: number,
+): WatchdogCampaignReading | null {
+  if (!reading) return null;
+  const sendsToday = reading.day === day ? reading.sendsToday : null;
+  const leadsLeft = readAt(reading) >= leadsFloorMs ? reading.leadsLeft : null;
+  if (sendsToday == null && leadsLeft == null) return null;
+  return { ...reading, sendsToday, leadsLeft };
+}
+
+function abortError(): Error {
+  const error = new Error("ops-board watchdog budget reached");
+  error.name = "AbortError";
+  return error;
 }

@@ -183,7 +183,7 @@ describe("classifyFailure", () => {
     // unknown:scan:scan-failed-creating-tests-for-campaign-n-campai.
     const c = classifyFailure(
       "scan",
-      "Failed creating tests for campaign 4289737: Campaign sequence not found",
+      "Failed creating tests for campaign 4289546: Campaign sequence not found",
     );
     assert.equal(c.class, "noise");
     assert.equal(c.autoRemediate, false);

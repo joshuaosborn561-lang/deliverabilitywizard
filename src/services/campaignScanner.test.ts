@@ -47,7 +47,7 @@ describe("isCampaignSequenceNotFoundError", () => {
     );
     assert.equal(
       isCampaignSequenceNotFoundError(
-        "Failed creating tests for campaign 4289737: Campaign sequence not found",
+        "Failed creating tests for campaign 4289546: Campaign sequence not found",
       ),
       true,
     );
@@ -648,7 +648,7 @@ describe("CampaignScanner — status re-check before creation", () => {
 
     const smartlead = {
       listCampaigns: async () => [
-        campaign(4289737, "ACTIVE"),
+        campaign(4289546, "ACTIVE"),
         campaign(101, "ACTIVE"),
       ],
       getCampaignEmailAccounts: async () => [
@@ -666,7 +666,7 @@ describe("CampaignScanner — status re-check before creation", () => {
       resolveProviderIds: async () => [],
       createAutomatedPlacement: async (input: { campaign_id?: number }) => {
         createCalls += 1;
-        if (input.campaign_id === 4289737) {
+        if (input.campaign_id === 4289546) {
           throw new Error("Campaign sequence not found");
         }
         return { id: "ok-101" };

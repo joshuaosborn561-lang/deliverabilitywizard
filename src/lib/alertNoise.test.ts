@@ -100,7 +100,7 @@ describe("alert noise", () => {
 
   it("treats Campaign sequence not found as benign ops noise", () => {
     const message =
-      "Failed creating tests for campaign 4289737: Campaign sequence not found";
+      "Failed creating tests for campaign 4289546: Campaign sequence not found";
     assert.equal(isScanSequenceMissingNoise(message), true);
     assert.equal(isBenignOpsNoise(message), true);
     assert.equal(isRateLimitNoise(message), false);

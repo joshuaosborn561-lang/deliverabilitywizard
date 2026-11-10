@@ -239,7 +239,7 @@ export function classifyFailure(
 
   // SmartDelivery does not recognize the sequence_mapping_id Smartlead
   // listed (gone, mid-edit, or not synced). Scan skips; next pass retries.
-  // Was unknown:scan:…campai (campaign 4289737).
+  // Was unknown:scan:…campai (campaign 4289546).
   if (/campaign sequence not found/i.test(lower)) {
     return {
       class: "noise",

@@ -173,6 +173,24 @@ export function classifyFailure(
     };
   }
 
+  // SmartDelivery server crash when resolving sequence_mapping_id — their
+  // code sets email_body on a null sequence row. Must run before type_error
+  // so scan does not relaunch as unknown/type_error (campaign 4289196).
+  if (
+    /cannot set properties of null\s*\(setting ['"]email_body['"]\)/i.test(
+      lower,
+    )
+  ) {
+    return {
+      class: "noise",
+      fingerprint: fingerprintOf("noise", "scan-email-body-null"),
+      autoRemediate: false,
+      summary:
+        "SmartDelivery crashed resolving sequence copy (null email_body row)",
+      raw: text,
+    };
+  }
+
   if (
     /is not a function|cannot read propert|undefined is not|typeerror/i.test(
       lower,

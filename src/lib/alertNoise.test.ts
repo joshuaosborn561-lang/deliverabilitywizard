@@ -9,6 +9,7 @@ import {
   isMissingSpamTestNoise,
   isRateLimitNoise,
   isRetryRemovalNoise,
+  isScanEmailBodyNullNoise,
   isSenderNotInCampaignNoise,
   reconnectFailureCategory,
 } from "./alertNoise.js";
@@ -95,6 +96,15 @@ describe("alert noise", () => {
     assert.equal(isBenignOpsNoise(message), true);
     assert.equal(isRateLimitNoise(message), false);
     assert.match(humanizeAlertError(message), /one email platform per domain/i);
+  });
+
+  it("treats SmartDelivery null email_body crashes as benign ops noise", () => {
+    const message =
+      "Failed creating tests for campaign 4289196: Cannot set properties of null (setting 'email_body')";
+    assert.equal(isScanEmailBodyNullNoise(message), true);
+    assert.equal(isBenignOpsNoise(message), true);
+    assert.equal(isRateLimitNoise(message), false);
+    assert.match(humanizeAlertError(message), /null email body/i);
   });
 
   it("explains missing SmartDelivery seed accounts in plain English", () => {

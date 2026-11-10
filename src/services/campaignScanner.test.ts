@@ -11,6 +11,7 @@ import {
   CampaignScanner,
   dropSendersFromBatches,
   interleaveSendersByEsp,
+  isSmartDeliveryEmailBodyNullError,
   OPEN_ENDED_TEST_DAYS,
   parseSendersNotUsedInCampaign,
   schedulerCronValue,
@@ -34,6 +35,27 @@ describe("parseSendersNotUsedInCampaign", () => {
     assert.equal(
       parseSendersNotUsedInCampaign("No seed accounts found for the provided provider IDs"),
       null,
+    );
+  });
+});
+
+describe("isSmartDeliveryEmailBodyNullError", () => {
+  it("matches the SmartDelivery null email_body crash", () => {
+    assert.equal(
+      isSmartDeliveryEmailBodyNullError(
+        "Cannot set properties of null (setting 'email_body')",
+      ),
+      true,
+    );
+    assert.equal(
+      isSmartDeliveryEmailBodyNullError(
+        "Failed creating tests for campaign 4289196: Cannot set properties of null (setting 'email_body')",
+      ),
+      true,
+    );
+    assert.equal(
+      isSmartDeliveryEmailBodyNullError("Cannot read properties of null"),
+      false,
     );
   });
 });
@@ -623,6 +645,62 @@ describe("CampaignScanner — status re-check before creation", () => {
     assert.equal(result.quotaBlocked, true);
     assert.equal(created.length, 0);
     assert.equal(quotaNotices, 1);
+  });
+
+  it("soft-skips when SmartDelivery crashes on null email_body", async () => {
+    const config = loadConfig({});
+    let createCalls = 0;
+
+    const smartlead = {
+      listCampaigns: async () => [
+        campaign(4289196, "ACTIVE"),
+        campaign(101, "ACTIVE"),
+      ],
+      getCampaignEmailAccounts: async () => [
+        { id: 10, from_email: "sender@example.com" },
+      ],
+      getCampaignSequences: async () => [
+        { id: 500, seq_number: 1, subject: "Hi" },
+      ],
+    } as unknown as SmartleadClient;
+
+    const smartDelivery = {
+      assertAccessActive: async () => "ok",
+      listTests: async () => [],
+      enrichCampaignIds: async <T,>(tests: T[]) => tests,
+      resolveProviderIds: async () => [],
+      createAutomatedPlacement: async (input: { campaign_id?: number }) => {
+        createCalls += 1;
+        if (input.campaign_id === 4289196) {
+          throw new Error(
+            "Cannot set properties of null (setting 'email_body')",
+          );
+        }
+        return { id: "ok-101" };
+      },
+      createManualPlacement: async () => ({ id: "manual-id" }),
+    } as unknown as SmartDeliveryClient;
+
+    const result = await new CampaignScanner(
+      config,
+      smartlead,
+      smartDelivery,
+      fakeSlack(),
+      fakeState(),
+    ).run({ trigger: "manual" });
+
+    assert.equal(
+      createCalls,
+      2,
+      "must continue to the next campaign after an email_body-null skip",
+    );
+    assert.equal(result.created, 1);
+    assert.ok(result.skipped >= 1);
+    assert.equal(
+      result.errors.length,
+      0,
+      "email_body-null crashes must not land in result.errors (remediator noise)",
+    );
   });
 });
 

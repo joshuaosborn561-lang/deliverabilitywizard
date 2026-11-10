@@ -237,6 +237,20 @@ export function classifyFailure(
     };
   }
 
+  // SmartDelivery does not recognize the sequence_mapping_id Smartlead
+  // listed (gone, mid-edit, or not synced). Scan skips; next pass retries.
+  // Was unknown:scan:…campai (campaign 4289737).
+  if (/campaign sequence not found/i.test(lower)) {
+    return {
+      class: "noise",
+      fingerprint: fingerprintOf("noise", "scan-sequence-missing"),
+      autoRemediate: false,
+      summary:
+        "SmartDelivery does not recognize the campaign sequence mapping yet",
+      raw: text,
+    };
+  }
+
   // D175 — InboxKit: one ESP platform per domain. Resume used to plan
   // Microsoft buys on a domain that already had Google (and vice versa).
   if (

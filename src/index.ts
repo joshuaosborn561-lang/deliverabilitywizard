@@ -1,4 +1,5 @@
 import { ReplyRateWatchService } from "./services/replyRateWatch.js";
+import { loadOwnershipOverrides, seedById } from "./lib/ownership.js";
 import { CanonConvergeService } from "./services/canonConverge.js";
 import { onWeekCohort as onWeekCohortD303 } from "./lib/restCohort.js";
 import express from "express";
@@ -236,6 +237,19 @@ async function main(): Promise<void> {
   startEventLoopAttribution();
   const state = new StateStore(config.stateFilePath);
   await state.load();
+  // D331 — client spaces are deleted; wizard owner writes live in state.
+  loadOwnershipOverrides(state.get().ownershipOverrides, (overrides) => {
+    state.get().ownershipOverrides = overrides;
+    void state.save({ debounceMs: 3_000 }).catch((error) => {
+      console.warn("[ownership] override persist failed", error);
+    });
+  });
+  {
+    const book = state.get().ownershipOverrides;
+    console.log(
+      `[ownership] D331 owner = sg-owner campaign tags + mailbox seed (${seedById().size} rows); overrides accounts=${Object.keys(book.accounts).length} campaigns=${Object.keys(book.campaigns).length}`,
+    );
+  }
   // D130 — the hold/swap rotation system is retired (kill-only, D51/D59).
   // Residue in these maps only suppresses staffing; drain it once, loudly.
   {

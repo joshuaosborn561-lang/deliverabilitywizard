@@ -321,6 +321,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D328 | Live | A `JEREMY-CIOTOLA` seat (tag 533700), or a mailbox whose sender name is exactly `Jeremy Ciotola`, has mailbox signature `Jeremy Ciotola` alone. No SalesGlider line. Other clients stay on their own signature rules. Josh, 2026-11-05. |
 | D329 | Live | An Insight seat (client 582890) sending as Josh Osborn or Joshua Osborn has mailbox signature exactly `Josh Osborn` / `Strategic Account Executive` / `Insight`. The signature pass must not drop the Insight line or switch the name to from_name. Josh, 2026-10-12 / 2026-11-04. |
 | D330 | Live | Weekly POD swap attaches and confirms the on-week pod before it detaches the off-week pod. A 429 or the pass budget saves a cursor and resumes; the 15-minute stage ceiling stays. `GET /pod-swap` publishes `in_progress`, `started_at`, `finished_at`. HTTP 429 honors Retry-After. Pod schedule, seat rules, D228 exemption after confirm, generic top-up, and thresholds unchanged. |
+| D331 | Live | Smartlead client spaces are deleted (Josh, 2026-11-11). Ownership comes from tags, not `client_id`: a campaign is owned by its unique `sg-owner:<slug>` tag (read with `include_tags=true`); wizard shells stay unowned. A mailbox is owned by a wizard override, else its live `client_id`, else the committed 2026-11-11 seed (`src/data/mailboxOwnerSeed.ts`, 1,590 rows), else the unique sg-owner of the campaigns it sends on (never for GENERIC / POC / CANARY), else pool. Owners keep their legacy numeric ids and display names, so every rule keyed by `client_id` is unchanged. Client writes go to the persisted override book, never to Smartlead. |
 
 ---
 
@@ -12016,3 +12017,67 @@ stage cap stays. LOCKED section unchanged.
 `src/lib/podSwapProgress.test.ts`,
 `src/lib/http.test.ts` (Retry-After),
 `src/guards/canon.test.ts` D330.
+
+## D331 — Client spaces are deleted; ownership comes from sg-owner tags
+
+**Date.** 2026-11-11. **Who.** Josh.
+
+**Decision.** Josh deleted every Smartlead client space (sub-client).
+Verified first: deleting a space keeps campaigns, leads, tags,
+sequences and stats, but sets `campaign.client_id` (and the mailbox
+`client_id`) to null. From now on ownership comes from the Smartlead
+campaign tag `sg-owner:<slug>` (22 live slugs: bcp, bpltg, ciotola,
+cornerstone, culture_fits, emcor, goliath, insight, nexus, nutter,
+parlay, peterson, powergryd, salesglider, techevo, vector,
+virtual_pulsar, deeproots, nieto, msrs, positive, vasco), not from
+`client_id`.
+
+**How.** Ownership is resolved once, at the Smartlead client boundary
+(`src/lib/ownership.ts`, applied in `SmartleadClient`), and every
+consumer keeps reading `client_id` as before:
+
+- Campaigns are read with `include_tags=true` (`GET /campaigns/{id}`
+  returns no tags without it). The unique sg-owner slug maps to the
+  owner's legacy client id (Ciotola → 345263, where its campaigns
+  lived; the D325 virtual 900345263 split is unchanged). Canary,
+  pod-control and word-hunt shells stay unowned even when they carry
+  their parent's tag. Slugs that never had a space (cornerstone,
+  deeproots, nieto, msrs, positive, vasco) stay unassigned, as before.
+  A client-scoped campaign list filters locally.
+- Mailboxes: a wizard override, else the live `client_id` (while any
+  survives), else the committed seed captured from the 2026-11-11
+  `client_id` (1,590 of 2,000 accounts; id, from_email, slug only),
+  else the unique sg-owner owner of the campaigns the mailbox sends on
+  (named seats only — GENERIC / POC / CANARY boxes never inherit), else
+  unassigned / pool exactly as a null-client mailbox was before.
+- `listClients()` serves the owner catalog with today's names and
+  logos, so every display name is identical. No HTTP.
+- Every client write (`setCampaignClientId`, `updateCampaignSettings`
+  or `updateEmailAccount` with `client_id`) is stripped from the
+  Smartlead request and recorded in the persisted override book
+  (`state.ownershipOverrides`). It never fails because the space is
+  gone. No campaign-tag write API is wired; the log names the
+  `sg-owner:<slug>` tag the campaign should carry. A campaign's
+  sg-owner tag beats an override.
+- `missing_client_tag` now means "no sg-owner tag".
+
+**Why this shape.** About ninety call sites key POD counts, pool /
+GENERIC classification, fan-out, top-up, boards, totals and Slack by
+the numeric client id, and state / the Supabase generic ledger store
+it. Rewriting them all to slugs risked exactly the failure Josh asked
+to avoid: the 1,590 client-owned mailboxes falling into the pool when
+`client_id` went null. Keeping the legacy ids and swapping the source
+keeps every rule identical. Offline proof
+(`scripts/ownership-diff.ts` on the 2026-11-11 backup, client_id forced
+null): 2,000 / 2,000 mailboxes identical, pool / generic and POD
+membership identical, display names identical; 842 / 845 campaigns
+identical. The other 3 are SalesGlider-tagged campaigns that were never
+in the space (one STOPPED internal test, two DRAFTED), which the tag
+now puts under SalesGlider, as intended.
+
+**Does not change.** POD floors, generics ledger rules, warmup,
+Insight / Ciotola / PowerGRYD special cases, or anything in the LOCKED
+section.
+
+**Guards.** `src/lib/ownership.test.ts`, `src/guards/canon.test.ts`
+D331.

@@ -19175,7 +19175,7 @@ describe("owner intent — D326 named POD rebalance even split", () => {
       { maxMoves: 50 },
     );
     assert.equal(plan.moves.length, 19);
-    assert.match(canon, /Canon as of \*\*D330\*\*/);
+    assert.match(canon, /Canon as of \*\*D33[01]\*\*/);
     assert.match(canon, /supersedes D203 never-retag/);
     assert.match(canon, /BPLTG 21\/59/);
     assert.match(canon, /5\.7\.233/);
@@ -19238,7 +19238,7 @@ describe("owner intent — D327 two messages and Mon–Thu 7am–7pm ET", () => 
     await assert.rejects(() => access(new URL("../lib/breakupStep.ts", import.meta.url)));
     assert.match(ledger, /## D327 — /);
     assert.match(ledger, /^\| D327 \|/m);
-    assert.match(canon, /Canon as of \*\*D330\*\*/);
+    assert.match(canon, /Canon as of \*\*D33[01]\*\*/);
     assert.match(canon, /exactly \*\*2 messages\*\*/);
     assert.match(canon, /Monday–Thursday \*\*07:00–19:00 America\/New_York\*\*/);
     assert.match(canon, /Not America\/Chicago/);
@@ -19464,7 +19464,7 @@ describe("owner intent — D328 Ciotola signature is the name alone", () => {
     );
     assert.match(signature, /return `\$\{name\}\\n\$\{brand\}`/);
     assert.equal(signature.includes("Insight"), false);
-    assert.match(canon, /Canon as of \*\*D330\*\*/);
+    assert.match(canon, /Canon as of \*\*D33[01]\*\*/);
     assert.match(canon, /exactly `Jeremy Ciotola`/);
     assert.match(decisions, /## D328 — /);
     assert.match(decisions, /^\| D328 \|/m);
@@ -19537,9 +19537,45 @@ describe("owner intent — D330 POD swap attaches before detach", () => {
     assert.match(index, /podSwap: podSwapSignal/, "/health podSwap is gone (D330)");
     assert.match(progress, /started_at/, "swap signal started_at is gone (D330)");
     assert.match(progress, /finished_at/, "swap signal finished_at is gone (D330)");
-    assert.match(canon, /Canon as of \*\*D330\*\*/);
+    assert.match(canon, /Canon as of \*\*D33[01]\*\*/);
     assert.match(canon, /GET \/pod-swap/);
     assert.match(decisions, /## D330 — /);
     assert.match(decisions, /^\| D330 \|/m);
+  });
+});
+
+describe("owner intent — D331 client spaces deleted, ownership by sg-owner tags", () => {
+  it("D331: include_tags reads, tag/seed owner, client writes never hit Smartlead", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const [smartlead, ownership, seed, store, canon, decisions] = await Promise.all([
+      readFile(new URL("../clients/smartlead.ts", import.meta.url), "utf8"),
+      readFile(new URL("../lib/ownership.ts", import.meta.url), "utf8"),
+      readFile(new URL("../data/mailboxOwnerSeed.ts", import.meta.url), "utf8"),
+      readFile(new URL("../state/store.ts", import.meta.url), "utf8"),
+      readFile(new URL("../../CANON.md", import.meta.url), "utf8"),
+      readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8"),
+    ]);
+    const stop = (problem: string) =>
+      [
+        "STOP — this reverses one of Josh's decisions.",
+        "  Decision: client spaces are deleted; ownership comes from sg-owner tags (D331).",
+        `  Problem:  ${problem}`,
+        "Check with Josh before changing it. Do not delete this guard to go green.",
+      ].join("\n");
+    assert.match(smartlead, /"campaigns\/", \{\s*query: \{ include_tags: true \}/, stop("listCampaigns no longer reads include_tags=true."));
+    assert.match(smartlead, /`campaigns\/\$\{campaignId\}`,\s*\{ query: \{ include_tags: true \} \}/, stop("getCampaign no longer reads include_tags=true."));
+    assert.doesNotMatch(smartlead, /query: clientId === undefined \? undefined : \{ client_id: clientId \}/, stop("listCampaigns filters by Smartlead client_id server-side again."));
+    assert.doesNotMatch(smartlead, /this\.request<SmartleadClientRecord\[\]>\("client\/"\)/, stop("listClients reads the deleted client spaces again."));
+    assert.doesNotMatch(smartlead, /updateCampaignSettings\(campaignId, \{ client_id: clientId \}\)/, stop("setCampaignClientId writes Smartlead client_id again."));
+    assert.match(smartlead, /recordAccountOwner\(emailAccountId/, stop("mailbox client_id writes reach Smartlead again."));
+    assert.match(smartlead, /for \(const account of page\) applyAccountOwnership\(account\)/, stop("fleet read no longer resolves mailbox owners."));
+    assert.match(ownership, /n\.startsWith\("canary shell"\)/, stop("shells may inherit a client from a copied tag."));
+    assert.match(ownership, /NEVER_INHERIT_TAGS = new Set\(\["GENERIC", "POC", "CANARY"\]\)/, stop("pool / canary boxes may inherit a campaign owner."));
+    assert.match(seed, /MAILBOX_OWNER_SEED_CAPTURED_AT = "2026-11-11"/, stop("mailbox owner seed is gone — 1,590 client mailboxes would fall into the pool."));
+    assert.match(store, /ownershipOverrides: parseOwnershipOverrides/, stop("override book is no longer persisted."));
+    assert.match(canon, /Canon as of \*\*D331\*\*/);
+    assert.match(canon, /Ownership comes from tags, not Smartlead `client_id`/);
+    assert.match(decisions, /## D331 — /);
+    assert.match(decisions, /^\| D331 \|/m);
   });
 });

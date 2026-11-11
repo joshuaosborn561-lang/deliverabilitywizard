@@ -22,6 +22,11 @@ import { runWithStallScopeAsync } from "../lib/eventLoopAttribution.js";
 import { copyIterableYielding } from "../lib/stringifyYielding.js";
 import { pruneStateLedgers } from "../lib/stateRetention.js";
 import { sleep } from "../lib/http.js";
+import {
+  emptyOwnershipOverrides,
+  parseOwnershipOverrides,
+  type OwnershipOverrideState,
+} from "../lib/ownership.js";
 import type { PodSwapProgress } from "../lib/podSwapProgress.js";
 import { realignStalePoolAssignment } from "../lib/genericPoolRealign.js";
 import {
@@ -468,6 +473,11 @@ export interface AppState {
    * never attaches a seat that is lapsed or ends within 7 days.
    */
   inboxkitSeatEnds: Record<string, InboxkitSeatEnd>;
+  /**
+   * D331 — owner overrides for campaigns / mailboxes written by the wizard
+   * after the Smartlead client spaces were deleted (replaces client_id writes).
+   */
+  ownershipOverrides: OwnershipOverrideState;
 }
 
 /** D85 — the single fleet-level fact behind the old 48x canary_inactive. */
@@ -938,6 +948,7 @@ const EMPTY_STATE: AppState = {
   evidenceHolds: {},
   inboxkitLicenseHandoff: null,
   inboxkitSeatEnds: {},
+  ownershipOverrides: emptyOwnershipOverrides(),
 };
 
 export class StateStore {
@@ -1084,6 +1095,7 @@ export class StateStore {
           parsed.inboxkitLicenseHandoff,
         ),
         inboxkitSeatEnds: parseInboxkitSeatEnds(parsed.inboxkitSeatEnds),
+        ownershipOverrides: parseOwnershipOverrides(parsed.ownershipOverrides),
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;

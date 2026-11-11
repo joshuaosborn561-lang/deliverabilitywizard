@@ -322,6 +322,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D329 | Live | An Insight seat (client 582890) sending as Josh Osborn or Joshua Osborn has mailbox signature exactly `Josh Osborn` / `Strategic Account Executive` / `Insight`. The signature pass must not drop the Insight line or switch the name to from_name. Josh, 2026-10-12 / 2026-11-04. |
 | D330 | Live | Weekly POD swap attaches and confirms the on-week pod before it detaches the off-week pod. A 429 or the pass budget saves a cursor and resumes; the 15-minute stage ceiling stays. `GET /pod-swap` publishes `in_progress`, `started_at`, `finished_at`. HTTP 429 honors Retry-After. Pod schedule, seat rules, D228 exemption after confirm, generic top-up, and thresholds unchanged. |
 | D331 | Live | Smartlead client spaces are deleted (Josh, 2026-11-11). Ownership comes from tags, not `client_id`: a campaign is owned by its unique `sg-owner:<slug>` tag (read with `include_tags=true`); wizard shells stay unowned. A mailbox is owned by a wizard override, else its live `client_id`, else the committed 2026-11-11 seed (`src/data/mailboxOwnerSeed.ts`, 1,590 rows), else the unique sg-owner of the campaigns it sends on (never for GENERIC / POC / CANARY), else pool. Owners keep their legacy numeric ids and display names, so every rule keyed by `client_id` is unchanged. Client writes go to the persisted override book, never to Smartlead. |
+| D334 | Live | Daily per-mailbox health snapshot (Josh, 2026-11-11, replacing deliverability testing with metrics). Every mailbox on an ACTIVE campaign is snapshotted daily at 7:15am CT (cron hour must be 06–19 CT) for the previous CT day: sent, replies, reply rate, bounces, bounce rate, warmup score, domain, ESP, POD, sg-owner. History in `<state dir>/mailbox-health/YYYY-MM-DD.json`, 120 days. Trend flags (env thresholds) emit `mailbox_health_trend` — ALERT ONLY, never a core kind, never a pause/stop/unpause/rest/burn/swap. One Slack `ops_alert` per run, at most once per mailbox per flag per day. `GET /mailbox-health/daily` (RUN_TOKEN). |
 
 ---
 
@@ -12081,3 +12082,59 @@ section.
 
 **Guards.** `src/lib/ownership.test.ts`, `src/guards/canon.test.ts`
 D331.
+
+## D334 — Daily per-mailbox health snapshot and trend alerts (alert only)
+
+**Decision.** Josh, 2026-11-11 (1:52–1:54pm CT, via the "turn off all
+deliverability testing" spec, item 4): health is judged by daily
+per-mailbox metrics instead of placement tests. The wizard keeps a dated
+history per mailbox and flags trends for a human. Flags never act.
+
+**How.**
+
+- Job `mailbox-health-daily`, cron `CRON_MAILBOX_HEALTH_DAILY` (default
+  `15 7 * * *`, America/Chicago, every day). The hour field must expand to
+  06–19 CT only; otherwise the job is **not scheduled** and the boot log
+  says why. The run itself also refuses 20:00–05:59 CT. A weekday
+  catch-up (D249) runs it once if a deploy swallowed the morning fire.
+- Snapshot day = the previous America/Chicago calendar day. Mailboxes =
+  every account attached to at least one ACTIVE campaign, from the shared
+  inventory book (master-key `listAllEmailAccounts`, D331 ownership
+  already applied — read only). Counts come from one
+  `getMailboxHealthMetrics({ startDate: day, endDate: day, fullData: true })`
+  call through the existing limiter. Warmup score =
+  `warmup_details.warmup_reputation` parsed to a number. A mailbox with
+  no metrics row has `sent/replies/bounces = null`, not 0.
+- Storage: one file per date, `<dir of STATE_FILE_PATH>/mailbox-health/YYYY-MM-DD.json`,
+  rows keyed by mailbox email; a re-run for a date overwrites it
+  atomically. Kept out of `state.json` (D257). Files older than
+  `MAILBOX_HEALTH_RETENTION_DAYS` (120) are deleted on write.
+- Trend flags (defaults are proposals; env-overridable):
+  `bounce_rate_high` — 7-day rolling bounce rate > 3% with ≥ 50 sends;
+  `bounce_rate_rising` — daily bounce rate strictly rising on the last
+  3 sending days (≥ 20 sends each) inside the 7-day window;
+  `reply_rate_drop` — last-7-day reply rate more than 50% below the
+  14 days before it, ≥ 100 sends in each window and a non-zero baseline;
+  `warmup_low` — warmup score < 90; `warmup_drop` — down ≥ 5 points vs
+  the snapshot 7 days earlier.
+- Each flag is a `mailbox_health_trend: <email> <flag> — <detail>`
+  finding from the newest snapshot, counted in `/health`
+  `canonFindings`. It is **not** a `CANON_CORE_KINDS` kind, so it never
+  flips `canonCompliant`.
+- Slack: one `ops_alert` post per run listing only (mailbox, flag, day)
+  keys not alerted before (`alertedKeys`), so at most one post per
+  mailbox per flag per day. `MAILBOX_HEALTH_ALERTS_ENABLED` (default on)
+  silences Slack only; `MAILBOX_HEALTH_DAILY_ENABLED` (default on) stops
+  the job.
+- `GET /mailbox-health/daily?date=YYYY-MM-DD` (RUN_TOKEN, like
+  `/status`) returns the stored day (newest when `date` is omitted).
+
+**Does not change.** D311 reply-rate-drop (domain vs client baseline) is
+untouched; this is per mailbox and alert only. No placement tests,
+no Smartlead writes: the service's Smartlead type is
+`Pick<SmartleadClient, "getMailboxHealthMetrics">`. Sequences, send
+window, exemptions, sg-owner ownership, master key, STOPPED-vs-PAUSED,
+Gabe Calls rules are unchanged.
+
+**Guards.** `src/lib/mailboxHealthDaily.test.ts`,
+`src/services/mailboxHealthDaily.test.ts`, `src/guards/canon.test.ts` D334.

@@ -19175,7 +19175,7 @@ describe("owner intent — D326 named POD rebalance even split", () => {
       { maxMoves: 50 },
     );
     assert.equal(plan.moves.length, 19);
-    assert.match(canon, /Canon as of \*\*D33[01]\*\*/);
+    assert.match(canon, /Canon as of \*\*D(33[0-9]|3[4-9][0-9])\*\*/);
     assert.match(canon, /supersedes D203 never-retag/);
     assert.match(canon, /BPLTG 21\/59/);
     assert.match(canon, /5\.7\.233/);
@@ -19238,7 +19238,7 @@ describe("owner intent — D327 two messages and Mon–Thu 7am–7pm ET", () => 
     await assert.rejects(() => access(new URL("../lib/breakupStep.ts", import.meta.url)));
     assert.match(ledger, /## D327 — /);
     assert.match(ledger, /^\| D327 \|/m);
-    assert.match(canon, /Canon as of \*\*D33[01]\*\*/);
+    assert.match(canon, /Canon as of \*\*D(33[0-9]|3[4-9][0-9])\*\*/);
     assert.match(canon, /exactly \*\*2 messages\*\*/);
     assert.match(canon, /Monday–Thursday \*\*07:00–19:00 America\/New_York\*\*/);
     assert.match(canon, /Not America\/Chicago/);
@@ -19464,7 +19464,7 @@ describe("owner intent — D328 Ciotola signature is the name alone", () => {
     );
     assert.match(signature, /return `\$\{name\}\\n\$\{brand\}`/);
     assert.equal(signature.includes("Insight"), false);
-    assert.match(canon, /Canon as of \*\*D33[01]\*\*/);
+    assert.match(canon, /Canon as of \*\*D(33[0-9]|3[4-9][0-9])\*\*/);
     assert.match(canon, /exactly `Jeremy Ciotola`/);
     assert.match(decisions, /## D328 — /);
     assert.match(decisions, /^\| D328 \|/m);
@@ -19537,7 +19537,7 @@ describe("owner intent — D330 POD swap attaches before detach", () => {
     assert.match(index, /podSwap: podSwapSignal/, "/health podSwap is gone (D330)");
     assert.match(progress, /started_at/, "swap signal started_at is gone (D330)");
     assert.match(progress, /finished_at/, "swap signal finished_at is gone (D330)");
-    assert.match(canon, /Canon as of \*\*D33[01]\*\*/);
+    assert.match(canon, /Canon as of \*\*D(33[0-9]|3[4-9][0-9])\*\*/);
     assert.match(canon, /GET \/pod-swap/);
     assert.match(decisions, /## D330 — /);
     assert.match(decisions, /^\| D330 \|/m);
@@ -19573,9 +19573,48 @@ describe("owner intent — D331 client spaces deleted, ownership by sg-owner tag
     assert.match(ownership, /NEVER_INHERIT_TAGS = new Set\(\["GENERIC", "POC", "CANARY"\]\)/, stop("pool / canary boxes may inherit a campaign owner."));
     assert.match(seed, /MAILBOX_OWNER_SEED_CAPTURED_AT = "2026-11-11"/, stop("mailbox owner seed is gone — 1,590 client mailboxes would fall into the pool."));
     assert.match(store, /ownershipOverrides: parseOwnershipOverrides/, stop("override book is no longer persisted."));
-    assert.match(canon, /Canon as of \*\*D331\*\*/);
+    assert.match(canon, /Canon as of \*\*D(33[1-9]|3[4-9][0-9])\*\*/);
     assert.match(canon, /Ownership comes from tags, not Smartlead `client_id`/);
     assert.match(decisions, /## D331 — /);
     assert.match(decisions, /^\| D331 \|/m);
+  });
+});
+
+describe("owner intent — D334 daily mailbox health is alert only", () => {
+  it("D334: read-only Smartlead, not a core kind, no night timer, flags default on", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { CANON_CORE_KINDS } = await import("../lib/canonCompliance.js");
+    const { loadMailboxHealthConfig, mailboxHealthCronError } = await import("../lib/mailboxHealthDaily.js");
+    const [svc, index, canon, decisions] = await Promise.all([
+      readFile(new URL("../services/mailboxHealthDaily.ts", import.meta.url), "utf8"),
+      readFile(new URL("../index.ts", import.meta.url), "utf8"),
+      readFile(new URL("../../CANON.md", import.meta.url), "utf8"),
+      readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8"),
+    ]);
+    const stop = (problem: string) =>
+      [
+        "STOP — this reverses one of Josh's decisions.",
+        "  Decision: daily per-mailbox health is ALERT ONLY (D334).",
+        `  Problem:  ${problem}`,
+        "Check with Josh before changing it. Do not delete this guard to go green.",
+      ].join("\n");
+    assert.match(svc, /type Smartlead = Pick<SmartleadClient, "getMailboxHealthMetrics">;/, stop("mailbox health got a wider Smartlead surface."));
+    assert.doesNotMatch(
+      svc,
+      /updateCampaignStatus|removeEmailAccountsFromCampaign|updateEmailAccount|upsertMailboxRest|requestIsolationAction|createManualPlacement/,
+      stop("mailbox health can act (pause/stop/rest/swap/test)."),
+    );
+    assert.equal((CANON_CORE_KINDS as readonly string[]).includes("mailbox_health_trend"), false, stop("mailbox_health_trend became a core kind."));
+    const cfg = loadMailboxHealthConfig({});
+    assert.equal(cfg.enabled, true);
+    assert.equal(cfg.alertsEnabled, true);
+    assert.equal(mailboxHealthCronError(cfg.cron), null);
+    assert.ok(mailboxHealthCronError("0 21 * * *"), stop("a night-time mailbox-health timer is accepted."));
+    assert.match(index, /if \(mailboxHealthCronInvalid\) \{/, stop("the cron hour guard is no longer applied before scheduling."));
+    assert.match(index, /app\.get\("\/mailbox-health\/daily", async \(req, res\) => \{\n    if \(!checkRunToken\(req, res\)\) return;/, stop("GET /mailbox-health/daily lost RUN_TOKEN auth."));
+    assert.match(canon, /Canon as of \*\*D(33[4-9]|3[4-9][0-9])\*\*/);
+    assert.match(canon, /\*\*Daily per-mailbox health, alert only\.\*\*/);
+    assert.match(decisions, /## D334 — /);
+    assert.match(decisions, /^\| D334 \|/m);
   });
 });

@@ -1,4 +1,14 @@
 import { ReplyRateWatchService } from "./services/replyRateWatch.js";
+import { MailboxHealthDailyService } from "./services/mailboxHealthDaily.js";
+import { MailboxHealthStore } from "./state/mailboxHealthStore.js";
+import {
+  isYmd,
+  loadMailboxHealthConfig,
+  mailboxHealthCronError,
+  mailboxHealthCronHours,
+  MAILBOX_HEALTH_TIMEZONE,
+  snapshotDateFor,
+} from "./lib/mailboxHealthDaily.js";
 import { loadOwnershipOverrides, seedById } from "./lib/ownership.js";
 import { CanonConvergeService } from "./services/canonConverge.js";
 import { onWeekCohort as onWeekCohortD303 } from "./lib/restCohort.js";
@@ -692,6 +702,21 @@ async function main(): Promise<void> {
     slack,
     state,
     config,
+  });
+  // D334 — daily per-mailbox health snapshot + trend alerts. Alert only;
+  // read-only Smartlead surface (getMailboxHealthMetrics).
+  const mailboxHealthConfig = loadMailboxHealthConfig();
+  const mailboxHealthStore = MailboxHealthStore.forStateFile(config.stateFilePath);
+  const mailboxHealth = new MailboxHealthDailyService({
+    smartlead,
+    slack,
+    state,
+    store: mailboxHealthStore,
+    config: mailboxHealthConfig,
+    dryRun: config.dryRun,
+  });
+  await mailboxHealth.loadOpenFindings().catch((error) => {
+    console.warn("[mailbox-health] could not load the latest snapshot", error);
   });
   const podControls = new PodControlService(
     config,
@@ -1650,6 +1675,30 @@ async function main(): Promise<void> {
     return stage("inboxkit-license", async () => inboxkitLicenseSweep.run(opts));
   };
 
+  let mailboxHealthInFlight: Promise<void> | null = null;
+  const runMailboxHealth = async (): Promise<void> => {
+    if (mailboxHealthInFlight) return mailboxHealthInFlight;
+    mailboxHealthInFlight = stage("mailbox-health-daily", async () => {
+      const inventory = await inventoryBook.get();
+      const r = await mailboxHealth.run({
+        campaigns: inventory.campaigns,
+        accounts: inventory.accounts,
+      });
+      console.log(
+        `[mailbox-health] date=${r.date ?? "-"} mailboxes=${r.mailboxes} withMetrics=${r.withMetrics} trends=${r.trends.length} alerted=${r.alerted} pruned=${r.pruned} skipped=${r.skipped.join("; ") || "-"} errors=${r.errors.join("; ") || "-"}`,
+      );
+    }).then(
+      () => undefined,
+      (error) => {
+        console.error("[mailbox-health] run failed", error);
+      },
+    ).finally(() => {
+      mailboxHealthInFlight = null;
+    });
+    return mailboxHealthInFlight;
+  };
+  const mailboxHealthCronInvalid = mailboxHealthCronError(mailboxHealthConfig.cron);
+
   /**
    * D249 — node-cron does not catch a fire that was missed while the
    * process was down or frozen. Weekday 6am–8pm CT only. Each job is
@@ -1667,6 +1716,18 @@ async function main(): Promise<void> {
       if (config.enableSpendDigest && weekdayJobMissed(state.get().spendDigestPostedYmd, ymd)) {
         console.log(`[catch-up] Needs you / spend-digest missed ${ymd} — running once`);
         await runSpendDigest();
+      }
+      // D334 — a deploy across the morning fire must not lose the day.
+      if (
+        mailboxHealthConfig.enabled &&
+        !mailboxHealthCronInvalid &&
+        chicagoWallClock(now, MAILBOX_HEALTH_TIMEZONE).hour >
+          Math.min(...mailboxHealthCronHours(mailboxHealthConfig.cron)) &&
+        !(await mailboxHealthStore.read(snapshotDateFor(now)))
+      ) {
+        console.log(`[catch-up] mailbox-health missed ${snapshotDateFor(now)} — running once`);
+        // Not awaited: an inventory fetch must not hold up the other catch-ups.
+        void runMailboxHealth();
       }
       const ikYmd = state.getInboxkitLicenseHandoff()?.ymd ?? null;
       if (config.enableInboxkitLicenseSweep && weekdayJobMissed(ikYmd, ymd)) {
@@ -2145,6 +2206,21 @@ async function main(): Promise<void> {
         feedBugRemediator("reply-rate-drop-cron", error);
       });
     });
+  }
+
+  // D334 — daily mailbox health (alert only). America/Chicago; the cron
+  // hour must be 06–19 CT or the job is not scheduled at all.
+  if (mailboxHealthConfig.enabled) {
+    if (mailboxHealthCronInvalid) {
+      console.error(`[mailbox-health] not scheduled: ${mailboxHealthCronInvalid}`);
+    } else {
+      scheduleJob(
+        "mailbox-health-daily",
+        mailboxHealthConfig.cron,
+        () => runMailboxHealth(),
+        { timezone: MAILBOX_HEALTH_TIMEZONE },
+      );
+    }
   }
 
   // D205 — always schedule so disabled / after-hours ticks still
@@ -3318,6 +3394,16 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         canonFindingSamples[kind] = samples;
       }
     }
+    // D334 — alert-only mailbox trends: counted, never a core kind.
+    for (const finding of mailboxHealth.openFindings().findings) {
+      const kind = findingKind(finding);
+      canonFindings[kind] = (canonFindings[kind] ?? 0) + 1;
+      const samples = canonFindingSamples[kind] ?? [];
+      if (samples.length < 5) {
+        samples.push(finding);
+        canonFindingSamples[kind] = samples;
+      }
+    }
     const board = canonBoard(activeChecks);
     const poolFindings = s.genericPoolFindings ?? [];
     const { stages, overdueStages: overdue } = stageHealthView(
@@ -3539,6 +3625,28 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
   app.get("/approvals", (req, res) => {
     if (!checkRunToken(req, res)) return;
     res.json({ approvals: state.listSpendApprovals() });
+  });
+
+  // D334 — stored mailbox health snapshot (RUN_TOKEN). Default: newest day.
+  app.get("/mailbox-health/daily", async (req, res) => {
+    if (!checkRunToken(req, res)) return;
+    const raw = typeof req.query.date === "string" ? req.query.date : "";
+    if (raw && !isYmd(raw)) {
+      res.status(400).json({ error: "date must be YYYY-MM-DD" });
+      return;
+    }
+    const day = raw ? await mailboxHealthStore.read(raw) : await mailboxHealthStore.latest();
+    if (!day) {
+      res.status(404).json({ error: `no mailbox health snapshot for ${raw || "any date"}`, dates: await mailboxHealthStore.dates() });
+      return;
+    }
+    res.json({
+      date: day.date,
+      generatedAt: day.generatedAt,
+      metricsMissing: day.metricsMissing ?? false,
+      mailboxes: Object.values(day.rows),
+      trends: day.trends,
+    });
   });
 
   // D308 (A0) — drain mode. POST /drain?action=on&minutes=30 stops NEW cron

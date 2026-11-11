@@ -183,4 +183,6 @@ export const STAGE_OVERDUE_WINDOWS_MS: Record<string, number | null> = {
   "terl-eod": TERL_EOD_MS,
   "spend-digest": SPEND_DIGEST_MS,
   "inboxkit-license": INBOXKIT_LICENSE_MS,
+  // D334 — daily 7:15am CT mailbox health snapshot (every day).
+  "mailbox-health-daily": 36 * 60 * 60 * 1000,
 };

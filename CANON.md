@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D331** (2026-11-11). One page of current truth. When a new
+Canon as of **D334** (2026-11-11). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -9,6 +9,8 @@ guard in `src/guards/meta.test.ts` enforces both).
 and every reversal, and most of it is **superseded**. Do not derive behaviour
 from it. Derive behaviour from this file; use the ledger only to understand
 *why* a rule here exists (each rule cites its decision numbers).
+
+**D334.** **Daily per-mailbox health, alert only.** Every mailbox on an ACTIVE campaign is snapshotted daily (default 7:15am America/Chicago; the cron hour must be 06–19 CT or the job is not scheduled) for the previous CT day: sent, replies, reply rate, bounces, bounce rate, warmup score (`warmup_reputation`), domain, ESP, POD, sg-owner — one `getMailboxHealthMetrics` read, no placement tests. History lives in `<state dir>/mailbox-health/YYYY-MM-DD.json` for 120 days (re-runs overwrite the day). Trend flags — 7-day bounce > 3% (≥ 50 sends) or rising 3 sending days in a row, reply rate > 50% below the prior 14-day baseline (≥ 100 sends each window), warmup < 90 or down ≥ 5 week over week; thresholds are env config — emit the finding `mailbox_health_trend`, counted in `/health` `canonFindings` but **never a core kind** and **never an action** (no pause / stop / unpause / rest / burn / swap). Slack: one `ops_alert` per run, at most once per mailbox per flag per day. `GET /mailbox-health/daily?date=` needs `RUN_TOKEN`. Flags `MAILBOX_HEALTH_DAILY_ENABLED` / `MAILBOX_HEALTH_ALERTS_ENABLED` default on.
 
 **D331.** Smartlead client spaces are deleted. **Ownership comes from tags, not Smartlead `client_id`.** A campaign is owned by its unique `sg-owner:<slug>` campaign tag (read with `include_tags=true`); canary / pod-control / word-hunt shells stay unowned. A mailbox is owned by a wizard override, else its live `client_id`, else the committed 2026-11-11 seed (`src/data/mailboxOwnerSeed.ts`), else the unique sg-owner owner of the campaigns it sends on (never for GENERIC / POC / CANARY boxes), else it is unassigned / pool. Owners keep their legacy numeric ids (Ciotola campaigns → 345263; cornerstone, deeproots, nieto, msrs, positive, vasco have none and stay unassigned) and their display names, so **every `client_id` in this canon means that resolved owner id** (`src/lib/ownership.ts`, applied in `SmartleadClient`). Client writes never reach Smartlead and never fail: they land in the persisted override book (`ownershipOverrides`). `missing_client_tag` means no sg-owner tag. LOCKED section unchanged.
 

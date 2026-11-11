@@ -1,6 +1,7 @@
 import type { CampaignCheckRecord } from "./campaignCheck.js";
 import { CANARY_LOCK_CORE_KINDS } from "./canaryLock.js";
 import { GENERIC_POOL_CORE_KINDS } from "./genericPool.js";
+import { withoutTestingFindings } from "./deliverabilityTesting.js";
 
 /**
  * D108 — the 15-minute yes/no. A living ACTIVE campaign is compliant
@@ -58,7 +59,8 @@ export function canonBoard(
   campaigns: CanonCampaignRow[];
 } {
   const campaigns = records.map((record) => {
-    const fails = (record.findings ?? []).filter((finding) =>
+    // D333 — testing off: stored testing findings never flip the yes.
+    const fails = withoutTestingFindings(record.findings ?? []).filter((finding) =>
       (CANON_CORE_KINDS as readonly string[]).includes(findingKind(finding)),
     );
     return {

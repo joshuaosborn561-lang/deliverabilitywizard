@@ -3,6 +3,9 @@ import { describe, it } from "node:test";
 import { StateStore } from "../state/store.js";
 import { alertCanonMisses, alertStageAnomalies, stageAlertText } from "./opsAlerts.js";
 
+// D333 — these cases cover the legacy testing behaviour behind the kill switch.
+process.env.DELIVERABILITY_TESTING_ENABLED = "true";
+
 function store(): StateStore {
   return new StateStore(
     `/tmp/dw-opsalerts-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.json`,

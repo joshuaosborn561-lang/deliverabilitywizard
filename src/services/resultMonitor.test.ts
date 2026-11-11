@@ -7,6 +7,9 @@ import type { SmartleadClient } from "../clients/smartlead.js";
 import { StateStore } from "../state/store.js";
 import { ResultMonitor } from "./resultMonitor.js";
 
+// D333 — these cases cover the legacy testing behaviour behind the kill switch.
+process.env.DELIVERABILITY_TESTING_ENABLED = "true";
+
 const AIRPODS = {
   id: 3847794,
   name: "TechEvo SFL Startup Owners AirPods",

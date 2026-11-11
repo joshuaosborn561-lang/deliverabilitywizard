@@ -1,4 +1,5 @@
 import type { AppConfig } from "../config.js";
+import { isDeliverabilityTestingEnabled, logTestingOff } from "../lib/deliverabilityTesting.js";
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import {
@@ -88,6 +89,10 @@ export class ResultMonitor {
       lowDeliverabilityAlerts: 0,
       errors: [],
     };
+    if (!isDeliverabilityTestingEnabled()) {
+      logTestingOff("monitor-results (placement result polling)");
+      return result;
+    }
 
     console.log("[monitor] Starting result monitoring");
 

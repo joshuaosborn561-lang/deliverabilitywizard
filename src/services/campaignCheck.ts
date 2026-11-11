@@ -1,4 +1,8 @@
 import type { AppConfig } from "../config.js";
+import {
+  isDeliverabilityTestingEnabled,
+  withoutTestingFindings,
+} from "../lib/deliverabilityTesting.js";
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
 import { campaignIdOf, normalizeTestList } from "../clients/smartdelivery.js";
@@ -261,6 +265,15 @@ export class CampaignCheckService {
       findings: [],
     };
     const startedAt = opts.now ?? Date.now();
+    // D333 — testing off: clear stored testing findings on this pass, so
+    // old no_placement_test / missing_canary counts never linger.
+    if (!isDeliverabilityTestingEnabled()) {
+      for (const row of this.state.listCampaignChecks()) {
+        const kept = withoutTestingFindings(row.findings ?? []);
+        if (kept.length === (row.findings ?? []).length) continue;
+        this.state.upsertCampaignCheck({ ...row, findings: kept });
+      }
+    }
     const budgetMs =
       opts.budgetMs ??
       (mode === "first" ? CAMPAIGN_CHECK_FIRST_BUDGET_MS : undefined);
@@ -337,7 +350,9 @@ export class CampaignCheckService {
     // told nobody anything 1x did not, and drowned the findings that have
     // per-campaign fixes. The per-campaign canary checks resume untouched
     // the moment the fleet has a connected mailbox.
-    const fleetDown = connectedCanaries === 0;
+    // D333 — testing off: no canary fleet to be down.
+    const testingOn = isDeliverabilityTestingEnabled();
+    const fleetDown = testingOn && connectedCanaries === 0;
     if (fleetDown) {
       if (!this.state.getCanaryFleetDown()) {
         this.state.setCanaryFleetDown({
@@ -702,7 +717,7 @@ export class CampaignCheckService {
         name,
         status: campaign.status,
         lastKind: kind,
-        findings: findings.map(formatFinding),
+        findings: withoutTestingFindings(findings.map(formatFinding)),
         sigAutoWrittenAt: sigApplied?.wroteTag
           ? now
           : record.sigAutoWrittenAt,
@@ -1754,7 +1769,10 @@ export class CampaignCheckService {
           });
         }
       }
+      // D333 — testing off: never emit the testing findings.
+      const testingOn = isDeliverabilityTestingEnabled();
       if (
+        testingOn &&
         input.depth === "hourly" &&
         !input.listedTestsFailed &&
         !input.tested.has(String(campaign.id))
@@ -1764,7 +1782,7 @@ export class CampaignCheckService {
           detail: "no recurring SmartDelivery test for serving inboxes",
         });
       }
-      if (!input.listedTestsFailed) {
+      if (testingOn && !input.listedTestsFailed) {
         const living = input.listedTests.find(
           (test) => Number(campaignIdOf(test)) === campaign.id,
         );
@@ -1783,7 +1801,7 @@ export class CampaignCheckService {
         }
       }
 
-      if (input.depth === "hourly" && !input.listedTestsFailed) {
+      if (testingOn && input.depth === "hourly" && !input.listedTestsFailed) {
         const missingKnownGood = serving.filter(
           (email) => !input.knownGoodEmails.has(email),
         );
@@ -1800,6 +1818,7 @@ export class CampaignCheckService {
       // scoreboard (canaryFleetDown), not 48 times here.
       const storedCanaryId = this.state.getCopyCanaryTestId(campaign.id);
       if (
+        testingOn &&
         !input.fleetDown &&
         !input.listedTestsFailed &&
         !hasLivingUnwarmedCopyCanary(

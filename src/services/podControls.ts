@@ -1,4 +1,5 @@
 import type { AppConfig } from "../config.js";
+import { isDeliverabilityTestingEnabled, logTestingOff } from "../lib/deliverabilityTesting.js";
 import type { SlackClient } from "../clients/slack.js";
 import {
   accountEmail,
@@ -89,6 +90,10 @@ export class PodControlService {
 
     if (!this.config.enablePodControls) {
       console.log("[pod-controls] Disabled");
+      return result;
+    }
+    if (!isDeliverabilityTestingEnabled()) {
+      logTestingOff("pod-controls (Pod control known-good tests)");
       return result;
     }
 

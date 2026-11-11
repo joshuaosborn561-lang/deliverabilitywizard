@@ -1,4 +1,5 @@
 import { apiRequest, ApiError, type RequestOptions } from "../lib/http.js";
+import { isDeliverabilityTestingEnabled } from "../lib/deliverabilityTesting.js";
 import {
   smartleadLane,
   type SmartleadLimiter,
@@ -145,6 +146,14 @@ export class ReportReadsPausedError extends Error {
 
 export function isReportReadsPaused(error: unknown): boolean {
   return error instanceof ReportReadsPausedError;
+}
+
+/** D333 — thrown by the create endpoints when DELIVERABILITY_TESTING_ENABLED is off. */
+export class DeliverabilityTestingOffError extends Error {
+  constructor(endpoint: string) {
+    super(`${endpoint} refused — deliverability testing is off (D333)`);
+    this.name = "DeliverabilityTestingOffError";
+  }
 }
 
 export class SmartDeliveryClient {
@@ -400,6 +409,10 @@ export class SmartDeliveryClient {
   createManualPlacement(
     input: CreateManualPlacementInput,
   ): Promise<CreatedPlacementTest> {
+    // D333 backstop — no placement test reaches Smartlead while testing is off.
+    if (!isDeliverabilityTestingEnabled()) {
+      return Promise.reject(new DeliverabilityTestingOffError("spam-test/manual"));
+    }
     return this.request("spam-test/manual",
       { method: "POST", body: input },
     );
@@ -412,6 +425,10 @@ export class SmartDeliveryClient {
   createAutomatedPlacement(
     input: CreateAutomatedPlacementInput,
   ): Promise<CreatedPlacementTest> {
+    // D333 backstop — no placement test reaches Smartlead while testing is off.
+    if (!isDeliverabilityTestingEnabled()) {
+      return Promise.reject(new DeliverabilityTestingOffError("spam-test/schedule"));
+    }
     return this.request("spam-test/schedule",
       { method: "POST", body: input },
     );

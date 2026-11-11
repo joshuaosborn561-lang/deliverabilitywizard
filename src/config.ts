@@ -23,6 +23,7 @@ import {
   parseNamePatterns,
 } from "./lib/holdPolicy.js";
 import { DEFAULT_WARMUP_DAYS } from "./lib/warmupDays.js";
+import { isDeliverabilityTestingEnabled } from "./lib/deliverabilityTesting.js";
 
 const boolFromEnv = (fallback: boolean) =>
   z
@@ -91,6 +92,14 @@ const ConfigSchema = z.object({
    */
   totalTestQuota: z.coerce.number().int().nonnegative().default(0),
   maxMailboxesPerTest: z.coerce.number().int().positive().max(50).default(50),
+  /**
+   * D333 — master kill switch for ALL deliverability testing (placement
+   * tests, known-good pod controls, canary shells / Canary copy tests,
+   * canary-adopt, monitor-results). Default FALSE; only the exact string
+   * "true" in DELIVERABILITY_TESTING_ENABLED turns it on. Runtime gates
+   * read the same env through `isDeliverabilityTestingEnabled()`.
+   */
+  deliverabilityTestingEnabled: z.boolean().default(false),
   /**
    * Create recurring (automated) placement tests instead of one-off manual
    * tests, so a campaign keeps being tested while it is live.
@@ -641,6 +650,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     smartleadLoginPassword: env.SMARTLEAD_LOGIN_PASSWORD ?? "",
     totalTestQuota: env.TOTAL_TEST_QUOTA ?? "0",
     maxMailboxesPerTest: env.MAX_MAILBOXES_PER_TEST ?? "50",
+    deliverabilityTestingEnabled: isDeliverabilityTestingEnabled(env),
     autoPlacementTests: env.AUTO_PLACEMENT_TESTS,
     placementTestEveryDays: env.PLACEMENT_TEST_EVERY_DAYS ?? "1",
     placementTestEndDays: env.PLACEMENT_TEST_END_DAYS ?? "0",

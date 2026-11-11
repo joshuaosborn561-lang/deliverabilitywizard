@@ -6,6 +6,9 @@ import { PodControlService } from "./podControls.js";
 
 import type { InventoryBook } from "./inventory.js";
 
+// D333 — these cases cover the legacy testing behaviour behind the kill switch.
+process.env.DELIVERABILITY_TESTING_ENABLED = "true";
+
 /** D132 — a test book reading the same fake client, one attempt. */
 function bookOf(sl: unknown): InventoryBook {
   const client = sl as {

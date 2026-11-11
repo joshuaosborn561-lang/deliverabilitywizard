@@ -9,6 +9,9 @@ import { StateStore } from "../state/store.js";
 import { CopyCanaryService } from "./copyCanary.js";
 import { canaryCreateLedger } from "../lib/canaryDedupe.js";
 
+// D333 — these cases cover the legacy testing behaviour behind the kill switch.
+process.env.DELIVERABILITY_TESTING_ENABLED = "true";
+
 function slackStub(requested: Array<string> = []) {
   return {
     send: async () => undefined,

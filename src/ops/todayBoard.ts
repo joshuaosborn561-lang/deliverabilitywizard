@@ -12,6 +12,7 @@ import {
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import { matchClientForCampaign } from "../lib/campaignClient.js";
 import { findingKind } from "../lib/canonCompliance.js";
+import { withoutTestingFindings } from "../lib/deliverabilityTesting.js";
 import {
   SEND_WINDOW_END_HOUR,
   SEND_WINDOW_START_HOUR,
@@ -394,7 +395,8 @@ export function buildTodayBoard(input: {
     const who = resolveCampaign(record.campaignId, record.name);
     if (!who) continue;
     bucketFor(who.clientId, who.clientName);
-    for (const finding of record.findings ?? []) {
+    // D333 — testing off: stored testing findings are not reds.
+    for (const finding of withoutTestingFindings(record.findings ?? [])) {
       const kind = findingKind(finding);
       const column = columnForKind(kind);
       if (!column) continue;

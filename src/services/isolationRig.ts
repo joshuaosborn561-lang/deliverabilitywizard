@@ -1,4 +1,5 @@
 import type { AppConfig } from "../config.js";
+import { isDeliverabilityTestingEnabled, logTestingOff } from "../lib/deliverabilityTesting.js";
 import type { SlackClient } from "../clients/slack.js";
 import { accountEmail, type SmartleadClient } from "../clients/smartlead.js";
 import {
@@ -79,6 +80,10 @@ export class IsolationRigService {
     };
 
     if (!this.config.enableIsolationRig) return result;
+    if (!isDeliverabilityTestingEnabled()) {
+      logTestingOff("isolation-rig (placement tests)");
+      return result;
+    }
 
     const domain = effectiveIsolationDomain(this.config, this.state);
     const emails = await this.rigEmails();

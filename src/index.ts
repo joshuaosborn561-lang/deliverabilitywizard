@@ -9,6 +9,11 @@ import { CRITICAL_FRESH_MS, CRITICAL_SWEEP_LOCK_MAX_MS } from "./lib/criticalSwe
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertRuntimeSecrets, configIsReady, loadConfig } from "./config.js";
+import {
+  isDeliverabilityTestingEnabled,
+  logTestingOff,
+  withoutTestingFindings,
+} from "./lib/deliverabilityTesting.js";
 import { SmartleadClient } from "./clients/smartlead.js";
 import {
   SmartDeliveryClient,
@@ -979,7 +984,7 @@ async function main(): Promise<void> {
       if (!campaignCheckIsActive(record, statusById.size ? statusById : undefined)) {
         continue;
       }
-      for (const finding of record.findings ?? []) {
+      for (const finding of withoutTestingFindings(record.findings ?? [])) {
         const kind = finding.split(":")[0] ?? "unknown";
         counts.set(kind, (counts.get(kind) ?? 0) + 1);
       }
@@ -1370,7 +1375,7 @@ async function main(): Promise<void> {
         const statusById = livingCampaignStatusById();
         for (const record of state.listCampaignChecks()) {
           if (!campaignCheckIsActive(record, statusById.size ? statusById : undefined)) continue;
-          for (const finding of record.findings ?? []) {
+          for (const finding of withoutTestingFindings(record.findings ?? [])) {
             const kind = findingKind(finding);
             counts[kind] = (counts[kind] ?? 0) + 1;
           }
@@ -2250,6 +2255,11 @@ async function main(): Promise<void> {
   // the fleet is not ready. Slack only when something was actually adopted
   // or adoption needs a human; "nothing found" stays in logs.
   const runCanaryAdoption = async (): Promise<void> => {
+    // D333 — testing off: no adopt, no Canary copy attach, no Smartlead calls.
+    if (!isDeliverabilityTestingEnabled()) {
+      logTestingOff("canary-adopt");
+      return;
+    }
     const result = await copyCanaryBuy.adoptManualPurchase();
     if (!result) {
       console.log("[copy-canary-adopt] fleet is healthy — nothing to adopt");
@@ -3299,7 +3309,8 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       campaignCheckIsActive(record, statusById.size ? statusById : undefined),
     );
     for (const record of activeChecks) {
-      for (const finding of record.findings ?? []) {
+      // D333 — testing off: stale testing findings never count.
+      for (const finding of withoutTestingFindings(record.findings ?? [])) {
         const kind = findingKind(finding);
         canonFindings[kind] = (canonFindings[kind] ?? 0) + 1;
         const samples = canonFindingSamples[kind] ?? [];

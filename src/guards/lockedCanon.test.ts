@@ -6,6 +6,7 @@ import {
   LOCKED_CANON_HEADING,
   LOCKED_POD_40_RULE,
   LOCKED_GENERICS_LEDGER_RULE,
+  LOCKED_NO_DELIVERABILITY_TESTING_RULE,
   extractLockedCanonSection,
   lockedCanonSectionBody,
 } from "../lib/lockedCanon.js";
@@ -108,6 +109,14 @@ describe("owner intent — D285 LOCKED POD-40 canon", () => {
       stop(
         "Generics Ledger is LOCKED core canon (D286).",
         "CANON.md lost or altered the exact Generics Ledger sentence.",
+      ),
+    );
+    assert.ok(
+      canon.includes(LOCKED_NO_DELIVERABILITY_TESTING_RULE) &&
+        docs.includes(LOCKED_NO_DELIVERABILITY_TESTING_RULE),
+      stop(
+        "No deliverability testing is LOCKED core canon (D334).",
+        "CANON.md or docs/LOCKED-CANON.md lost or altered the exact no-testing sentence.",
       ),
     );
     assert.ok(

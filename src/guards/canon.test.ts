@@ -19175,7 +19175,7 @@ describe("owner intent — D326 named POD rebalance even split", () => {
       { maxMoves: 50 },
     );
     assert.equal(plan.moves.length, 19);
-    assert.match(canon, /Canon as of \*\*D33[01]\*\*/);
+    assert.match(canon, /Canon as of \*\*D33[0-9]\*\*/);
     assert.match(canon, /supersedes D203 never-retag/);
     assert.match(canon, /BPLTG 21\/59/);
     assert.match(canon, /5\.7\.233/);
@@ -19238,7 +19238,7 @@ describe("owner intent — D327 two messages and Mon–Thu 7am–7pm ET", () => 
     await assert.rejects(() => access(new URL("../lib/breakupStep.ts", import.meta.url)));
     assert.match(ledger, /## D327 — /);
     assert.match(ledger, /^\| D327 \|/m);
-    assert.match(canon, /Canon as of \*\*D33[01]\*\*/);
+    assert.match(canon, /Canon as of \*\*D33[0-9]\*\*/);
     assert.match(canon, /exactly \*\*2 messages\*\*/);
     assert.match(canon, /Monday–Thursday \*\*07:00–19:00 America\/New_York\*\*/);
     assert.match(canon, /Not America\/Chicago/);
@@ -19396,7 +19396,9 @@ describe("owner intent — D303 LOCKED rest-then-burn / per-variant / ESP rebala
     assert.match(decisions, /## D303 — /);
     assert.match(decisions, /^\| D303 \|/m);
     for (const doc of [canon, locked]) {
-      assert.match(doc, /Per-variant tests \(D303\)/);
+      // D334 (Josh, 2026-11-11) replaced the LOCKED per-variant tests rule
+      // with no deliverability testing; ESP mix and Mailbox rest stay.
+      assert.match(doc, /No deliverability testing \(D334/);
       assert.match(doc, /Mailbox rest \(D303\)/);
       assert.match(doc, /ESP mix \(D303\)/);
     }
@@ -19464,7 +19466,7 @@ describe("owner intent — D328 Ciotola signature is the name alone", () => {
     );
     assert.match(signature, /return `\$\{name\}\\n\$\{brand\}`/);
     assert.equal(signature.includes("Insight"), false);
-    assert.match(canon, /Canon as of \*\*D33[01]\*\*/);
+    assert.match(canon, /Canon as of \*\*D33[0-9]\*\*/);
     assert.match(canon, /exactly `Jeremy Ciotola`/);
     assert.match(decisions, /## D328 — /);
     assert.match(decisions, /^\| D328 \|/m);
@@ -19537,7 +19539,7 @@ describe("owner intent — D330 POD swap attaches before detach", () => {
     assert.match(index, /podSwap: podSwapSignal/, "/health podSwap is gone (D330)");
     assert.match(progress, /started_at/, "swap signal started_at is gone (D330)");
     assert.match(progress, /finished_at/, "swap signal finished_at is gone (D330)");
-    assert.match(canon, /Canon as of \*\*D33[01]\*\*/);
+    assert.match(canon, /Canon as of \*\*D33[0-9]\*\*/);
     assert.match(canon, /GET \/pod-swap/);
     assert.match(decisions, /## D330 — /);
     assert.match(decisions, /^\| D330 \|/m);
@@ -19573,9 +19575,49 @@ describe("owner intent — D331 client spaces deleted, ownership by sg-owner tag
     assert.match(ownership, /NEVER_INHERIT_TAGS = new Set\(\["GENERIC", "POC", "CANARY"\]\)/, stop("pool / canary boxes may inherit a campaign owner."));
     assert.match(seed, /MAILBOX_OWNER_SEED_CAPTURED_AT = "2026-11-11"/, stop("mailbox owner seed is gone — 1,590 client mailboxes would fall into the pool."));
     assert.match(store, /ownershipOverrides: parseOwnershipOverrides/, stop("override book is no longer persisted."));
-    assert.match(canon, /Canon as of \*\*D331\*\*/);
+    assert.match(canon, /Canon as of \*\*D33[1-9]\*\*/);
     assert.match(canon, /Ownership comes from tags, not Smartlead `client_id`/);
     assert.match(decisions, /## D331 — /);
     assert.match(decisions, /^\| D331 \|/m);
+  });
+});
+
+describe("owner intent — D334 no deliverability testing (LOCKED)", () => {
+  it("D334: canon, LOCKED text and ledger say no placement tests, canaries or known-good sends", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (p: string) => readFile(new URL(p, import.meta.url), "utf8");
+    const [canon, locked, decisions, claude] = await Promise.all([
+      read("../../CANON.md"),
+      read("../../docs/LOCKED-CANON.md"),
+      read("../../DECISIONS.md"),
+      read("../../CLAUDE.md"),
+    ]);
+    const stop = (problem: string) =>
+      [
+        "STOP — this reverses one of Josh's decisions.",
+        "  Decision: no deliverability testing — no placement tests, canaries, or known-good sends (D334).",
+        `  Problem:  ${problem}`,
+        "Check with Josh before changing it. Do not delete this guard to go green.",
+      ].join("\n");
+    assert.match(canon, /Canon as of \*\*D3(3[4-9]|[4-9]\d)\*\*/, stop("CANON.md is dated before D334."));
+    for (const doc of [canon, locked]) {
+      assert.match(doc, /- No deliverability testing \(D334/, stop("LOCKED text lost the no-testing rule."));
+      assert.match(doc, /no placement tests, canaries, or known-good sends/, stop("LOCKED text no longer bans placement tests, canaries and known-good sends."));
+      assert.match(doc, /SUNDAY_PLACEMENT_TEST_ENABLED and stays OFF unless Josh approves/, stop("the Sunday-only path is no longer OFF by default."));
+      assert.doesNotMatch(doc, /gets its own placement test and its own canary-copy test/, stop("the D303 per-variant tests rule is back in the LOCKED text."));
+      assert.doesNotMatch(doc, /then one placement test runs on that domain/, stop("the D311 reply-rate drop runs a placement test again."));
+    }
+    assert.match(canon, /daily per-mailbox metrics/, stop("CANON.md no longer judges health by daily per-mailbox metrics."));
+    assert.match(canon, /weekly Monday-morning report/, stop("CANON.md lost the weekly Monday report."));
+    assert.match(canon, /DELIVERABILITY_TESTING_ENABLED` \(default `false`/, stop("CANON.md lost the default-off kill switch."));
+    assert.match(claude, /No deliverability testing \(D334/, stop("CLAUDE.md no longer states the no-testing rule."));
+    assert.match(decisions, /## D334 — No deliverability testing/);
+    assert.match(decisions, /^\| D334 \|/m);
+    for (const n of ["D45", "D46", "D106", "D114", "D309"]) {
+      assert.match(decisions, new RegExp(`^\\| ${n} \\| Superseded by D334`, "m"), `status index does not mark ${n} superseded by D334`);
+    }
+    for (const n of ["D303", "D311"]) {
+      assert.match(decisions, new RegExp(`^\\| ${n} \\| [^|]*superseded by D334`, "m"), `status index does not mark ${n}'s testing clause superseded by D334`);
+    }
   });
 });

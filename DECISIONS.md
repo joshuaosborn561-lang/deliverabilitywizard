@@ -29,7 +29,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D5 | Superseded by D51/D79 — no per-sender pulls; numbers stay readings |
 | D6 | Superseded by D51/D59 — no benching path remains |
 | D7 | Superseded by D58/D82 — floor is half the client's inboxes |
-| D8 | Superseded by D45 (quota) — recurring tests + ≤50/test stay |
+| D8 | Superseded by D45 (quota) — recurring tests + ≤50/test stay; placement tests themselves superseded by D334 |
 | D9 | Superseded by D58/D81/D82 — generic staffing is POC/approval-gated |
 | D10 | Live (restates D3) |
 | D11 | Live — reworded by D24; Outlook cap qualified by D183 |
@@ -63,8 +63,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D42 | Superseded by D43 |
 | D43 | Live — generic send-clock superseded by D221 (POD rotation is the only generic rotation); D169 paused/stopped detach superseded by D207 (PAUSED/STOPPED keep seats); split is ESP-balanced within Outlook/Gmail (D192); ACTIVE detach will not drop a campaign below 40 (D197) |
 | D44 | Historical one-shot (ran 2026-08-21) |
-| D45 | Live |
-| D46 | Live — enforced by D106 |
+| D45 | Superseded by D334 — no placement tests |
+| D46 | Superseded by D334 — no launch bar (was enforced by D106) |
 | D47 | Live |
 | D48 | Live (rig unarmed until `ISOLATION_DOMAIN` is set) |
 | D49 | Live |
@@ -72,9 +72,9 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D51 | Live (kill-only) — warmup-gate-off clause superseded by D105 |
 | D52 | Live |
 | D53 | Live |
-| D54 | Live — campaign-membership exception superseded by D55 |
+| D54 | Superseded by D334 — no canary sends; campaign-membership exception superseded by D55 |
 | D55 | Live |
-| D56 | Live |
+| D56 | Superseded by D334 — no known-good pod controls |
 | D57 | Burned number — no entry exists |
 | D58 | Superseded by D82 (POC pattern) — half-client floor size qualified by D196 (on-week pod) |
 | D59 | Historical one-shot (ran 2026-08-24) — on-week every ACTIVE; D169 paused hygiene superseded by D207 |
@@ -121,7 +121,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D103 | Live |
 | D104 | Superseded by D110 |
 | D105 | Live |
-| D106 | Live |
+| D106 | Superseded by D334 — no launch bar; QA-unpause needs no placement reading |
 | D107 | Superseded by D144 — teardown deleted; Josh restoring from Supabase |
 | D108 | Live |
 | D109 | Historical one-shot (ran 2026-08-26) |
@@ -129,15 +129,15 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D111 | Superseded by D144 — teardown deleted; Josh restoring from Supabase |
 | D112 | Live for campaign-bound tests — canary clause superseded by D113/D114 |
 | D113 | Superseded by D114 (its reason survives) |
-| D114 | Live |
+| D114 | Superseded by D334 — no Canary shells or Canary copy tests |
 | D115 | Superseded by D117/D118 |
-| D116 | Live |
+| D116 | Superseded by D334 — no placement tests to backfill |
 | D117 | Superseded by D118 |
 | D118 | Live — qualified by D120 |
-| D119 | Live |
-| D120 | Live |
+| D119 | Superseded by D334 — no Canary shells |
+| D120 | Superseded by D334 — no Canary shells |
 | D121 | Live — qualified by D123 |
-| D122 | Live |
+| D122 | Live — the canary attach it keeps is a no-op under D334 |
 | D123 | Live |
 | D124 | Superseded by D157 — the force write never landed; the API discards the field |
 | D125 | Live |
@@ -172,7 +172,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D154 | Live | Client A/B rest must not restore under-warmed inboxes — that was the in-app Parlay/Culturefits boomerang |
 | D155 | Superseded by D157 — the null "clear" was as dead as the 100s (handler discards the field); rule 3 (write-ok is never verification) survives, generalized | Smartlead "off" = clear the field (null) — a numeric 100 left bounce protection enabled and it paused a 36%-bounce campaign |
 | D157 | Live | Smartlead bounce protection is UI-only: POST settings validates `bounce_autopause_threshold` then DISCARDS it (a "banana" write returned ok; a Peterson campaign still showed 7% after fleet-wide writes) — every API "off" write (D80 100 / D124 force / D155 null) was a no-op and the converge is deleted; off-switch = campaign SETUP page, attribution = `campaign_activity_logs.paused_reason` |
-| D158 | Live — Slack-silence clause superseded by D163; evaluatedAt lock superseded by D164; queue trigger stays | Same-ESP inbox under 80% on canary-copy or live placement queues isolation (copy vs infra); TechEvo AirPods 0% canary was the miss |
+| D158 | Live — Slack-silence clause superseded by D163; evaluatedAt lock superseded by D164; placement / canary-copy trigger superseded by D334 (no tests); content_block trigger stays | Same-ESP inbox under 80% on canary-copy or live placement queues isolation (copy vs infra); TechEvo AirPods 0% canary was the miss |
 | D159 | Live | Isolation on-ramp (score → markCopySuspect → evaluate) runs on the 15-minute health/canon sweep — not only the 6-hour monitor or daily DeliveryWatch; live % still never rotates |
 | D160 | Live | Generic and POC are mailbox tags, never Smartlead clients — Josh does not pay for pool labels; leftover client records detach then get deleted in the UI |
 | D161 | Live | Client-domain retire MUST buy a client-named replacement; generic/pool spins are only for generic/pool domains |
@@ -294,23 +294,23 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D297 | Live | Old-wizard fix: health-pass scan-backfill honors the stage AbortSignal (and Smartlead fetches stop, no retry-as-timeout), runs after isolation-buy-resume, skips when less than ~20 minutes remain in the 45-minute health lock, and HTTP 429s log the Smartlead endpoint. LOCKED section unchanged. |
 | D299 | Live — stringify batching amended by D300; 60-minute freeze quarantine stays | Freeze/restart loop 2026-10-23: state/hot stringify batches compact values so one JSON.stringify cannot pin the loop for seconds; a health-loop stage that freeze-exits 3 times is quarantined for 60 minutes so leftover resume does not restart there forever. Thresholds are not widened. LOCKED section unchanged. |
 | D300 | Live | Freeze/restart loop after D299 (2026-10-23): objects/arrays are never native-stringified; persist and indexAccountsByCampaign yield to timers; campaign-health snapshots use a campaign Map and yield. lastOk stamps unchanged. Thresholds not widened. LOCKED section unchanged. |
-| D303 | Live | LOCKED canon change (Josh 2026-10-25): per-variant placement + canary-copy tests; mailboxes-summary paged to every mailbox; on-week POD ESP mix auto-rebalanced (1-for-1, warm, same client, ledger generics); mailbox rest-then-burn (14-day rest, generic covers, rest_count, burn on repeat or >3) replaces kill-only for mailbox-cause INFRA. POD-40, Insight no-generics, no cross-client generics, 21-day warmup unchanged. Rest length amended to 28 days by D310. |
+| D303 | Live — per-variant placement + canary-copy tests superseded by D334; ESP rebalance and rest-then-burn stay (rest trigger does not fire while testing is off) | LOCKED canon change (Josh 2026-10-25): per-variant placement + canary-copy tests; mailboxes-summary paged to every mailbox; on-week POD ESP mix auto-rebalanced (1-for-1, warm, same client, ledger generics); mailbox rest-then-burn (14-day rest, generic covers, rest_count, burn on repeat or >3) replaces kill-only for mailbox-cause INFRA. POD-40, Insight no-generics, no cross-client generics, 21-day warmup unchanged. Rest length amended to 28 days by D310. |
 | D301 | Live | POD ESP mix matches each client's InboxKit Google/Microsoft split (±max(2, 10% of the POD) of round(POD × Microsoft share)); 1/3 floor is fallback only when InboxKit has no row. SMTP smtp.gmail.com and type:google are Gmail; type:m365 / type:azure are Microsoft. min-40 / campaign top-up pick generics toward that split. Finding text shows the client's target. Parlay ~54%, EMCOR ~60%, Peterson ~35%. LOCKED section unchanged. |
 | D304 | Live — LOCKED; caller-follow-up 10m gap restored to 3 by D306 | Every Smartlead campaign: enable_ai_esp_matching ON and min_time_btw_emails 10. Campaign-check (hourly/all) flags and fixes drift on every non-STOPPED campaign: ESP via POST /settings, gap via POST /schedule. Never status. D306 restores D242's 3m gap on caller follow-ups and overwrites custom send windows. |
 | D306 | Live — LOCKED warmup; breakup-step check and 08:00 start superseded by D327 | Warmup is 14 days for every seat (named and generic). Breakup-step check retired by D327 (sequences are exactly 2 messages; do not flag step 3). Send-window converge Mon–Thu 07:00–19:00 America/New_York (D327 start; was 08:00); custom windows overwritten; skip Calls, D242, Booking Follow Up, shells, tests, STOPPED; never status; not America/Chicago. Josh: "Take [21] down to fourteen days. So that everything gets fourteen." |
 | D307 | Live | Tests that persist age-pruned ledgers (placement scores, copy suspects) stamp fixture times relative to now so D257's 14-day placement-score retention cannot drop a living row. Production prune windows and isolation sidecar persist are unchanged. LOCKED section unchanged. |
 | D308 | Live | Drain mode (A0): `POST /drain?action=on` skips every NEW cron tick, post-pass retry and manual `/run` while in-flight work finishes; `/health` reports `drain`, `activeJobs`, `idleNow` and `safeToDeploy` (drain on AND nothing running). Auto-expires (30m default, 120m max). Changes no campaigns, mailboxes, settings or WRITE_ENABLED. LOCKED section unchanged. |
-| D309 | Live | Copy-canary idempotent: one live "Canary copy" SmartDelivery test per campaign. Single-flight per campaign, a 3h create cooldown (also after a failed, maybe-landed create), stored test kept when the list hits the 5,000-test page cap, and each attach pass STOPS (never deletes) extra living canaries for a campaign, keeping the one with readings. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
+| D309 | Superseded by D334 — no Canary copy tests | Copy-canary idempotent: one live "Canary copy" SmartDelivery test per campaign. Single-flight per campaign, a 3h create cooldown (also after a failed, maybe-landed create), stored test kept when the list hits the 5,000-test page cap, and each attach pass STOPS (never deletes) extra living canaries for a campaign, keeping the one with readings. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 | D310 | Live — LOCKED (needs Josh's merge) | Amends D303: a pulled mailbox rests 28 days (4 weeks), not 14. The rest timer, the ready date of the covering generic (`covering_for` warm-ready = day 28) and the date it goes back all move to 28 days; the generic stays until day 28. The 14-day warmup for new seats is unchanged. |
-| D311 | Live — LOCKED (needs Josh's merge) | Reply-rate-drop trigger: a sending domain whose trailing 7-day reply rate (150+ sends) is 40%+ below its client's 30-day baseline across ACTIVE campaigns is flagged. Alert only: alert Josh, then one placement test on that domain; never pulls, rests, pauses or isolation-tests. Sits on top of the placement gates. |
-| D312 | Live | A1 critical sweep: placement results (`monitor-results`), `test-reconcile` and `isolation-branch` run every 30 min on their own lock and a top-priority Smartlead lane; bounce-autostop's 10-min cron also runs on that lane (never blocked by the exclusive health lane, served first, and critical writes jump the mutation queue). Amends D270 (exclusive health lane), D257 (limiter) and D247 (locks). Those stages are overdue-paged at 75 min, not 6h45m. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
+| D311 | Live — LOCKED; its one placement test superseded by D334 (alert only) | Reply-rate-drop trigger: a sending domain whose trailing 7-day reply rate (150+ sends) is 40%+ below its client's 30-day baseline across ACTIVE campaigns is flagged. Alert only: alert Josh, then one placement test on that domain; never pulls, rests, pauses or isolation-tests. Sits on top of the placement gates. |
+| D312 | Live — placement-results / test-reconcile / isolation sweep superseded by D334; bounce-autostop lane stays | A1 critical sweep: placement results (`monitor-results`), `test-reconcile` and `isolation-branch` run every 30 min on their own lock and a top-priority Smartlead lane; bounce-autostop's 10-min cron also runs on that lane (never blocked by the exclusive health lane, served first, and critical writes jump the mutation queue). Amends D270 (exclusive health lane), D257 (limiter) and D247 (locks). Those stages are overdue-paged at 75 min, not 6h45m. No campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 | D313 | Live (LOCKED text updated) | Inbox warmup is **14 days**, not 21 (Josh, 10/29/2026 7:18am CT). One default (`DEFAULT_WARMUP_DAYS` = 14, `src/lib/warmupDays.ts`) for the pool clock, campaign-min gate, fresh InboxKit clock, evidence hold, Generics Ledger warm-ready date and the named-warm swap. `POOL_WARMUP_DAYS` / `MIN_CAMPAIGN_WARMUP_DAYS` / `FRESH_INBOX_WARMUP_DAYS` still override. Supersedes the 21 in D1/D41/D50/D105 and every later row that repeats it. The 28-day mailbox rest (D310) is unchanged. |
 | D314 | Live (LOCKED PR — Josh merges) | Insight is exempt from the `esp_mix` Canon finding (Josh 10/29: "yes exempt insight it is mostly msft"). Campaigns on Insight (client 582890 / Insight campaign ids) no longer raise `esp_mix`, so they stop counting against `/health` canonFindings and the Canon score. ESP-mix still applies to every other client; seat assignment, min-40 and the Azure rules are unchanged. |
 | D315 | Live | A4 bloat: (1) `enrichCampaignIds` remembers each test's campaign (immutable) instead of one `GET spam-test/{id}` per test in five services every pass — those were 3,088 of 4,886 logged 429s on 10/28–29 (628 tests); (2) the unfiltered `listTests` is shared for 30 s across callers and dropped on any write; (3) the D260 "treating as generic" warning logs once per host/client per process (~800 identical lines per 12 h). No stage removed, no behavior change. |
 | D316 | Live — even-split target and off-week moves amended by D326 | Named POD-A / POD-B seats stay within 15% of each other (Josh 10/29: "retag named seats to fix it, overriding never-retag"). Amends D234/D203: `pod-tags` retags idle named seats larger → smaller (never a seat on an ACTIVE campaign, ESP kept balanced, canary/reserved/POC/dual-tagged never move). `mayWritePodTag` still refuses every other flip. Kill switch `ENABLE_NAMED_POD_REBALANCE`. |
 | D317 | Live | Health-sweep budget: (1) a cold test→campaign cache (after a deploy) can no longer storm SmartDelivery — 3 failed lookups in a row open a 2-minute breaker, each lookup retries once not four times, and every `enrichCampaignIds` caller gets a 90 s default budget; (2) `campaign-health` and `client-rest` stage timeout 10m → 15m as a safety net, with a 20m hard cap on any stage; (3) campaign-health logs its top-up / fan-out / copy-canary seconds and `/health` publishes each stage's `lastDurationMs`. Builds on D315. No stage removed, no cadence change, no campaign, mailbox, setting or WRITE_ENABLED change. |
 | D318 | Live | Exclusive health lane vs the serial mutation queue: a normal-lane job at the head of the Smartlead mutation queue parked behind the exclusive health lane while the health pass (reconnect, mailbox-gap, campaign-health writes) waited on that same queue — a deadlock released only by the 6-minute job timeout, three jobs deep (limiter idle, queue depth 3, oldest wait 300s+). Queued jobs now ride the health lane while it is exclusive (one job at a time, so at most one slot); direct normal-lane calls still wait. `/health` limiter adds `parkedBehindHealth` / `healthWaiting`. No cadence, stage, campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
-| D319 | Live | Report-read budget + normal-lane share: (1) SmartDelivery `spam-test/report/*` reads (providerwise, domain-blacklist, blacklist, sender-account-wise) retry once, not four times, and three failed reads in a row (429 / 5xx / timeout) pause report reads for 2 minutes — callers fail fast; a missing test (404) does not count. (2) `monitor-results` works in a 6-minute budget, rotates its test walk from where the last pass stopped (unfinished tests carry over; paused reads are never recorded as "no hits"), and runs a second worker only while the limiter has headroom (no pause, no 429 streak, under 60% of 150/min). (3) While health is exclusive the normal lane keeps one share slot (never the last free one) so the 6-hour monitor chain (lead-runout, canary-adopt, isolation-rig …) can finish; idle slots are handed to waiters when the exclusive stretch ends. No stage removed, no cadence change, no campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
+| D319 | Live — SmartDelivery report-read budget superseded by D334; normal-lane share slot stays | Report-read budget + normal-lane share: (1) SmartDelivery `spam-test/report/*` reads (providerwise, domain-blacklist, blacklist, sender-account-wise) retry once, not four times, and three failed reads in a row (429 / 5xx / timeout) pause report reads for 2 minutes — callers fail fast; a missing test (404) does not count. (2) `monitor-results` works in a 6-minute budget, rotates its test walk from where the last pass stopped (unfinished tests carry over; paused reads are never recorded as "no hits"), and runs a second worker only while the limiter has headroom (no pause, no 429 streak, under 60% of 150/min). (3) While health is exclusive the normal lane keeps one share slot (never the last free one) so the 6-hour monitor chain (lead-runout, canary-adopt, isolation-rig …) can finish; idle slots are handed to waiters when the exclusive stretch ends. No stage removed, no cadence change, no campaign, mailbox, setting or WRITE_ENABLED change. LOCKED section unchanged. |
 | D320 | Live | lead-runout budget: the 6-hour monitor chain's `lead-runout` walks every ACTIVE campaign serially (2-3 Smartlead reads each, normal lane) and timed out at 10m five times running (last ok 2:02am CT). Reads now retry once, the walk stops at 7 minutes and resumes where it stopped next pass (cursor in memory). No alert rule, threshold, campaign or WRITE_ENABLED change. LOCKED section unchanged. |
 | D321 | Live — LOCKED | Every inbox has a name (Josh, 2026-10-29: "Every inbox has a name. Canon that it can never have that again. If no name just send as the company. But everyone should have a name."). A blank or placeholder from_name / signature name (Pool User, Generic, Canary, test, one word, local part) is never written: a seat sends as its Generics Ledger / InboxKit persona, else as the client company name (signature = company). No assign is refused for a missing persona. A 10-minute sweep replaces any placeholder on a non-STOPPED campaign (name + signature only; write flag off until Josh merges); signature checks treat a blank/placeholder name as a mismatch; release restores the persona. Prod incident 2026-10-29: "Pool User Emcor" sent to a prospect. |
 | D322 | Live | Locked-canon CI passes canon-consistent PRs without Josh's approval. It fails when the LOCKED section, `docs/LOCKED-CANON.md`, or `src/lib/lockedCanon.ts` changes unless the PR has the `canon-change` label approved by Josh (`joshuaosborn561-lang` applied it, or he approved the PR while it is present). Josh stays CODEOWNER of those definition files. Implementation paths, including `src/guards/lockedCanon.test.ts`, are not Josh-only. Required checks stay `check` and `locked-canon`; code-owner review is not a merge gate. Unauthorized locked-canon edits never auto-merge. POD-40, Generics Ledger, and ESP matching unchanged. |
@@ -322,6 +322,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D329 | Live | An Insight seat (client 582890) sending as Josh Osborn or Joshua Osborn has mailbox signature exactly `Josh Osborn` / `Strategic Account Executive` / `Insight`. The signature pass must not drop the Insight line or switch the name to from_name. Josh, 2026-10-12 / 2026-11-04. |
 | D330 | Live | Weekly POD swap attaches and confirms the on-week pod before it detaches the off-week pod. A 429 or the pass budget saves a cursor and resumes; the 15-minute stage ceiling stays. `GET /pod-swap` publishes `in_progress`, `started_at`, `finished_at`. HTTP 429 honors Retry-After. Pod schedule, seat rules, D228 exemption after confirm, generic top-up, and thresholds unchanged. |
 | D331 | Live | Smartlead client spaces are deleted (Josh, 2026-11-11). Ownership comes from tags, not `client_id`: a campaign is owned by its unique `sg-owner:<slug>` tag (read with `include_tags=true`); wizard shells stay unowned. A mailbox is owned by a wizard override, else its live `client_id`, else the committed 2026-11-11 seed (`src/data/mailboxOwnerSeed.ts`, 1,590 rows), else the unique sg-owner of the campaigns it sends on (never for GENERIC / POC / CANARY), else pool. Owners keep their legacy numeric ids and display names, so every rule keyed by `client_id` is unchanged. Client writes go to the persisted override book, never to Smartlead. |
+| D334 | Live — LOCKED (needs the `canon-change` label) | No deliverability testing (Josh, 2026-11-11). No placement tests, canaries, or known-good sends; no launch / START / unpause gate waits on a test or placement reading. Supersedes the daily Auto placement test on every campaign and the older canary / placement rules (D45, D46, D54, D56, D106, D114–D120, D303 per-variant tests, D309, D311's placement test, D312, D319). Health is daily per-mailbox reply rate, bounce rate and warmup score with alert-only trend flags and a weekly Monday report. Sunday-only testing behind `SUNDAY_PLACEMENT_TEST_ENABLED`, OFF unless Josh approves. Kill switch `DELIVERABILITY_TESTING_ENABLED` (default false, D333). |
 
 ---
 
@@ -12081,3 +12082,87 @@ section.
 
 **Guards.** `src/lib/ownership.test.ts`, `src/guards/canon.test.ts`
 D331.
+
+## D334 — No deliverability testing (LOCKED)
+
+**Date.** 2026-11-11 (Josh, 1:52–1:54pm CT).
+
+**Decision.** Turn off all deliverability testing from now on, and make
+it canon. **No placement tests, canaries, or known-good sends.** Nothing
+creates, attaches, or acts on:
+
+- a SmartDelivery placement test — the recurring "Auto: campaign
+  placement" test on every campaign (`every_days: 1`) or a one-off
+  manual one;
+- a `Canary shell: #<id> …` campaign or a `Canary copy` test (the
+  canary fleet sends nothing);
+- a pod-control known-good test;
+- a placement or canary result (no `monitor-results` actions, no
+  scoring, swapping or pausing from a reading; the isolation word hunt
+  sends SmartDelivery tests too, so it does not run either).
+
+No campaign launch, START, QA-unpause or pending-resume waits on a
+test, a canary, or a placement reading — campaigns launch without
+tests. `missing_canary`, `no_placement_test`,
+`inbox_missing_known_good` and `below_launch_bar` are not canon
+findings: not in the scanner, `/health`, Slack, the today board, or the
+wake queue, and old counts clear on the next scan.
+
+**Supersedes.** The "daily Auto placement test on every campaign" rule
+and every older canary / placement rule: D8/D45 recurring placement
+tests, D46/D106 85% launch bar, D54 canary fleet sends, D56 known-good
+pod controls, D114–D120 Canary shells, D116 missing-test backfill,
+D303 per-variant placement + canary-copy tests (LOCKED), D309
+copy-canary idempotency, D311's one placement test on a flagged domain
+(the reply-rate-drop alert itself stays, alert only), D312's critical
+placement / test-reconcile / isolation sweep, and D319's report-read
+budget. The ledger entries stay as history; the status index marks
+them.
+
+**What replaces it.** Health is judged by **daily per-mailbox
+metrics** for every ACTIVE mailbox: sent, replies, **reply rate**,
+bounces, **bounce rate**, **warmup score**, with mailbox, domain, ESP,
+POD tag and sg-owner. Trend flags (thresholds are config; Josh /
+Deliverability tune them) become one canon finding kind that
+**alerts only** — never an automatic pause, stop, or unpause; those
+stay Deliverability / Campaign Watchdog judgment calls. A **weekly
+Monday-morning report** (America/Chicago, inside allowed hours) covers
+every inbox and domain: reply rate, bounce rate, warmup score,
+week-over-week trend, flagged inboxes / domains, grouped by sg-owner
+and POD. No timer or cron fires between 8pm and 6am America/Chicago.
+
+**Sunday-only option (OFF).** A minimal Sunday-only placement test path
+may exist behind `SUNDAY_PLACEMENT_TEST_ENABLED`, default **false**.
+Off means no tests created, no shells, no findings. It stays off unless
+Josh approves the new plan.
+
+**Why.** Per Felipe (EmailBison / EmailGuard): daily placement tests
+cause send spikes, and seed lists drift, so the readings were not worth
+what they cost. On 2026-11-11 Smartlead held 437 ACTIVE auto tests (287
+"Auto: campaign placement", 103 "Pod control known-good", 47 "Canary
+copy") and 387 Canary shell campaigns; the wizard was still creating
+tests at 1:52pm CT.
+
+**How (runtime).** The runtime kill switch is
+`DELIVERABILITY_TESTING_ENABLED` (default `false`, D333, PR #400),
+followed by the metrics and weekly-report PRs. This entry is the canon
+half: CANON.md, the LOCKED section, `docs/LOCKED-CANON.md` and
+`src/lib/lockedCanon.ts`. The LOCKED "Per-variant tests (D303)" line is
+replaced by the no-testing rule, and the LOCKED reply-rate-drop line
+drops its placement test. The LOCKED Mailbox rest (D303) text is
+unchanged; its isolation trigger needs a placement reading, so it does
+not fire while testing is off.
+
+**Does not change.** Existing Canary shell campaigns stay PAUSED /
+STOPPED and past SmartDelivery results stay in Smartlead — nothing is
+deleted. The canary fleet stays hard-locked off live campaigns (D238).
+Two-message sequences (D327), the Monday–Thursday 07:00–19:00
+America/New_York window, the Calls / Booking Follow Up / test
+exemptions, `sg-owner:<slug>` ownership (D331), master key only,
+STOPPED-vs-PAUSED semantics, and the Gabe Calls rules (D242) are
+unchanged. POD-40, the Generics Ledger, ESP matching, every inbox has a
+name, ESP mix and Mailbox rest LOCKED rules are unchanged.
+
+**Guards.** `src/guards/lockedCanon.test.ts` (LOCKED text, D334 rule
+present, D303 per-variant sentence gone), `src/guards/canon.test.ts`
+D334.

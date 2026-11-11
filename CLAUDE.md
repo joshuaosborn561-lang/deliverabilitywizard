@@ -40,8 +40,9 @@ Josh owns the product decisions. Cayden contributes freely alongside him.
 `main` is the deploying branch — Railway auto-deploys every merge, and each
 deploy restarts the app and resets the cron cycle, so space out merges when
 you need a scheduled job to actually run. The only Smartlead work at boot
-is canary attach at 90s (D122); do not boot-kick health, pool, or
-campaign-audit — those raced attach and 429'd the board.
+is canary attach at 90s (D122), a no-op while testing is off (D334); do
+not boot-kick health, pool, or campaign-audit — those raced attach and
+429'd the board.
 
 Work on your own branch and merge through a PR — never push to another
 person's branch.
@@ -61,3 +62,8 @@ person's branch.
 - Real-money spend stays behind `/approvals` (`REQUIRE_SPEND_APPROVAL`
   on; single-use approvals; $25 domain / 25 mailbox monthly caps). Do not
   spend, purge, or bypass warmup gates or holds from chat.
+- **No deliverability testing (D334, LOCKED).** No placement tests,
+  canaries, or known-good sends, and no launch or unpause gate on one.
+  Health is daily per-mailbox reply rate, bounce rate and warmup score
+  with alert-only trend flags and a weekly Monday report. The Sunday-only
+  path (`SUNDAY_PLACEMENT_TEST_ENABLED`) stays OFF unless Josh approves.

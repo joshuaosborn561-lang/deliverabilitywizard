@@ -1,8 +1,8 @@
 # Deliverability Wizard
 
 Internal service that keeps SalesGlider's Smartlead cold-email fleet
-healthy: staffs campaigns, enforces warmup and rest, runs SmartDelivery
-placement instrumentation, pauses on bounce trouble, and speaks in Slack
+healthy: staffs campaigns, enforces warmup and rest, judges health from
+daily per-mailbox metrics (no deliverability testing — D334), pauses on bounce trouble, and speaks in Slack
 only when a human decision is needed. Railway watches `main`
 (`deliverabilitywizard` / production) and auto-deploys every merge.
 
@@ -27,19 +27,19 @@ to look. Behaviour questions end at CANON.md.
 
 | Loop | Cadence | Owns |
 |------|---------|------|
-| Canon sweep (health) | every 15 min | One shared Smartlead inventory fetch, reconnect, client A/B rest + generic send clock, 14-day warmup gate, fan-out / top-up, mailbox settings converge, signature fixes, placement-test backfill |
+| Canon sweep (health) | every 15 min | One shared Smartlead inventory fetch, reconnect, client A/B rest + generic send clock, 14-day warmup gate, fan-out / top-up, mailbox settings converge, signature fixes, placement-test backfill (off — no testing, D334) |
 | Bounce loop | every 10 min | Never pauses or STARTs (D148): a real burst (>10 new bounces in 10 min, sends <24h old) is classified from its NDRs (tenant cap / bad recipients / content block), receipted, remediated and re-queued; Smartlead's own auto-pause is UI-only — no API off-switch exists (D157) |
 | Campaign check | hourly | Re-inspect blocked first-checks, shells, signatures, staffing floor, campaign min-gap converge |
-| Monitor | every 6 h | POD tags first (so decoration writes are not starved by placement pulls), then placement pulls, DNS advisory audit, canary adoption, campaign audit, domain→client advisory |
+| Monitor | every 6 h | POD tags first (so decoration writes are not starved by placement pulls), then placement pulls (off — D334), DNS advisory audit, canary adoption (off — D334), campaign audit, domain→client advisory |
 | EOD brief | once a day (New York) | Per-client sends + spam scoreboard, untagged campaigns, loaded DRAFTs, domains needing a human |
-| Boot | on deploy | Canary attach at 90 s only — everything else waits for its cron |
+| Boot | on deploy | Canary attach at 90 s only (a no-op while testing is off, D334) — everything else waits for its cron |
 
 Standing posture, in one breath (decision numbers and detail in CANON.md):
 pulls are **kill-only** — placement scores, bounce rates, blacklists and
 leftover HOLD-UNTIL tags never yank a mailbox; one client per sender,
 staffing floor is max(half that client's named inboxes per POD, 40 per POD) at client inventory; every mailbox owes 21
 warmup days from InboxKit import unless its fleet is pre-warmed; the
-canary fleet diagnoses and never staffs; Slack carries exactly three pages
+canary fleet sends nothing (no deliverability testing, D334) and never staffs; Slack carries exactly three pages
 (burned domain, isolated spam word, EOD scoreboard) plus action receipts;
 real-money spend stops at `/approvals`.
 
@@ -112,7 +112,7 @@ the guard suite in `src/guards/` is part of the test run.
 
 Every deploy restarts the app and **resets the cron cycle**, so space out
 merges when a scheduled job needs to actually run. The only Smartlead work
-at boot is canary attach at 90 s — health, pool, and campaign-audit wait
+at boot is canary attach at 90 s (a no-op while testing is off, D334) — health, pool, and campaign-audit wait
 for their crons (boot-kicking them raced attach and 429'd the board).
 
 `railway.toml` pins **one replica** and `restartPolicyType = "ALWAYS"`

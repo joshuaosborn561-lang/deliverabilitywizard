@@ -76,31 +76,96 @@ export function needsYouText(input: {
   return lines.join("\n").trim();
 }
 
-/** Slack button value: clientKey + stamped isolation ids (D294). */
+/**
+ * Slack button value: client key + stamped isolation ids (D294).
+ *
+ * A raw tab does not survive the Slack round-trip. Production taps from
+ * 2026-11-05 on logged the whole value in `client=` and `stamped=0`
+ * (`generic-pool retire_domain-…,buy_domains-…`), which is the tab folded
+ * into a space. v1 uses "|" plus encodeURIComponent so the delimiter is
+ * not whitespace. Parsing still accepts a real tab and that folded space.
+ */
+const NEEDS_YOU_VALUE_PREFIX = "v1|";
+const NEEDS_YOU_VALUE_MAX = 2000;
+/** `${kind}-${Date.now()}-${base36}` as posted on live Needs-you cards. */
+const NEEDS_YOU_ISOLATION_ID = "[a-z][a-z0-9_]*-\\d{10,}-[a-z0-9]+";
+const NEEDS_YOU_FOLDED_VALUE = new RegExp(
+  `^(.*?)\\s+(${NEEDS_YOU_ISOLATION_ID}(?:\\s*,\\s*${NEEDS_YOU_ISOLATION_ID})*)$`,
+);
+
+function splitNeedsYouIds(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+
 export function encodeNeedsYouButtonValue(
   clientKey: string,
   isolationIds: string[],
 ): string {
-  return `${clientKey}\t${isolationIds.join(",")}`.slice(0, 2000);
+  const prefix = `${NEEDS_YOU_VALUE_PREFIX}${encodeURIComponent(clientKey)}|`;
+  if (prefix.length >= NEEDS_YOU_VALUE_MAX) {
+    return prefix.slice(0, NEEDS_YOU_VALUE_MAX);
+  }
+  const ids: string[] = [];
+  for (const id of isolationIds) {
+    const trimmed = id.trim();
+    if (!trimmed) continue;
+    const next = ids.length ? `${ids.join(",")},${trimmed}` : trimmed;
+    if (prefix.length + next.length > NEEDS_YOU_VALUE_MAX) break;
+    ids.push(trimmed);
+  }
+  return `${prefix}${ids.join(",")}`;
 }
 
 export function parseNeedsYouButtonValue(value: string): {
   clientKey: string;
   ids: string[];
 } {
-  const raw = String(value ?? "");
-  const tab = raw.indexOf("\t");
-  if (tab === -1) {
-    return { clientKey: raw.trim(), ids: [] };
+  const raw = String(value ?? "").trim();
+  if (raw.startsWith(NEEDS_YOU_VALUE_PREFIX)) {
+    const rest = raw.slice(NEEDS_YOU_VALUE_PREFIX.length);
+    const bar = rest.indexOf("|");
+    if (bar !== -1) {
+      const encodedKey = rest.slice(0, bar);
+      let clientKey = encodedKey;
+      try {
+        clientKey = decodeURIComponent(encodedKey);
+      } catch {
+        clientKey = encodedKey;
+      }
+      return {
+        clientKey: clientKey.trim(),
+        ids: splitNeedsYouIds(rest.slice(bar + 1)),
+      };
+    }
   }
-  return {
-    clientKey: raw.slice(0, tab).trim(),
-    ids: raw
-      .slice(tab + 1)
-      .split(",")
-      .map((id) => id.trim())
-      .filter(Boolean),
-  };
+  const tab = raw.indexOf("\t");
+  if (tab !== -1) {
+    return {
+      clientKey: raw.slice(0, tab).trim(),
+      ids: splitNeedsYouIds(raw.slice(tab + 1)),
+    };
+  }
+  const folded = NEEDS_YOU_FOLDED_VALUE.exec(raw);
+  if (folded) {
+    return {
+      clientKey: folded[1].trim(),
+      ids: splitNeedsYouIds(folded[2]),
+    };
+  }
+  return { clientKey: raw.trim(), ids: [] };
+}
+
+/** Client key stamped on `needs_you_approve_client:<clientKey>`. */
+export function clientKeyFromNeedsYouActionId(
+  actionId: string | undefined,
+): string {
+  const raw = String(actionId ?? "");
+  const prefix = `${NEEDS_YOU_APPROVE_ACTION}:`;
+  if (!raw.startsWith(prefix)) return "";
+  return raw.slice(prefix.length).trim();
 }
 
 export function needsYouCaydenButtons(

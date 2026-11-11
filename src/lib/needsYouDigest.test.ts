@@ -5,6 +5,7 @@ import { buildIsolationAction } from "./isolationActions.js";
 import {
   buildNeedsYouDigest,
   isolationIdsForClient,
+  parseNeedsYouButtonValue,
 } from "./needsYouDigest.js";
 import { isolationBlockActionShouldDecide } from "./slackConfirmButtons.js";
 
@@ -67,10 +68,17 @@ describe("D248 — Needs you digest lumps Cayden spend per client", () => {
     assert.ok(approve);
     assert.equal("url" in approve, false);
     assert.ok(approve.confirm, "lumped Approve must confirm before spend");
-    assert.match(String(approve.action_id), /needs_you_approve_client/);
-    assert.match(String(approve.value), /^id:521881\t/);
-    assert.ok(
-      String(approve.value).includes(digest.cayden[0]!.items[0]!.id),
+    assert.match(String(approve.action_id), /needs_you_approve_client:id:521881/);
+    const value = String(approve.value);
+    const parsedValue = parseNeedsYouButtonValue(value);
+    assert.match(value, /^v1\|/);
+    assert.doesNotMatch(value, /\s/);
+    assert.equal(parsedValue.clientKey, "id:521881");
+    assert.deepEqual(
+      parsedValue.ids,
+      digest.cayden[0]!.items
+        .filter((row) => row.source === "isolation")
+        .map((row) => row.id),
       "button value stamps isolation ids (D294)",
     );
     assert.equal(

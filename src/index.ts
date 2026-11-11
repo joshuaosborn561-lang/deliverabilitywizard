@@ -104,7 +104,10 @@ import {
   NEEDS_YOU_APPROVE_ACTION,
 } from "./lib/slackConfirmButtons.js";
 import { handleNeedsYouApproveClient } from "./lib/needsYouApprove.js";
-import { parseNeedsYouButtonValue } from "./lib/needsYouDigest.js";
+import {
+  clientKeyFromNeedsYouActionId,
+  parseNeedsYouButtonValue,
+} from "./lib/needsYouDigest.js";
 import { slackActorIdSanity } from "./lib/slackActorIds.js";
 import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { CampaignHealthService } from "./services/campaignHealth.js";
@@ -2841,14 +2844,16 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
             });
             return;
           }
-          const fromActionId = actionId.startsWith(`${NEEDS_YOU_APPROVE_ACTION}:`)
-            ? actionId.slice(NEEDS_YOU_APPROVE_ACTION.length + 1)
-            : "";
+          const fromActionId = clientKeyFromNeedsYouActionId(actionId);
           const buttonValue =
             String(clicked.value ?? "").trim() || fromActionId;
           const parsedTap = parseNeedsYouButtonValue(buttonValue);
+          const tapClient =
+            parsedTap.ids.length > 0
+              ? parsedTap.clientKey
+              : fromActionId || parsedTap.clientKey;
           console.log(
-            `[slack-interactions] needs-you approve client=${parsedTap.clientKey || "(empty)"} actor=${name} role=${role} stamped=${parsedTap.ids.length}`,
+            `[slack-interactions] needs-you approve client=${tapClient || "(empty)"} actor=${name} role=${role} stamped=${parsedTap.ids.length}`,
           );
           res.status(200).send();
           setSlackInteractionExclusive(true);
@@ -2880,7 +2885,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
             .then((result) => {
               if (result.failed) {
                 console.warn(
-                  `[slack-interactions] needs-you approve had errors client=${parsedTap.clientKey} ids=${result.ids.length}`,
+                  `[slack-interactions] needs-you approve had errors client=${tapClient} ids=${result.ids.length}`,
                 );
               }
             })

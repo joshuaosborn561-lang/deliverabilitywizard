@@ -1307,7 +1307,7 @@ export class CampaignCheckService {
     if (typeof campaign.client_id !== "number") {
       findings.push({
         kind: "missing_client_tag",
-        detail: "no Smartlead client_id",
+        detail: "no sg-owner:<client> campaign tag (D331 — client spaces deleted)",
       });
     } else {
       const matched = matchClientForCampaign(name, input.clients);

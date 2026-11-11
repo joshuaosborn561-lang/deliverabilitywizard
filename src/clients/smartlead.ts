@@ -19,6 +19,15 @@ import {
 } from "../lib/attachGuard.js";
 import { assertNotIsolationAccountIds } from "../lib/isolationDomain.js";
 import { sequencesForWrite } from "../lib/signatureQa.js";
+import {
+  applyAccountOwnership,
+  applyCampaignOwnership,
+  legacyClientRecords,
+  recordAccountOwner,
+  recordCampaignOwner,
+  slugForLegacyClientId,
+  sgOwnerTagName,
+} from "../lib/ownership.js";
 import type {
   SmartleadCampaign,
   SmartleadEmailAccount,
@@ -46,6 +55,8 @@ export interface SmartleadAccountWithCampaigns extends SmartleadEmailAccount {
   campaign_ids?: number[];
   client_id?: number | null;
   campaigns?: Array<{ id?: number; campaign_id?: number; status?: string; name?: string }>;
+  /** D331 — sg-owner slug resolved by lib/ownership (client spaces are deleted). */
+  owner_slug?: string | null;
 }
 
 /** Subset of `campaigns/{id}/analytics-by-date` we rely on. */
@@ -158,18 +169,31 @@ export class SmartleadClient {
       : fn();
   }
 
+  /**
+   * D331 — client spaces are deleted, so `client_id` is null on every
+   * campaign Smartlead returns. Always read with `include_tags=true` and
+   * stamp `client_id` from the campaign's `sg-owner:<slug>` tag (legacy
+   * numeric owner id). A client-scoped list filters locally: the server-side
+   * `client_id` filter would return nothing once the space is gone.
+   */
   listCampaigns(
     clientId?: number,
     opts?: { signal?: AbortSignal },
   ): Promise<SmartleadCampaign[]> {
     return this.mutate(() =>
       this.request<SmartleadCampaign[]>("campaigns/", {
-        query: clientId === undefined ? undefined : { client_id: clientId },
+        query: { include_tags: true },
         // D271 — campaigns[] with sequences can be multi-MB; stream + parse off-thread.
         parseJsonFile: (filePath) => parseFileOffThread(filePath),
         signal: opts?.signal,
       }),
-    );
+    ).then((campaigns) => {
+      if (!Array.isArray(campaigns)) return campaigns;
+      for (const campaign of campaigns) applyCampaignOwnership(campaign);
+      return clientId === undefined
+        ? campaigns
+        : campaigns.filter((campaign) => campaign.client_id === clientId);
+    });
   }
 
   /**
@@ -216,36 +240,57 @@ export class SmartleadClient {
     );
   }
 
+  /**
+   * D331 — Smartlead client spaces are deleted. The owner catalog
+   * (lib/ownership OWNER_CATALOG) carries today's client ids, names and
+   * logos so every display name and per-client loop is unchanged. No HTTP.
+   */
+  // Still rides the queue (D89 guard) though it no longer makes an HTTP call.
   listClients(): Promise<SmartleadClientRecord[]> {
     return this.mutate(() =>
-      this.request<SmartleadClientRecord[]>("client/"),
+      Promise.resolve(
+        legacyClientRecords().map((record) => ({
+          ...record,
+          logo: record.logo ?? undefined,
+        })),
+      ),
     );
   }
 
-  getCampaign(campaignId: number): Promise<SmartleadCampaign> {
-    return this.request<SmartleadCampaign>(`campaigns/${campaignId}`,
+  /** D331 — `GET /campaigns/{id}` returns no tags unless include_tags=true. */
+  async getCampaign(campaignId: number): Promise<SmartleadCampaign> {
+    const campaign = await this.request<SmartleadCampaign>(`campaigns/${campaignId}`,
+      { query: { include_tags: true } },
     );
+    return applyCampaignOwnership(campaign);
   }
 
-  getCampaignEmailAccounts(
+  async getCampaignEmailAccounts(
     campaignId: number,
     opts?: { signal?: AbortSignal },
   ): Promise<SmartleadEmailAccount[]> {
-    return this.request<SmartleadEmailAccount[]>(
+    const accounts = await this.request<SmartleadEmailAccount[]>(
       `campaigns/${campaignId}/email-accounts`,
       { signal: opts?.signal },
     );
+    if (Array.isArray(accounts)) {
+      for (const account of accounts) {
+        if (account && "client_id" in account) applyAccountOwnership(account);
+      }
+    }
+    return accounts;
   }
 
-  getEmailAccount(
+  async getEmailAccount(
     emailAccountId: number,
     options: { fetchCampaigns?: boolean } = {},
   ): Promise<SmartleadAccountWithCampaigns> {
-    return this.request<SmartleadAccountWithCampaigns>(`email-accounts/${emailAccountId}`,
+    const account = await this.request<SmartleadAccountWithCampaigns>(`email-accounts/${emailAccountId}`,
       {
         query: options.fetchCampaigns ? { fetch_campaigns: true } : undefined,
       },
     );
+    return applyAccountOwnership(account);
   }
 
   /**
@@ -337,6 +382,8 @@ export class SmartleadClient {
         );
       }
       if (page.length === 0) return out;
+      // D331 — mailbox owner from override / seed / campaign sg-owner tags.
+      for (const account of page) applyAccountOwnership(account);
       out.push(...page);
       offset += page.length;
       await yieldEventLoop();
@@ -544,6 +591,15 @@ export class SmartleadClient {
     campaignId: number,
     settings: Record<string, unknown>,
   ): Promise<unknown> {
+    if (Object.prototype.hasOwnProperty.call(settings, "client_id")) {
+      // D331 — no client space to move into; ownership is the sg-owner tag.
+      const { client_id: clientId, ...rest } = settings;
+      this.noteCampaignClientWrite(campaignId, clientId);
+      if (Object.keys(rest).length === 0) {
+        return Promise.resolve({ ok: true, skipped: "client_spaces_deleted" });
+      }
+      settings = rest;
+    }
     return this.mutate(() =>
       this.request(`campaigns/${campaignId}/settings`, {
         method: "POST",
@@ -568,9 +624,26 @@ export class SmartleadClient {
     );
   }
 
-  /** D77 — assign the Smartlead client tag on a campaign. */
+  /**
+   * D77 / D331 — "assign the client" on a campaign. Client spaces are
+   * deleted, so nothing is written to Smartlead: the owner is recorded in
+   * the persisted override book (immediately effective for every consumer)
+   * and the log names the `sg-owner:<slug>` tag the campaign should carry.
+   * Never fails because the space is gone.
+   */
   setCampaignClientId(campaignId: number, clientId: number): Promise<unknown> {
-    return this.updateCampaignSettings(campaignId, { client_id: clientId });
+    this.noteCampaignClientWrite(campaignId, clientId);
+    return Promise.resolve({ ok: true, skipped: "client_spaces_deleted" });
+  }
+
+  private noteCampaignClientWrite(campaignId: number, clientId: unknown): void {
+    const owner = typeof clientId === "number" && Number.isFinite(clientId) ? clientId : null;
+    recordCampaignOwner(campaignId, owner, "campaign_client_write");
+    const slug = slugForLegacyClientId(owner);
+    console.log(
+      `[ownership] campaign ${campaignId} owner -> ${owner ?? "none"} recorded in override book (client spaces deleted; no Smartlead write)` +
+        (slug ? `; campaign should carry tag ${sgOwnerTagName(slug)}` : ""),
+    );
   }
 
   getDayWiseOverallStats(options: {
@@ -704,6 +777,20 @@ export class SmartleadClient {
       time_to_wait_in_mins?: number;
     },
   ): Promise<unknown> {
+    if (Object.prototype.hasOwnProperty.call(fields, "client_id")) {
+      // D331 — no client space to move the mailbox into. Record the owner
+      // (null = back to pool) in the override book; never send client_id.
+      const { client_id: clientId, ...rest } = fields;
+      const owner = typeof clientId === "number" && Number.isFinite(clientId) ? clientId : null;
+      recordAccountOwner(emailAccountId, owner, "mailbox_client_write");
+      console.log(
+        `[ownership] mailbox ${emailAccountId} owner -> ${owner ?? "pool"} recorded in override book (client spaces deleted; no Smartlead write)`,
+      );
+      if (Object.keys(rest).length === 0) {
+        return Promise.resolve({ ok: true, skipped: "client_spaces_deleted" });
+      }
+      fields = rest;
+    }
     return this.mutate(() =>
       this.request(`email-accounts/${emailAccountId}`,
         { method: "POST", body: fields },

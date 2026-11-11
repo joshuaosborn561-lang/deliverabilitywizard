@@ -322,6 +322,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D329 | Live | An Insight seat (client 582890) sending as Josh Osborn or Joshua Osborn has mailbox signature exactly `Josh Osborn` / `Strategic Account Executive` / `Insight`. The signature pass must not drop the Insight line or switch the name to from_name. Josh, 2026-10-12 / 2026-11-04. |
 | D330 | Live | Weekly POD swap attaches and confirms the on-week pod before it detaches the off-week pod. A 429 or the pass budget saves a cursor and resumes; the 15-minute stage ceiling stays. `GET /pod-swap` publishes `in_progress`, `started_at`, `finished_at`. HTTP 429 honors Retry-After. Pod schedule, seat rules, D228 exemption after confirm, generic top-up, and thresholds unchanged. |
 | D331 | Live | Smartlead client spaces are deleted (Josh, 2026-11-11). Ownership comes from tags, not `client_id`: a campaign is owned by its unique `sg-owner:<slug>` tag (read with `include_tags=true`); wizard shells stay unowned. A mailbox is owned by a wizard override, else its live `client_id`, else the committed 2026-11-11 seed (`src/data/mailboxOwnerSeed.ts`, 1,590 rows), else the unique sg-owner of the campaigns it sends on (never for GENERIC / POC / CANARY), else pool. Owners keep their legacy numeric ids and display names, so every rule keyed by `client_id` is unchanged. Client writes go to the persisted override book, never to Smartlead. |
+| D333 | Live | All deliverability testing is off (Josh, 2026-11-11). `DELIVERABILITY_TESTING_ENABLED` (default off; only `"true"` enables) gates placement-test creation (Auto, backfill, known-good, Canary copy, variant, reply-drop, isolation), canary shells, canary-adopt and monitor-results. `no_placement_test` / `missing_canary` / `inbox_missing_known_good` / `below_launch_bar` are never emitted, clear on the next pass and do not count in `/health`, Slack, Today or the wake queue. qa-unpause STARTs without a placement reading. Supersedes the daily Auto placement test rule. |
 
 ---
 
@@ -12081,3 +12082,53 @@ section.
 
 **Guards.** `src/lib/ownership.test.ts`, `src/guards/canon.test.ts`
 D331.
+
+## D333 — Deliverability testing is off (kill switch)
+
+**Date.** 2026-11-11. **Who.** Josh ("turn off all deliverability testing
+from now on, make it canon", 1:52–1:54pm CT).
+
+**Decision.** No deliverability testing. The wizard creates no
+SmartDelivery placement tests (`Auto: campaign placement`, the daily
+auto test per campaign and its backfill), no `Pod control known-good`
+tests, no `Canary shell: #<id>` campaigns, no `Canary copy` / variant
+copy tests, and no reply-drop or isolation placement tests. Canary-adopt
+and monitor-results (placement result polling and every action keyed
+off a reading: pause, swap, score) do nothing. Why (Felipe,
+EmailBison/EmailGuard): daily placement tests cause send spikes and the
+seed lists drift.
+
+**How.** One switch, `DELIVERABILITY_TESTING_ENABLED`, default off; only
+the exact string `"true"` turns it on (`src/lib/deliverabilityTesting.ts`,
+`config.deliverabilityTestingEnabled`). Each entry point returns early
+with a `[testing-off]` log line and makes no Smartlead call; the
+SmartDelivery create endpoints refuse before any HTTP as a backstop.
+Stages and crons stay scheduled so their bodies no-op and `stageHealth`
+stays fresh. `no_placement_test`, `missing_canary`,
+`inbox_missing_known_good` and `below_launch_bar` are never emitted;
+stored rows carrying them are stripped on the next campaign-check pass
+and are excluded from `/health` `canonFindings` / `canonCompliant`, the
+Slack canon-miss pages, the Today board and the wake queue. The canary
+fleet-down fact clears. qa-unpause no longer needs a placement reading to
+START (every other gate stands). The legacy code is gated, not deleted,
+so this PR stays small; existing canary shells in Smartlead are left
+PAUSED/STOPPED and untouched.
+
+**Supersedes.** The "daily Auto placement test on every campaign" rule
+and the older canary / known-good / placement-gate rules (D43, D81 canary
+checks, D85, D86, D89, D106 launch bar, D309) while the switch is off.
+The LOCKED-canon text for D303 per-variant tests and the D311 reply-drop
+placement test is not edited here: that needs the `canon-change` label
+(D322) and lands with the CANON docs PR. Until then the code follows
+this decision.
+
+**Does not change.** 2-message sequences, the Mon–Thu 07:00–19:00 ET
+window, exemptions (`Calls |`, Booking Follow Up, tests), `sg-owner:<slug>`
+ownership (D331), master-key use, STOPPED-vs-PAUSED semantics, Gabe Calls
+rules, test-reconcile (stopping tests is not creating them).
+
+**Pending.** Daily per-mailbox health metrics, the weekly report, and an
+optional Sunday-only test path (off) follow in later PRs.
+
+**Guards.** `src/services/testingOff.test.ts`,
+`src/lib/deliverabilityTesting.test.ts`, `src/guards/canon.test.ts` D333.

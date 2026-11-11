@@ -5,6 +5,9 @@ import { StateStore } from "../state/store.js";
 import { CopyIsolationService } from "./copyIsolation.js";
 import { IsolationRigService } from "./isolationRig.js";
 
+// D333 — these cases cover the legacy testing behaviour behind the kill switch.
+process.env.DELIVERABILITY_TESTING_ENABLED = "true";
+
 describe("copy isolation", () => {
   it("does not write production campaigns and starts without seed approval", async () => {
     const writes: string[] = [];

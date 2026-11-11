@@ -82,6 +82,9 @@ function seedFleet(state: StateStore): void {
 
 import { canaryCreateLedger, planCanaryDuplicates } from "../lib/canaryDedupe.js";
 
+// D333 — these cases cover the legacy testing behaviour behind the kill switch.
+process.env.DELIVERABILITY_TESTING_ENABLED = "true";
+
 const LIVE = [
   { id: 4, name: "Live A", status: "ACTIVE", client_id: 2 },
   { id: 104, name: "Canary shell: #4 Live A", status: "PAUSED" },

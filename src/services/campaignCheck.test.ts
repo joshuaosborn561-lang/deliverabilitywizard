@@ -11,6 +11,9 @@ import { CampaignCheckService } from "./campaignCheck.js";
 import type { InventoryBook } from "./inventory.js";
 import { InboxkitClientSplitCache } from "../lib/inboxkitClientSplit.js";
 
+// D333 — these cases cover the legacy testing behaviour behind the kill switch.
+process.env.DELIVERABILITY_TESTING_ENABLED = "true";
+
 /**
  * D132 — tests hand the service a book that reads the same fake client the
  * old internal fetch used, one attempt, clients optional. Semantics match

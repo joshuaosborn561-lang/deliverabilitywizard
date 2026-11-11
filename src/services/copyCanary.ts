@@ -1,4 +1,5 @@
 import type { AppConfig } from "../config.js";
+import { isDeliverabilityTestingEnabled, logTestingOff } from "../lib/deliverabilityTesting.js";
 import type { SlackClient } from "../clients/slack.js";
 import {
   sequenceVariantTargets,
@@ -114,6 +115,10 @@ export class CopyCanaryService {
     };
     if (!this.config.enableCopyCanary) {
       console.log("[copy-canary] Disabled");
+      return result;
+    }
+    if (!isDeliverabilityTestingEnabled()) {
+      logTestingOff("copy-canary attach (Canary shell / Canary copy tests)");
       return result;
     }
 
@@ -414,6 +419,10 @@ export class CopyCanaryService {
   ): Promise<string | undefined> {
     const stored = this.state.getCopyCanaryTestId(campaignId);
     if (stored) return stored;
+    if (!isDeliverabilityTestingEnabled()) {
+      logTestingOff("copy-canary heal (Canary copy test)");
+      return undefined;
+    }
     const emails = this.state.getCopyCanaries(campaignId);
     if (!emails.length || !this.smartDelivery) return undefined;
 
@@ -918,6 +927,10 @@ export class CopyCanaryService {
     listed: unknown,
     providerIds: number[],
   ): Promise<number> {
+    if (!isDeliverabilityTestingEnabled()) {
+      logTestingOff("copy-canary variant copy tests");
+      return 0;
+    }
     if (!this.smartDelivery) return 0;
     const sequences = await this.smartlead.getCampaignSequences(campaign.id);
     const sequence = pickSequence(sequences ?? [], this.config.sequenceNumber);

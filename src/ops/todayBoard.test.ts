@@ -3,6 +3,9 @@ import { describe, it } from "node:test";
 import type { CampaignCheckRecord } from "../lib/campaignCheck.js";
 import { buildTodayBoard, campaignSettingsHint, nextHourlySweep } from "./todayBoard.js";
 
+// D333 — these cases cover the legacy testing behaviour behind the kill switch.
+process.env.DELIVERABILITY_TESTING_ENABLED = "true";
+
 function check(partial: Partial<CampaignCheckRecord> & Pick<CampaignCheckRecord, "campaignId" | "name">): CampaignCheckRecord {
   return {
     firstSeenAt: "2026-11-04T16:00:00.000Z",

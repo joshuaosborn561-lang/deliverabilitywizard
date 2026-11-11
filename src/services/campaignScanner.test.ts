@@ -17,6 +17,9 @@ import {
   scheduleStartTime,
 } from "./campaignScanner.js";
 
+// D333 — these cases cover the legacy testing behaviour behind the kill switch.
+process.env.DELIVERABILITY_TESTING_ENABLED = "true";
+
 describe("parseSendersNotUsedInCampaign", () => {
   it("extracts the rejected addresses from the SmartDelivery error", () => {
     assert.deepEqual(

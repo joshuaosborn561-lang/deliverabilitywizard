@@ -11,6 +11,9 @@ import type { SpendGateway } from "../lib/spendGateway.js";
 import { StateStore } from "../state/store.js";
 import { CopyCanaryBuyService } from "./copyCanaryBuy.js";
 
+// D333 — these cases cover the legacy testing behaviour behind the kill switch.
+process.env.DELIVERABILITY_TESTING_ENABLED = "true";
+
 describe("CopyCanaryBuyService", () => {
   it("buys two domains, three Google then three Outlook, and never enables warmup", async () => {
     const state = new StateStore(

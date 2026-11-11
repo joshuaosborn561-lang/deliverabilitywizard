@@ -1,4 +1,5 @@
 import type { CanonConvergeService } from "./canonConverge.js";
+import { isDeliverabilityTestingEnabled, logTestingOff } from "../lib/deliverabilityTesting.js";
 import { onWeekCohort } from "../lib/restCohort.js";
 import { randomUUID } from "node:crypto";
 import type { AppConfig } from "../config.js";
@@ -120,6 +121,10 @@ export class IsolationBranchService {
       errors: [],
     };
     if (!this.config.enableIsolationBranch) return result;
+    if (!isDeliverabilityTestingEnabled()) {
+      logTestingOff("isolation-branch (placement-result isolation / Canary copy tests)");
+      return result;
+    }
 
     const clock = opts.now ?? Date.now;
     const budgetMs = opts.budgetMs ?? ISOLATION_STEP_BUDGET_MS;

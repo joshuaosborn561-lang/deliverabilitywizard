@@ -4,6 +4,9 @@ import { loadConfig } from "../config.js";
 import { StateStore } from "../state/store.js";
 import { ReplyRateWatchService } from "./replyRateWatch.js";
 
+// D333 — these cases cover the legacy testing behaviour behind the kill switch.
+process.env.DELIVERABILITY_TESTING_ENABLED = "true";
+
 const campaigns = [
   { id: 1, name: "Live", status: "ACTIVE", client_id: 7 },
   { id: 2, name: "Old", status: "PAUSED", client_id: 7 },

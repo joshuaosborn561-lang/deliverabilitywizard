@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D331** (2026-11-11). One page of current truth. When a new
+Canon as of **D333** (2026-11-11). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -9,6 +9,8 @@ guard in `src/guards/meta.test.ts` enforces both).
 and every reversal, and most of it is **superseded**. Do not derive behaviour
 from it. Derive behaviour from this file; use the ledger only to understand
 *why* a rule here exists (each rule cites its decision numbers).
+
+**D333.** **No deliverability testing.** No placement tests, canaries, or known-good sends: the wizard creates no SmartDelivery placement test (`Auto: campaign placement`, backfill, `Pod control known-good`, `Canary copy`, variant, reply-drop, isolation) and no `Canary shell` campaign, and canary-adopt and monitor-results do nothing. One switch, `DELIVERABILITY_TESTING_ENABLED`, default off (only the exact string `"true"` enables it). `no_placement_test`, `missing_canary`, `inbox_missing_known_good` and `below_launch_bar` are never raised and never count on `/health`, Slack, Today or the wake queue. No campaign is held from START for a missing test or canary. Existing canary shells stay PAUSED/STOPPED, untouched. This supersedes the daily Auto placement test on every campaign and every older canary / placement rule below while the switch is off; the LOCKED D303 per-variant test and D311 reply-drop test text is updated in the CANON docs PR (`canon-change`, D322) — until then the code follows D333. Everything else is unchanged.
 
 **D331.** Smartlead client spaces are deleted. **Ownership comes from tags, not Smartlead `client_id`.** A campaign is owned by its unique `sg-owner:<slug>` campaign tag (read with `include_tags=true`); canary / pod-control / word-hunt shells stay unowned. A mailbox is owned by a wizard override, else its live `client_id`, else the committed 2026-11-11 seed (`src/data/mailboxOwnerSeed.ts`), else the unique sg-owner owner of the campaigns it sends on (never for GENERIC / POC / CANARY boxes), else it is unassigned / pool. Owners keep their legacy numeric ids (Ciotola campaigns → 345263; cornerstone, deeproots, nieto, msrs, positive, vasco have none and stay unassigned) and their display names, so **every `client_id` in this canon means that resolved owner id** (`src/lib/ownership.ts`, applied in `SmartleadClient`). Client writes never reach Smartlead and never fail: they land in the persisted override book (`ownershipOverrides`). `missing_client_tag` means no sg-owner tag. LOCKED section unchanged.
 

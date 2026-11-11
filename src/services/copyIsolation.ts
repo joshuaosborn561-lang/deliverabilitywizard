@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isDeliverabilityTestingEnabled, logTestingOff } from "../lib/deliverabilityTesting.js";
 import type { AppConfig } from "../config.js";
 import type { SlackClient } from "../clients/slack.js";
 import {
@@ -72,6 +73,10 @@ export class CopyIsolationService {
     };
 
     if (!this.config.enableCopyIsolation) return result;
+    if (!isDeliverabilityTestingEnabled()) {
+      logTestingOff("copy-isolation (variant placement tests)");
+      return result;
+    }
 
     const existing = this.state.listIsolationVariants(run.id);
     if (existing.length) {

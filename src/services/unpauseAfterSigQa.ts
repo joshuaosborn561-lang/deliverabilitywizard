@@ -1,4 +1,5 @@
 import type { AppConfig } from "../config.js";
+import { isDeliverabilityTestingEnabled } from "../lib/deliverabilityTesting.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import {
   accountEmail,
@@ -200,29 +201,34 @@ export class UnpauseAfterSigQaService {
       return result;
     }
 
+    // D333 — testing off: no placement reading is read or required; the
+    // D106 launch bar does not gate START. Every other gate above stands.
+    const testingOn = isDeliverabilityTestingEnabled();
     let tests: SpamTestSummary[] | null = null;
-    try {
-      tests = normalizeTestList(await this.smartDelivery.listTests({}));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      result.errors.push(`list tests: ${message}`);
+    if (testingOn) {
+      try {
+        tests = normalizeTestList(await this.smartDelivery.listTests({}));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        result.errors.push(`list tests: ${message}`);
+      }
     }
 
     for (const { campaign, name } of candidates) {
-      if (!tests) {
+      if (testingOn && !tests) {
         result.blocked.push(
           `#${campaign.id} ${name}: no placement reading (SmartDelivery list failed) — bar is ${this.config.launchInboxThreshold}% (D106)`,
         );
         continue;
       }
-      const reading = launchReadingPercent(tests, campaign.id);
-      if (reading == null) {
+      const reading = tests ? launchReadingPercent(tests, campaign.id) : null;
+      if (testingOn && reading == null) {
         result.blocked.push(
           `#${campaign.id} ${name}: no living placement reading — not proven at the ${this.config.launchInboxThreshold}% bar (D106)`,
         );
         continue;
       }
-      if (reading < this.config.launchInboxThreshold) {
+      if (reading != null && reading < this.config.launchInboxThreshold) {
         result.blocked.push(
           `#${campaign.id} ${name}: ${reading.toFixed(0)}% inbox is below the ${this.config.launchInboxThreshold}% launch bar (D106)`,
         );
@@ -236,7 +242,9 @@ export class UnpauseAfterSigQaService {
         }
         result.started.push({ campaignId: campaign.id, name });
         console.log(
-          `[qa-unpause] START #${campaign.id} ${name} — sigs match, ${reading.toFixed(0)}% ≥ ${this.config.launchInboxThreshold}%`,
+          reading != null
+            ? `[qa-unpause] START #${campaign.id} ${name} — sigs match, ${reading.toFixed(0)}% ≥ ${this.config.launchInboxThreshold}%`
+            : `[qa-unpause] START #${campaign.id} ${name} — sigs match, testing off (D333)`,
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

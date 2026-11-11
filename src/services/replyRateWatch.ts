@@ -13,6 +13,7 @@ import {
   type SmartleadAccountWithCampaigns,
   type SmartleadClient,
 } from "../clients/smartlead.js";
+import { isDeliverabilityTestingEnabled, logTestingOff } from "../lib/deliverabilityTesting.js";
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
 import type { SlackClient } from "../clients/slack.js";
 import type { AppConfig } from "../config.js";
@@ -178,6 +179,11 @@ export class ReplyRateWatchService {
         baselineRate: Number(finding.baselineRate.toFixed(2)),
       });
       // 2) one placement test on that domain only.
+      // D333 — testing off: the alert above stands, no placement test.
+      if (!isDeliverabilityTestingEnabled()) {
+        logTestingOff(`reply-rate-drop placement test on ${finding.domain}`);
+        continue;
+      }
       if (!smartDelivery) {
         result.errors.push(`${finding.domain}: SmartDelivery is not configured`);
         continue;

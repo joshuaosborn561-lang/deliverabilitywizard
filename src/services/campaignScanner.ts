@@ -1,4 +1,5 @@
 import type { AppConfig } from "../config.js";
+import { isDeliverabilityTestingEnabled, logTestingOff } from "../lib/deliverabilityTesting.js";
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import {
@@ -211,6 +212,10 @@ export class CampaignScanner {
       plans: [],
       createdTestIds: [],
     };
+    if (!isDeliverabilityTestingEnabled()) {
+      logTestingOff("scan (Auto: campaign placement tests)");
+      return result;
+    }
 
     const started = Date.now();
     console.log(`[scan] Starting (${options.trigger})`);

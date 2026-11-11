@@ -1,4 +1,5 @@
 import { InboxKitClient } from "../clients/inboxkit.js";
+import { isDeliverabilityTestingEnabled, logTestingOff } from "../lib/deliverabilityTesting.js";
 import { PorkbunClient } from "../clients/porkbun.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import { accountEmail } from "../clients/smartlead.js";
@@ -137,6 +138,10 @@ export class CopyCanaryBuyService {
   }
 
   async resume(): Promise<number> {
+    if (!isDeliverabilityTestingEnabled()) {
+      logTestingOff("canary-buy-resume");
+      return 0;
+    }
     let finished = 0;
     for (const action of this.store.listIsolationActions()) {
       if (action.kind !== "buy_canary_fleet") continue;
@@ -376,6 +381,10 @@ export class CopyCanaryBuyService {
    * is turned off (D83). Test attachment stays with the normal sweep.
    */
   async adoptManualPurchase(): Promise<CopyCanaryAdoptResult | null> {
+    if (!isDeliverabilityTestingEnabled()) {
+      logTestingOff("canary-adopt");
+      return null;
+    }
     this.store.mergeReleasedCanaryFleet({
       emails: this.config.releasedCanaryFleetEmails,
       domains: this.config.releasedCanaryFleetDomains,

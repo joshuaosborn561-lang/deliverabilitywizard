@@ -6,6 +6,9 @@ import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
 import type { StateStore } from "../state/store.js";
 import { UnpauseAfterSigQaService } from "./unpauseAfterSigQa.js";
 
+// D333 — these cases cover the legacy testing behaviour behind the kill switch.
+process.env.DELIVERABILITY_TESTING_ENABLED = "true";
+
 function fakeState(bouncePaused: number[] = []): StateStore {
   const stamped = new Set(bouncePaused.map(String));
   return {

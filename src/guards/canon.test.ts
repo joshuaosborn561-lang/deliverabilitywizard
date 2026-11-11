@@ -19618,3 +19618,42 @@ describe("owner intent — D334 daily mailbox health is alert only", () => {
     assert.match(decisions, /^\| D334 \|/m);
   });
 });
+
+describe("owner intent — D335 weekly health report; Sunday placement path off", () => {
+  it("D335: weekly report reads snapshots only; Sunday path off by default and unscheduled", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { loadWeeklyHealthConfig } = await import("../lib/mailboxHealthWeekly.js");
+    const { loadSundayPlacementConfig, sundayPlacementScheduleError } = await import("../lib/sundayPlacement.js");
+    const { mailboxHealthCronError } = await import("../lib/mailboxHealthDaily.js");
+    const [weekly, sunday, index, canon, decisions] = await Promise.all([
+      readFile(new URL("../services/mailboxHealthWeekly.ts", import.meta.url), "utf8"),
+      readFile(new URL("../services/sundayPlacement.ts", import.meta.url), "utf8"),
+      readFile(new URL("../index.ts", import.meta.url), "utf8"),
+      readFile(new URL("../../CANON.md", import.meta.url), "utf8"),
+      readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8"),
+    ]);
+    const stop = (problem: string) =>
+      [
+        "STOP — this reverses one of Josh's decisions.",
+        "  Decision: weekly health is report-only; Sunday placement testing is OFF until Josh approves (D335).",
+        `  Problem:  ${problem}`,
+        "Check with Josh before changing it. Do not delete this guard to go green.",
+      ].join("\n");
+    assert.doesNotMatch(weekly, /SmartleadClient|SmartDeliveryClient/, stop("the weekly report gained a Smartlead / SmartDelivery dependency."));
+    assert.equal(loadSundayPlacementConfig({}).enabled, false, stop("Sunday placement tests default on."));
+    assert.equal(loadSundayPlacementConfig({ SUNDAY_PLACEMENT_TEST_ENABLED: "1" }).enabled, false, stop("something other than \"true\" enables Sunday tests."));
+    assert.ok(sundayPlacementScheduleError(loadSundayPlacementConfig({})), stop("the Sunday cron would register while off."));
+    assert.match(index, /if \(!sundayPlacementNotScheduled\) \{/, stop("the Sunday cron is no longer behind the off check."));
+    assert.match(sunday, /type SmartDelivery = Pick<SmartDeliveryClient, "createManualPlacement" \| "resolveProviderIds">;/, stop("the Sunday path got a wider SmartDelivery surface."));
+    assert.doesNotMatch(sunday, /createAutomatedPlacement|campaignId:|Canary shell:|canaryShell|CanaryShell/, stop("the Sunday path schedules recurring tests, attaches to campaigns, or builds canaries."));
+    const wcfg = loadWeeklyHealthConfig({});
+    assert.equal(wcfg.enabled, true);
+    assert.equal(mailboxHealthCronError(wcfg.cron), null);
+    assert.match(index, /app\.get\("\/mailbox-health\/weekly", async \(req, res\) => \{\n    if \(!checkRunToken\(req, res\)\) return;/, stop("GET /mailbox-health/weekly lost RUN_TOKEN auth."));
+    assert.match(index, /if \(weeklyHealthCronInvalid\) \{/, stop("the weekly cron hour guard is no longer applied before scheduling."));
+    assert.match(canon, /Canon as of \*\*D(33[5-9]|3[4-9][0-9])\*\*/);
+    assert.match(canon, /\*\*Weekly mailbox health report; Sunday-only placement test path is OFF\.\*\*/);
+    assert.match(decisions, /## D335 — /);
+    assert.match(decisions, /^\| D335 \|/m);
+  });
+});

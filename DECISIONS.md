@@ -323,6 +323,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D330 | Live | Weekly POD swap attaches and confirms the on-week pod before it detaches the off-week pod. A 429 or the pass budget saves a cursor and resumes; the 15-minute stage ceiling stays. `GET /pod-swap` publishes `in_progress`, `started_at`, `finished_at`. HTTP 429 honors Retry-After. Pod schedule, seat rules, D228 exemption after confirm, generic top-up, and thresholds unchanged. |
 | D331 | Live | Smartlead client spaces are deleted (Josh, 2026-11-11). Ownership comes from tags, not `client_id`: a campaign is owned by its unique `sg-owner:<slug>` tag (read with `include_tags=true`); wizard shells stay unowned. A mailbox is owned by a wizard override, else its live `client_id`, else the committed 2026-11-11 seed (`src/data/mailboxOwnerSeed.ts`, 1,590 rows), else the unique sg-owner of the campaigns it sends on (never for GENERIC / POC / CANARY), else pool. Owners keep their legacy numeric ids and display names, so every rule keyed by `client_id` is unchanged. Client writes go to the persisted override book, never to Smartlead. |
 | D334 | Live | Daily per-mailbox health snapshot (Josh, 2026-11-11, replacing deliverability testing with metrics). Every mailbox on an ACTIVE campaign is snapshotted daily at 7:15am CT (cron hour must be 06–19 CT) for the previous CT day: sent, replies, reply rate, bounces, bounce rate, warmup score, domain, ESP, POD, sg-owner. History in `<state dir>/mailbox-health/YYYY-MM-DD.json`, 120 days. Trend flags (env thresholds) emit `mailbox_health_trend` — ALERT ONLY, never a core kind, never a pause/stop/unpause/rest/burn/swap. One Slack `ops_alert` per run, at most once per mailbox per flag per day. `GET /mailbox-health/daily` (RUN_TOKEN). |
+| D335 | Live — Sunday path OFF (pending Josh) | Weekly mailbox health report (Josh, 2026-11-11, testing-off spec item 5): Monday 8:30am CT (`CRON_WEEKLY_HEALTH_REPORT`, hour must be 06–19 CT), built only from the D334 snapshots — per inbox and per domain reply rate, bounce rate, warmup score, week-over-week trend and flags, grouped by sg-owner and POD. One concise `eod_summary` Slack post per week; `GET /mailbox-health/weekly?week=` (RUN_TOKEN). `WEEKLY_HEALTH_REPORT_ENABLED` default on. Sunday-only placement path (item 6) behind `SUNDAY_PLACEMENT_TEST_ENABLED` (default off, only `"true"` enables): off registers no cron and makes no call; on runs Sundays 06–19 CT only, needs D333 `DELIVERABILITY_TESTING_ENABLED` too once wired. |
 
 ---
 
@@ -12138,3 +12139,61 @@ Gabe Calls rules are unchanged.
 
 **Guards.** `src/lib/mailboxHealthDaily.test.ts`,
 `src/services/mailboxHealthDaily.test.ts`, `src/guards/canon.test.ts` D334.
+
+## D335 — Weekly mailbox health report; Sunday-only placement path (off)
+
+**Decision.** Josh, 2026-11-11 (1:52–1:54pm CT, "turn off all
+deliverability testing" spec, items 5 and 6): a weekly per-inbox and
+per-domain health report replaces placement scoring for humans, and a
+minimal Sunday-only placement test path exists but stays OFF until Josh
+approves the new plan.
+
+**How — weekly report.**
+
+- Job `weekly-health-report`, cron `CRON_WEEKLY_HEALTH_REPORT` (default
+  `30 8 * * 1`, Monday 8:30am America/Chicago). The hour field must expand
+  to 06–19 CT (same check as D334) or the job is **not scheduled**; the run
+  itself refuses 20:00–05:59 CT. A Monday D249 catch-up runs it once if a
+  deploy swallowed the fire, after Sunday's D334 snapshot exists.
+- Input: the D334 snapshot files only — the reported Mon–Sun week and the
+  week before it for the trend. No Smartlead or SmartDelivery call.
+- Per inbox: sent / replies / bounces summed over the week, reply rate,
+  bounce rate, the newest warmup score, the prior week's same metrics, the
+  week-over-week change in points, and the distinct D334 trend flags raised
+  that week. Per domain: the same sums, mean warmup, inbox and flagged-inbox
+  counts, the most common owner, POD (null when mixed). Groups: sg-owner ×
+  POD. Totals with flagged inbox / domain counts.
+- Slack: one post per week (`weekly_health_report:<monday>` alert key) on
+  the existing report lane (`eod_summary`, like the EOD scoreboard): totals,
+  up to 8 owner/POD groups, top 10 flagged inboxes, top 5 flagged domains,
+  and the endpoint link. Alert only.
+- `GET /mailbox-health/weekly?week=YYYY-MM-DD` (RUN_TOKEN) returns the full
+  report as JSON for the Mon–Sun week containing that date (default: the
+  last completed week); 404 when no snapshot exists that week.
+- `WEEKLY_HEALTH_REPORT_ENABLED` default on.
+
+**How — Sunday-only placement path (OFF).**
+
+- `SUNDAY_PLACEMENT_TEST_ENABLED` defaults to false; only the exact string
+  `true` enables it. Off: the `sunday-placement-test` cron is **not
+  registered**, the service is not constructed, no test, no canary shell,
+  no finding, no SmartDelivery call.
+- On (not now — pending Josh): cron `CRON_SUNDAY_PLACEMENT_TEST` (default
+  `0 9 * * 0`) must be Sunday-only and 06–19 CT or it is not scheduled; the
+  run refuses any non-Sunday or night in America/Chicago. It creates at most
+  `SUNDAY_PLACEMENT_MAX_TESTS` (3) manual placement tests via the existing
+  `createManualPlacement` / `isolationManualPayload` off-campaign path, one
+  per sg-owner, up to 20 senders each from the newest D334 snapshot
+  (flagged first). No shell, no campaign attach, no finding, no action on
+  results.
+- Master kill switch: D333 `DELIVERABILITY_TESTING_ENABLED` (open PR #400)
+  is not on this branch. The service takes a `masterSwitch` dep; when #400
+  lands, index.ts passes its helper so Sunday testing needs **both** flags.
+
+**Does not change.** D334 daily snapshots and flags, D311, sequences
+(2 messages), the Mon–Thu 07:00–19:00 ET window, exemptions, sg-owner
+ownership, master key, STOPPED-vs-PAUSED, Gabe Calls rules.
+
+**Guards.** `src/lib/mailboxHealthWeekly.test.ts`,
+`src/services/mailboxHealthWeekly.test.ts`,
+`src/services/sundayPlacement.test.ts`, `src/guards/canon.test.ts` D335.

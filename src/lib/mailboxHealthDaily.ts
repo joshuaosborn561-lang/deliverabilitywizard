@@ -126,21 +126,24 @@ function expandField(field: string, min: number, max: number): number[] | null {
  * else the reason. The job is always scheduled in America/Chicago, so
  * the hour field is a CT hour. Anything unparseable is rejected.
  */
-export function mailboxHealthCronError(expression: string): string | null {
+export function mailboxHealthCronError(
+  expression: string,
+  envName = "CRON_MAILBOX_HEALTH_DAILY",
+): string | null {
   const fields = expression.trim().split(/\s+/);
   if (fields.length !== 5 && fields.length !== 6) {
-    return `CRON_MAILBOX_HEALTH_DAILY "${expression}" must have 5 or 6 fields`;
+    return `${envName} "${expression}" must have 5 or 6 fields`;
   }
   const hourField = fields[fields.length - 4]!;
   const hours = expandField(hourField, 0, 23);
   if (!hours || !hours.length) {
-    return `CRON_MAILBOX_HEALTH_DAILY hour field "${hourField}" must be explicit hours (e.g. 7 or 7,13)`;
+    return `${envName} hour field "${hourField}" must be explicit hours (e.g. 7 or 7,13)`;
   }
   const bad = hours.filter(
     (h) => h >= MAILBOX_HEALTH_QUIET_START_HOUR || h < MAILBOX_HEALTH_QUIET_END_HOUR,
   );
   if (bad.length) {
-    return `CRON_MAILBOX_HEALTH_DAILY fires at ${bad.join(",")}h America/Chicago — no timer may run 20:00–05:59 CT`;
+    return `${envName} fires at ${bad.join(",")}h America/Chicago — no timer may run 20:00–05:59 CT`;
   }
   return null;
 }

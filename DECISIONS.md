@@ -321,7 +321,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D328 | Live | A `JEREMY-CIOTOLA` seat (tag 533700), or a mailbox whose sender name is exactly `Jeremy Ciotola`, has mailbox signature `Jeremy Ciotola` alone. No SalesGlider line. Other clients stay on their own signature rules. Josh, 2026-11-05. |
 | D329 | Live | An Insight seat (client 582890) sending as Josh Osborn or Joshua Osborn has mailbox signature exactly `Josh Osborn` / `Strategic Account Executive` / `Insight`. The signature pass must not drop the Insight line or switch the name to from_name. Josh, 2026-10-12 / 2026-11-04. |
 | D330 | Live | Weekly POD swap attaches and confirms the on-week pod before it detaches the off-week pod. A 429 or the pass budget saves a cursor and resumes; the 15-minute stage ceiling stays. `GET /pod-swap` publishes `in_progress`, `started_at`, `finished_at`. HTTP 429 honors Retry-After. Pod schedule, seat rules, D228 exemption after confirm, generic top-up, and thresholds unchanged. |
-| D331 | Live | Smartlead client spaces are deleted (Josh, 2026-11-11). Ownership comes from tags, not `client_id`: a campaign is owned by its unique `sg-owner:<slug>` tag (read with `include_tags=true`); wizard shells stay unowned. A mailbox is owned by a wizard override, else its live `client_id`, else the committed 2026-11-11 seed (`src/data/mailboxOwnerSeed.ts`, 1,590 rows), else the unique sg-owner of the campaigns it sends on (never for GENERIC / POC / CANARY), else pool. Owners keep their legacy numeric ids and display names, so every rule keyed by `client_id` is unchanged. Client writes go to the persisted override book, never to Smartlead. |
+| D331 | Live — shell clause superseded by D332 (shells are attributed an owner; `client_id` stays null) | Smartlead client spaces are deleted (Josh, 2026-11-11). Ownership comes from tags, not `client_id`: a campaign is owned by its unique `sg-owner:<slug>` tag (read with `include_tags=true`); wizard shells stay unowned. A mailbox is owned by a wizard override, else its live `client_id`, else the committed 2026-11-11 seed (`src/data/mailboxOwnerSeed.ts`, 1,590 rows), else the unique sg-owner of the campaigns it sends on (never for GENERIC / POC / CANARY), else pool. Owners keep their legacy numeric ids and display names, so every rule keyed by `client_id` is unchanged. Client writes go to the persisted override book, never to Smartlead. |
+| D332 | Live | Wizard shells get an owner ATTRIBUTION (`owner_slug` / `owner_client_id`): their own unique `sg-owner:<slug>` tag, else the canary shell's parent campaign tag (`Canary shell: #<parentId>`). Own tag beats parent; two own sg-owner tags = unowned (no parent fallback). A shell's `client_id` stays null, so it is still excluded from staffing, POD counts, top-up, send canon, one-client, placement and mailbox inference. New mailboxes are registered with `POST /ownership/mailboxes` (x-run-token) into the override book, source `onboarding_api`; seeded or wizard-moved mailboxes and GENERIC / POC / CANARY boxes are never reassigned there. `GET /ownership/mailboxes/:id` reports owner + source. Campaign inference stays live and is never persisted. The seed generator refuses to shrink the seed and gains `--append`. Josh, 2026-11-11. |
 
 ---
 
@@ -12081,3 +12082,68 @@ section.
 
 **Guards.** `src/lib/ownership.test.ts`, `src/guards/canon.test.ts`
 D331.
+
+## D332 — Shells are attributed an owner from tags; onboarding registers new mailboxes
+
+**Date.** 2026-11-11. **Who.** Josh (via the client-id-loss follow-up task).
+
+**Decision.** Supersedes D331's "wizard shells stay unowned" clause, for
+ownership attribution only:
+
+- A wizard shell (canary shell, pod control shell, DW word hunt shell) is
+  attributed to (1) its own unique `sg-owner:<slug>` tag, else (2) for a
+  canary shell, its parent campaign's unique sg-owner tag — parent id from
+  the name `Canary shell: #<parentId> …`, looked up in the same campaign
+  list (then the last-seen list for a single `getCampaign`). Its own tag
+  wins over a conflicting parent tag (an explicit tag on the shell is the
+  more specific statement, and the parent can be retagged independently).
+  Two distinct own sg-owner tags are ambiguous: the shell is unowned and
+  does **not** fall back to the parent. No tag and no tagged parent →
+  unowned. Names are never guessed from.
+- The attribution is exposed as `owner_slug`, `owner_client_id` and
+  `owner_reason` (`shell_sg_owner_tag` / `shell_parent_sg_owner_tag` /
+  `shell`). A shell's **`client_id` stays the raw Smartlead value (null)**.
+  About ninety consumers key client campaigns by `client_id`; leaving it
+  null keeps every shell exclusion (staffing, auto-unpause, launch bars,
+  canon counts, placement, auto-start, one-client, top-up, POD inventory,
+  mailbox inference) exactly as it was, on top of the 85
+  `isAnyShellCampaign` / `isWizardShellCampaignName` checks that also stay.
+- New mailboxes have no tag and no seed row. The Onboarding bot registers
+  them with `POST /ownership/mailboxes` (`x-run-token`, same as `/run`):
+  body `{ assignments: [{ accountId, email?, slug }] }`. The whole batch
+  is validated first (unknown slug, bad id, email that contradicts the
+  account book / seed, duplicate ids → 400, nothing written). Each row is
+  recorded in the persisted override book with source `onboarding_api`
+  (plus the slug, so owners with no legacy id keep it). Idempotent:
+  re-asserting the current owner writes nothing. Never reassigned from
+  here: a seeded mailbox under another owner, a mailbox the wizard moved
+  (any non-onboarding override), and GENERIC / POC / CANARY boxes — those
+  come back as `conflict`. An earlier onboarding row may be corrected by
+  onboarding. `GET /ownership/mailboxes/:accountId` (or `?email=`) returns
+  the resolved owner and `source` (`override` / `seed` /
+  `campaign_inference` / `none`).
+- Campaign inference (a mailbox with no seed / override whose campaigns'
+  sg-owner tags all agree) is unchanged and stays **live, never
+  persisted**: writing it to the book would freeze an owner that D331
+  derives from the current campaigns and would outrank later tag changes.
+  GENERIC / POC / CANARY boxes still never inherit, and shells never count
+  (they are noted with `client_id` null).
+- `scripts/gen-mailbox-owner-seed.ts` refuses to write a smaller seed (a
+  post-deletion backup has no `client_id` and would have wiped 1,590
+  owners) and gains `--append rows.json` for bulk backfills; the logic is
+  in `src/lib/mailboxSeedTools.ts`.
+
+**Why.** Shells carrying (or inheriting) a client's tag were invisible to
+client attribution after D331; giving them a real `client_id` would have
+let ninety `client_id` consumers count them as client campaigns, so the
+owner rides on separate fields. New mailboxes needed a supported path into
+ownership now that `client_id` can never be set.
+
+**Does not change.** D331's catalog and legacy ids (cornerstone, deeproots,
+nieto, msrs, positive, vasco stay without a legacy id), seed contents, POD
+floors, generics ledger, LOCKED section.
+
+**Guards.** `src/lib/ownershipShells.test.ts`,
+`src/ops/ownershipRouter.test.ts`, `src/lib/mailboxSeedTools.test.ts`,
+`src/guards/canon.test.ts` D332. Docs:
+`docs/ONBOARDING-MAILBOX-OWNERSHIP.md`.

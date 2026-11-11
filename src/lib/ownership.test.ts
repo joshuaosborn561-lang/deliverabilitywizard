@@ -88,7 +88,7 @@ describe("D331 catalog", () => {
 describe("D331 campaign owner with client_id null", () => {
   it("sg-owner tag → legacy client id", () => {
     const r = resolveCampaignOwner({ id: 1, name: "Vector | X", client_id: null, tags: [tag("sg-owner:vector")] });
-    assert.deepEqual(r, { clientId: 597119, slug: "vector", reason: "sg_owner_tag" });
+    assert.deepEqual(r, { clientId: 597119, slug: "vector", reason: "sg_owner_tag", ownerClientId: 597119 });
   });
 
   it("Ciotola-tagged campaigns keep SalesGlider's 345263 (as inside the SG space)", () => {
@@ -97,10 +97,12 @@ describe("D331 campaign owner with client_id null", () => {
     assert.equal(r.slug, "ciotola");
   });
 
-  it("canary / pod-control shells stay unowned even when tagged", () => {
+  it("D332: a tagged shell keeps client_id null (never a client campaign) but is attributed", () => {
     const r = resolveCampaignOwner({ id: 2, name: "Canary shell: #4290206 PowerGRYD", client_id: null, tags: [tag("sg-owner:powergryd")] });
     assert.equal(r.clientId, null);
-    assert.equal(r.reason, "shell");
+    assert.equal(r.reason, "shell_sg_owner_tag");
+    assert.equal(r.slug, "powergryd");
+    assert.equal(r.ownerClientId, 592842);
   });
 
   it("owners that never had a space (vasco, nieto, …) stay unassigned", () => {
@@ -143,7 +145,7 @@ describe("D331 mailbox owner with client_id null", () => {
   it("a seeded mailbox keeps its owner after client_id goes null", () => {
     const row = MAILBOX_OWNER_SEED.find((r) => r.slug === "emcor")!;
     const r = resolveAccountOwner({ id: row.id, client_id: null, tags: [] });
-    assert.deepEqual(r, { clientId: 574020, slug: "emcor", reason: "seed" });
+    assert.deepEqual(r, { clientId: 574020, slug: "emcor", reason: "seed", ownerClientId: 574020 });
   });
 
   it("a new named mailbox inherits the unique sg-owner of its campaigns", () => {
@@ -273,6 +275,9 @@ describe("D331 SmartleadClient boundary", () => {
     const client = new SmartleadClient("k");
     const all = await client.listCampaigns();
     assert.deepEqual(all.map((c) => c.client_id), [542838, 574020, null]);
+    // D332 — the shell is attributed to BCP but its client_id stays null.
+    assert.equal(all[2]!.owner_slug, "bcp");
+    assert.equal(all[2]!.owner_client_id, 542838);
     const bcp = await client.listCampaigns(542838);
     assert.deepEqual(bcp.map((c) => c.id), [1]);
     for (const url of urls) {

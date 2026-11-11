@@ -22,6 +22,7 @@ import { sequencesForWrite } from "../lib/signatureQa.js";
 import {
   applyAccountOwnership,
   applyCampaignOwnership,
+  applyCampaignOwnershipToList,
   legacyClientRecords,
   recordAccountOwner,
   recordCampaignOwner,
@@ -189,7 +190,8 @@ export class SmartleadClient {
       }),
     ).then((campaigns) => {
       if (!Array.isArray(campaigns)) return campaigns;
-      for (const campaign of campaigns) applyCampaignOwnership(campaign);
+      // D332 — list-level so a canary shell can read its parent's tag.
+      applyCampaignOwnershipToList(campaigns);
       return clientId === undefined
         ? campaigns
         : campaigns.filter((campaign) => campaign.client_id === clientId);

@@ -1,5 +1,6 @@
 import { ReplyRateWatchService } from "./services/replyRateWatch.js";
 import { loadOwnershipOverrides, seedById } from "./lib/ownership.js";
+import { createOwnershipRouter } from "./ops/ownershipRouter.js";
 import { CanonConvergeService } from "./services/canonConverge.js";
 import { onWeekCohort as onWeekCohortD303 } from "./lib/restCohort.js";
 import express from "express";
@@ -3455,6 +3456,16 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       podSwap: podSwapSignal(s.podSwap),
     });
   });
+
+  // D332 — Onboarding bot registers new mailboxes' owners into the override
+  // book (no Smartlead client spaces since D331). x-run-token, like /run.
+  app.use(
+    "/ownership",
+    createOwnershipRouter({
+      runToken: config.runToken,
+      accounts: () => inventoryBook.peek()?.accounts ?? null,
+    }),
+  );
 
   // D330 — campaign-watchdog and the other Smartlead callers read this
   // while a weekly POD swap is unfinished and back off. Same object as

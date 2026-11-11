@@ -96,6 +96,14 @@ export function isInboxkitOneEspNoise(message: string): boolean {
   );
 }
 
+/**
+ * SmartDelivery rejected sequence_mapping_id (gone / mid-edit / not synced).
+ * Scan skips; do not page Slack.
+ */
+export function isScanSequenceMissingNoise(message: string): boolean {
+  return /campaign sequence not found/i.test(message);
+}
+
 /** Rate limits/timeouts + approval gates + gone tests — skip Slack paging. */
 export function isBenignOpsNoise(message: string): boolean {
   return (
@@ -105,7 +113,8 @@ export function isBenignOpsNoise(message: string): boolean {
     isRetryRemovalNoise(message) ||
     isBurnChecklistNoise(message) ||
     isSenderNotInCampaignNoise(message) ||
-    isInboxkitOneEspNoise(message)
+    isInboxkitOneEspNoise(message) ||
+    isScanSequenceMissingNoise(message)
   );
 }
 
@@ -159,6 +168,10 @@ export function humanizeAlertError(message: string): string {
 
   if (isInboxkitOneEspNoise(raw)) {
     return "InboxKit allows only one email platform per domain — that domain is already locked to Google or Microsoft. Isolation-buy skips the other ESP.";
+  }
+
+  if (isScanSequenceMissingNoise(raw)) {
+    return "SmartDelivery does not recognize that campaign's sequence mapping yet (mid-edit or not synced). We'll retry next scan.";
   }
 
   if (bounceStats && /\b404\b/i.test(raw)) {

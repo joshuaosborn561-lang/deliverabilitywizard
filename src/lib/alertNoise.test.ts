@@ -9,6 +9,7 @@ import {
   isMissingSpamTestNoise,
   isRateLimitNoise,
   isRetryRemovalNoise,
+  isScanSequenceMissingNoise,
   isSenderNotInCampaignNoise,
   reconnectFailureCategory,
 } from "./alertNoise.js";
@@ -95,6 +96,15 @@ describe("alert noise", () => {
     assert.equal(isBenignOpsNoise(message), true);
     assert.equal(isRateLimitNoise(message), false);
     assert.match(humanizeAlertError(message), /one email platform per domain/i);
+  });
+
+  it("treats Campaign sequence not found as benign ops noise", () => {
+    const message =
+      "Failed creating tests for campaign 4453079: Campaign sequence not found";
+    assert.equal(isScanSequenceMissingNoise(message), true);
+    assert.equal(isBenignOpsNoise(message), true);
+    assert.equal(isRateLimitNoise(message), false);
+    assert.match(humanizeAlertError(message), /sequence mapping/i);
   });
 
   it("explains missing SmartDelivery seed accounts in plain English", () => {

@@ -31,6 +31,15 @@ import {
   variantTestSuffix,
 } from "../lib/sequenceVariants.js";
 
+/**
+ * SmartDelivery rejected sequence_mapping_id — the mapping Smartlead listed
+ * is gone, mid-edit, or not visible to SmartDelivery yet. Next scan retries
+ * once sequences settle; a remediator cannot invent a sequence.
+ */
+export function isCampaignSequenceNotFoundError(message: string): boolean {
+  return /campaign sequence not found/i.test(message);
+}
+
 export interface ScanResult {
   scanned: number;
   eligible: number;
@@ -474,6 +483,7 @@ export class CampaignScanner {
       try {
         for (const variant of variants) {
         const variantLabel = variantTestSuffix(variant, plan.variantTotal ?? variants.length);
+        let sequenceMissing = false;
         for (let i = 0; i < plan.batches.length; i += 1) {
           throwIfAborted(options.signal);
           let batch = plan.batches[i]!;
@@ -557,9 +567,19 @@ export class CampaignScanner {
                   continue;
                 }
               }
+              // Mapping Smartlead listed is invisible to SmartDelivery —
+              // skip this variant; keep going on siblings. Noise, not a bug.
+              if (isCampaignSequenceNotFoundError(message)) {
+                console.log(
+                  `[scan] Skipping campaign ${plan.campaign.id} variant ${variant.label} — sequence mapping ${variant.mappingId} not found (${message})`,
+                );
+                sequenceMissing = true;
+                break;
+              }
               throw error;
             }
           }
+          if (sequenceMissing) break;
 
           const id = String(created!.id);
           createdIds.push(id);
@@ -570,25 +590,39 @@ export class CampaignScanner {
           );
           await sleep(500, options.signal);
         }
+        if (sequenceMissing) {
+          result.skipped += 1;
+          continue;
+        }
         createdVariantKeys.push(variant.key);
         }
 
-        this.state.markCampaignTested({
-          campaignId: plan.campaign.id,
-          campaignName: plan.campaign.name || `Campaign ${plan.campaign.id}`,
-          testedAt: new Date().toISOString(),
-          testIds: createdIds,
-          mailboxCount: plan.senderEmails.length,
-          testsCreated: createdIds.length,
-          variantKeys: createdVariantKeys,
-        });
+        if (createdIds.length) {
+          this.state.markCampaignTested({
+            campaignId: plan.campaign.id,
+            campaignName: plan.campaign.name || `Campaign ${plan.campaign.id}`,
+            testedAt: new Date().toISOString(),
+            testIds: createdIds,
+            mailboxCount: plan.senderEmails.length,
+            testsCreated: createdIds.length,
+            variantKeys: createdVariantKeys,
+          });
+        }
       } catch (error) {
         if (isAbortError(error)) throw error;
         const message = error instanceof Error ? error.message : String(error);
+        result.skipped += 1;
+        // Defense in depth — soft-skip if a sequence-not-found somehow
+        // escaped the per-variant path (noise:scan-sequence-missing).
+        if (isCampaignSequenceNotFoundError(message)) {
+          console.log(
+            `[scan] Skipping campaign ${plan.campaign.id} — sequence not found (${message})`,
+          );
+          continue;
+        }
         result.errors.push(
           `Failed creating tests for campaign ${plan.campaign.id}: ${message}`,
         );
-        result.skipped += 1;
         // Same provider_ids are used for every campaign this run — further
         // creates will fail the same way. Stop and surface once.
         if (

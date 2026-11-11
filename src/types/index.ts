@@ -5,6 +5,15 @@ export interface SmartleadCampaign {
   created_at?: string;
   updated_at?: string;
   client_id?: number | null;
+  /** D331 — unique sg-owner slug (lib/ownership). For a shell: the attributed owner (D332). */
+  owner_slug?: string | null;
+  /**
+   * D332 — attributed owner's legacy client id. Equals client_id for real
+   * campaigns; for a shell client_id stays raw (null) and this carries the
+   * owner, so shells are never counted as client campaigns.
+   */
+  owner_client_id?: number | null;
+  owner_reason?: string;
   bounce_autopause_threshold?: number | string | null;
   /** D157 — LIST /campaigns only; Smartlead-initiated pause attribution. */
   campaign_activity_logs?: Array<{

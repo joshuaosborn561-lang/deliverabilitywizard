@@ -185,4 +185,7 @@ export const STAGE_OVERDUE_WINDOWS_MS: Record<string, number | null> = {
   "inboxkit-license": INBOXKIT_LICENSE_MS,
   // D334 — daily 7:15am CT mailbox health snapshot (every day).
   "mailbox-health-daily": 36 * 60 * 60 * 1000,
+  // D335 — weekly report Monday 8:30am CT; Sunday placement path is off (no window).
+  "weekly-health-report": 8 * 24 * 60 * 60 * 1000,
+  "sunday-placement-test": null,
 };

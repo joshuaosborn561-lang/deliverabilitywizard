@@ -1,6 +1,18 @@
 import { ReplyRateWatchService } from "./services/replyRateWatch.js";
 import { MailboxHealthDailyService } from "./services/mailboxHealthDaily.js";
 import { MailboxHealthStore } from "./state/mailboxHealthStore.js";
+import { MailboxHealthWeeklyService } from "./services/mailboxHealthWeekly.js";
+import {
+  lastCompletedWeek,
+  loadWeeklyHealthConfig,
+  parseWeekParam,
+  weeklyHealthAlertKey,
+} from "./lib/mailboxHealthWeekly.js";
+import { SundayPlacementService } from "./services/sundayPlacement.js";
+import {
+  loadSundayPlacementConfig,
+  sundayPlacementScheduleError,
+} from "./lib/sundayPlacement.js";
 import {
   isYmd,
   loadMailboxHealthConfig,
@@ -718,6 +730,18 @@ async function main(): Promise<void> {
   await mailboxHealth.loadOpenFindings().catch((error) => {
     console.warn("[mailbox-health] could not load the latest snapshot", error);
   });
+  // D335 — weekly report from the stored D334 snapshots (no Smartlead).
+  const weeklyHealthConfig = loadWeeklyHealthConfig();
+  const mailboxHealthWeekly = new MailboxHealthWeeklyService({
+    slack,
+    state,
+    store: mailboxHealthStore,
+    config: weeklyHealthConfig,
+    dryRun: config.dryRun,
+  });
+  // D335 — Sunday-only placement path, OFF unless SUNDAY_PLACEMENT_TEST_ENABLED
+  // is exactly "true" (pending Josh). Off: no service, no cron, no calls.
+  const sundayPlacementConfig = loadSundayPlacementConfig();
   const podControls = new PodControlService(
     config,
     smartlead,
@@ -1699,6 +1723,29 @@ async function main(): Promise<void> {
   };
   const mailboxHealthCronInvalid = mailboxHealthCronError(mailboxHealthConfig.cron);
 
+  let weeklyHealthInFlight: Promise<void> | null = null;
+  const runWeeklyHealth = async (): Promise<void> => {
+    if (weeklyHealthInFlight) return weeklyHealthInFlight;
+    weeklyHealthInFlight = stage("weekly-health-report", async () => {
+      const r = await mailboxHealthWeekly.run();
+      console.log(
+        `[weekly-health] week=${r.week ?? "-"} posted=${r.posted} inboxes=${r.inboxes} flagged=${r.flaggedInboxes} skipped=${r.skipped.join("; ") || "-"} errors=${r.errors.join("; ") || "-"}`,
+      );
+    }).then(
+      () => undefined,
+      (error) => {
+        console.error("[weekly-health] run failed", error);
+      },
+    ).finally(() => {
+      weeklyHealthInFlight = null;
+    });
+    return weeklyHealthInFlight;
+  };
+  const weeklyHealthCronInvalid = mailboxHealthCronError(
+    weeklyHealthConfig.cron,
+    "CRON_WEEKLY_HEALTH_REPORT",
+  );
+
   /**
    * D249 — node-cron does not catch a fire that was missed while the
    * process was down or frozen. Weekday 6am–8pm CT only. Each job is
@@ -1728,6 +1775,20 @@ async function main(): Promise<void> {
         console.log(`[catch-up] mailbox-health missed ${snapshotDateFor(now)} — running once`);
         // Not awaited: an inventory fetch must not hold up the other catch-ups.
         void runMailboxHealth();
+      }
+      // D335 — Monday: a deploy across the 8:30 fire must not lose the week.
+      // Waits for Sunday's snapshot (taken Monday morning by D334).
+      if (
+        weeklyHealthConfig.enabled &&
+        !weeklyHealthCronInvalid &&
+        chicagoWallClock(now, MAILBOX_HEALTH_TIMEZONE).weekday === 1 &&
+        chicagoWallClock(now, MAILBOX_HEALTH_TIMEZONE).hour >
+          Math.min(...mailboxHealthCronHours(weeklyHealthConfig.cron)) &&
+        !state.hasAlert(weeklyHealthAlertKey(lastCompletedWeek(now))) &&
+        (await mailboxHealthStore.read(snapshotDateFor(now)))
+      ) {
+        console.log(`[catch-up] weekly-health missed ${lastCompletedWeek(now)} — running once`);
+        void runWeeklyHealth();
       }
       const ikYmd = state.getInboxkitLicenseHandoff()?.ymd ?? null;
       if (config.enableInboxkitLicenseSweep && weekdayJobMissed(ikYmd, ymd)) {
@@ -2221,6 +2282,51 @@ async function main(): Promise<void> {
         { timezone: MAILBOX_HEALTH_TIMEZONE },
       );
     }
+  }
+
+  // D335 — weekly mailbox health report, Monday 8:30am CT by default.
+  // The cron hour must be 06–19 CT or the job is not scheduled.
+  if (weeklyHealthConfig.enabled) {
+    if (weeklyHealthCronInvalid) {
+      console.error(`[weekly-health] not scheduled: ${weeklyHealthCronInvalid}`);
+    } else {
+      scheduleJob(
+        "weekly-health-report",
+        weeklyHealthConfig.cron,
+        () => runWeeklyHealth(),
+        { timezone: MAILBOX_HEALTH_TIMEZONE },
+      );
+    }
+  }
+
+  // D335 — Sunday-only placement path. Off (the default) registers nothing.
+  // On is pending Josh; it also needs D333 DELIVERABILITY_TESTING_ENABLED
+  // wired into masterSwitch once that lands.
+  const sundayPlacementNotScheduled = sundayPlacementScheduleError(sundayPlacementConfig);
+  if (!sundayPlacementNotScheduled) {
+    const sundayPlacement = new SundayPlacementService({
+      smartDelivery,
+      store: mailboxHealthStore,
+      config: sundayPlacementConfig,
+      providerIds: config.providerIds,
+      dryRun: config.dryRun,
+    });
+    scheduleJob(
+      "sunday-placement-test",
+      sundayPlacementConfig.cron,
+      () =>
+        stage("sunday-placement-test", async () => {
+          const r = await sundayPlacement.run();
+          console.log(
+            `[sunday-placement] ran=${r.ran} created=${r.created.length} skipped=${r.skipped.join("; ") || "-"} errors=${r.errors.join("; ") || "-"}`,
+          );
+        }).catch((error) => {
+          console.error("[sunday-placement] run failed", error);
+        }),
+      { timezone: MAILBOX_HEALTH_TIMEZONE },
+    );
+  } else if (sundayPlacementConfig.enabled) {
+    console.error(`[sunday-placement] not scheduled: ${sundayPlacementNotScheduled}`);
   }
 
   // D205 — always schedule so disabled / after-hours ticks still
@@ -3647,6 +3753,24 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       mailboxes: Object.values(day.rows),
       trends: day.trends,
     });
+  });
+
+  // D335 — weekly mailbox health report as JSON (RUN_TOKEN). Default: the
+  // last completed Mon–Sun week; any date picks the week containing it.
+  app.get("/mailbox-health/weekly", async (req, res) => {
+    if (!checkRunToken(req, res)) return;
+    const raw = typeof req.query.week === "string" ? req.query.week : "";
+    const week = raw ? parseWeekParam(raw) : lastCompletedWeek(new Date());
+    if (!week) {
+      res.status(400).json({ error: "week must be YYYY-MM-DD" });
+      return;
+    }
+    const report = await mailboxHealthWeekly.report(week);
+    if (!report) {
+      res.status(404).json({ error: `no mailbox health snapshots for the week of ${week}`, dates: await mailboxHealthStore.dates() });
+      return;
+    }
+    res.json(report);
   });
 
   // D308 (A0) — drain mode. POST /drain?action=on&minutes=30 stops NEW cron

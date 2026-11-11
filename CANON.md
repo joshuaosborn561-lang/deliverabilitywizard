@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D334** (2026-11-11). One page of current truth. When a new
+Canon as of **D335** (2026-11-11). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -9,6 +9,8 @@ guard in `src/guards/meta.test.ts` enforces both).
 and every reversal, and most of it is **superseded**. Do not derive behaviour
 from it. Derive behaviour from this file; use the ledger only to understand
 *why* a rule here exists (each rule cites its decision numbers).
+
+**D335.** **Weekly mailbox health report; Sunday-only placement test path is OFF.** Monday 8:30am America/Chicago (`CRON_WEEKLY_HEALTH_REPORT`; hour must be 06–19 CT or it is not scheduled) the wizard reports the last Mon–Sun week from the D334 snapshots only — per inbox and per domain reply rate, bounce rate, warmup score, week-over-week change and flags, grouped by sg-owner and POD — as one concise `eod_summary` Slack post (totals, top flagged inboxes and domains) and `GET /mailbox-health/weekly?week=YYYY-MM-DD` (RUN_TOKEN). Alert only. `WEEKLY_HEALTH_REPORT_ENABLED` default on. `SUNDAY_PLACEMENT_TEST_ENABLED` defaults off (only `"true"` enables): off registers no cron and makes no SmartDelivery call; on (pending Josh) runs Sundays 06–19 CT only, at most 3 off-campaign manual placement tests, no shells, no findings, and must also need the D333 `DELIVERABILITY_TESTING_ENABLED` master switch once that lands.
 
 **D334.** **Daily per-mailbox health, alert only.** Every mailbox on an ACTIVE campaign is snapshotted daily (default 7:15am America/Chicago; the cron hour must be 06–19 CT or the job is not scheduled) for the previous CT day: sent, replies, reply rate, bounces, bounce rate, warmup score (`warmup_reputation`), domain, ESP, POD, sg-owner — one `getMailboxHealthMetrics` read, no placement tests. History lives in `<state dir>/mailbox-health/YYYY-MM-DD.json` for 120 days (re-runs overwrite the day). Trend flags — 7-day bounce > 3% (≥ 50 sends) or rising 3 sending days in a row, reply rate > 50% below the prior 14-day baseline (≥ 100 sends each window), warmup < 90 or down ≥ 5 week over week; thresholds are env config — emit the finding `mailbox_health_trend`, counted in `/health` `canonFindings` but **never a core kind** and **never an action** (no pause / stop / unpause / rest / burn / swap). Slack: one `ops_alert` per run, at most once per mailbox per flag per day. `GET /mailbox-health/daily?date=` needs `RUN_TOKEN`. Flags `MAILBOX_HEALTH_DAILY_ENABLED` / `MAILBOX_HEALTH_ALERTS_ENABLED` default on.
 

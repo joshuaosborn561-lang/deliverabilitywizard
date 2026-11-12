@@ -170,9 +170,15 @@ import { startEventLoopAttribution } from "./lib/eventLoopAttribution.js";
 import { startFreezeWatchdog } from "./lib/freezeWatchdog.js";
 import {
   HEALTH_CPU_PAUSE_MS,
+  isPausedForHealth,
   setOverdueCanonOpsExclusive,
   setSlackInteractionExclusive,
 } from "./lib/healthCpuPause.js";
+import {
+  monitorStageIdleReason,
+  runOrIdleStage,
+  shouldBootKickCanaryAdopt,
+} from "./lib/monitorStageIdle.js";
 import { yieldEventLoop } from "./lib/stringifyYielding.js";
 import { PodControlService } from "./services/podControls.js";
 import { IsolationRigService } from "./services/isolationRig.js";
@@ -919,6 +925,11 @@ async function main(): Promise<void> {
     opts: {
       skipIfFreshMs?: number;
       skipIfBeforeStage?: HealthLoopStage | null;
+      /**
+       * D336 — a reason not to start the stage clock at all (health is
+       * live). Nothing is stamped; the D167 resume retries after health.
+       */
+      deferWhile?: () => string | null;
     } = {},
   ): Promise<T | null> => {
     const startedAt = Date.now();
@@ -940,6 +951,13 @@ async function main(): Promise<void> {
         ? `leftover starts at ${opts.skipIfBeforeStage}`
         : `last ok ${lastOk} still inside the cycle`;
       console.log(`[watchdog] stage ${name} skipped — ${why}`);
+      return null;
+    }
+    const deferReason = opts.deferWhile?.();
+    if (deferReason) {
+      console.log(
+        `[watchdog] stage ${name} deferred — ${deferReason}; not starting the ${Math.round(stepTimeoutMs(name) / 60_000)}m clock, lastOk unchanged (D336)`,
+      );
       return null;
     }
     return runStampedStage({
@@ -964,6 +982,8 @@ async function main(): Promise<void> {
       },
       checkpoint: checkpointStage,
       onError: (error) => feedBugRemediator(`stage-${name}`, error),
+      deferred: (error) =>
+        isPausedForHealth(error) ? "health pass live" : null,
     });
   };
 
@@ -1815,11 +1835,18 @@ async function main(): Promise<void> {
       // D167 — a resume pass skips stages whose lastOk is still inside
       // the 6h cycle so a mid-chain SIGTERM continues from the leftover
       // tail instead of rerunning the whole sitting.
-      if (config.enablePodControls) {
-        await stage("pod-tags", () => podTags.run({ joshLive: opts.joshLive }), {
-          skipIfFreshMs,
-        });
-      }
+      // D336 — disabled / testing-off stages still go through stage() with
+      // an idle body so lastOk + lastSkipReason stamp and they stop being
+      // D167 leftovers (ENABLE_POD_CONTROLS off kicked a resume every 15m).
+      const testingEnabled = isDeliverabilityTestingEnabled();
+      const idleFor = (enabled: boolean, testingGated = false) =>
+        monitorStageIdleReason({ enabled, testingGated, testingEnabled });
+      const podIdle = idleFor(config.enablePodControls);
+      await stage("pod-tags", runOrIdleStage("pod-tags", podIdle,
+        () => podTags.run({ joshLive: opts.joshLive }),
+      ), {
+        skipIfFreshMs,
+      });
       // A1 (D312) — placement results + test-reconcile also run on the
       // critical sweep; skip them here when it ran lately.
       const monitorResult = await stage("monitor-results",
@@ -1830,20 +1857,17 @@ async function main(): Promise<void> {
         "monitor",
         (monitorResult as { errors?: string[] })?.errors ?? [],
       );
-      let warmupGateResult: unknown = null;
-      if (config.enableWarmupGate) {
-        warmupGateResult = await stage("warmup-gate-monitor", () => runWarmupGate(), {
-          skipIfFreshMs,
-        });
-      }
+      const warmupGateResult: unknown = await stage("warmup-gate-monitor", runOrIdleStage("warmup-gate-monitor",
+        idleFor(config.enableWarmupGate),
+        () => runWarmupGate(),
+      ), {
+        skipIfFreshMs,
+      });
       // Stop recurring tests whose campaign stopped being active since the scan
-      let reconcileResult: unknown = null;
-      if (config.enableTestReconciler) {
-        reconcileResult = await stage("test-reconcile",
-          exclusiveCriticalStage("test-reconcile", () => runTestReconcile()),
-          { skipIfFreshMs: skipIfFreshMs ?? CRITICAL_FRESH_MS },
-        );
-      }
+      const reconcileResult: unknown = await stage("test-reconcile", runOrIdleStage("test-reconcile",
+        idleFor(config.enableTestReconciler),
+        exclusiveCriticalStage("test-reconcile", () => runTestReconcile()),
+      ), { skipIfFreshMs: skipIfFreshMs ?? CRITICAL_FRESH_MS });
       // Zone-level faults are invisible from inside Smartlead; resolve DNS
       // directly so a domain sending without SPF cannot stay silent.
       const dnsAuditResult: unknown = await stage("dns-audit", () => dnsAudit.run(), {
@@ -1851,64 +1875,92 @@ async function main(): Promise<void> {
       });
       // Campaign-level audit (read-only). Staffing mutations live on the
       // faster CRON_HEALTH loop so thin campaigns do not wait six hours.
-      const campaignAuditResult: unknown = await stage("campaign-audit", async () => {
+      // D336 — a scheduled sitting does not start (or keep) the 10m clock
+      // while health is live: it defers with lastOk unchanged and the
+      // sitting ends, so the D167 resume after health retries it. A paused
+      // walk used to time out and keep walking (orphan limiter traffic).
+      const exitOnHealth = !opts.joshLive;
+      const campaignAuditResult: unknown = await stage("campaign-audit", async (signal) => {
         // D272 — D270 skipped only a *new* monitor tick. A sitting already
         // in campaign-audit still overlapped health CPU. Pause this walk
         // while health is live (hunch; stringify/index are the proven stalls).
-        return campaignAudit.run({ pauseWhile: () => healthLock.isLive() });
-      }, { skipIfFreshMs });
-      // D52 — remaining leads. Campaign audit watches senders, not this number.
-      let leadRunoutResult: unknown = null;
-      if (config.enableLeadRunout) {
-        leadRunoutResult = await stage("lead-runout", () => leadRunout.run(), {
-          skipIfFreshMs,
+        return campaignAudit.run({
+          pauseWhile: () => healthLock.isLive(),
+          signal,
+          exitOnHealth,
         });
-      }
-      // D53 — sending IPs from placement reports we already pull.
-      let sendingInfraResult: unknown = null;
-      if (config.enableSendingInfraCensus) {
-        sendingInfraResult = await stage("sending-infra", () => sendingInfra.run(), {
-          skipIfFreshMs,
-        });
-      }
-      let podControlResult: unknown = null;
-      if (config.enablePodControls) {
-        podControlResult = await stage(
-          "pod-controls",
-          (signal) => podControls.run({ signal }),
-          { skipIfFreshMs },
+      }, {
+        skipIfFreshMs,
+        deferWhile: () =>
+          exitOnHealth && healthLock.isLive() ? "health pass live" : null,
+      });
+      if (exitOnHealth && healthLock.isLive()) {
+        console.log(
+          "[monitor] health pass live after campaign-audit — ending this sitting; leftover stages resume after health (D336)",
         );
-        await stage("domain-client-audit", () => domainClientAudit.run(), {
-          skipIfFreshMs,
-        });
-        await stage("domain-lifecycle", () => domainLifecycle.run(), {
-          skipIfFreshMs,
-        });
-        await stage("isolation-buy-resume", async () => {
+        return { skipped: true as const, reason: "health-running" as const };
+      }
+      // D52 — remaining leads. Campaign audit watches senders, not this number.
+      const leadRunoutResult: unknown = await stage("lead-runout", runOrIdleStage("lead-runout",
+        idleFor(config.enableLeadRunout),
+        () => leadRunout.run(),
+      ), {
+        skipIfFreshMs,
+      });
+      // D53 — sending IPs from placement reports we already pull.
+      const sendingInfraResult: unknown = await stage("sending-infra", runOrIdleStage("sending-infra",
+        idleFor(config.enableSendingInfraCensus),
+        () => sendingInfra.run(),
+      ), {
+        skipIfFreshMs,
+      });
+      const podControlResult: unknown = await stage("pod-controls", runOrIdleStage("pod-controls", podIdle,
+        (signal) => podControls.run({ signal }),
+      ), { skipIfFreshMs });
+      await stage("domain-client-audit", runOrIdleStage("domain-client-audit", podIdle,
+        () => domainClientAudit.run(),
+      ), {
+        skipIfFreshMs,
+      });
+      await stage("domain-lifecycle", runOrIdleStage("domain-lifecycle", podIdle,
+        () => domainLifecycle.run(),
+      ), {
+        skipIfFreshMs,
+      });
+      await stage("isolation-buy-resume", runOrIdleStage("isolation-buy-resume", podIdle,
+        async () => {
           const resumed = await isolationExecute.resumeDecided();
           return resumed + (await isolationBuy.resume());
-        }, {
-          skipIfFreshMs,
-        });
-        await stage("canary-buy-resume", () => copyCanaryBuy.resume(), {
-          skipIfFreshMs,
-        });
-        await stage("canary-adopt", () => runCanaryAdoption(), { skipIfFreshMs });
-      }
-      let isolationRigResult: unknown = null;
-      if (config.enableIsolationRig) {
-        isolationRigResult = await stage("isolation-rig", () => isolationRig.run(), {
-          skipIfFreshMs,
-        });
-      }
-      if (config.enableCopyIsolation) {
-        await stage("copy-isolation", async () => {
+        },
+      ), {
+        skipIfFreshMs,
+      });
+      // D333/D336 — canary-adopt and canary-buy-resume idle as testing-off.
+      await stage("canary-buy-resume", runOrIdleStage("canary-buy-resume",
+        idleFor(config.enablePodControls, true),
+        () => copyCanaryBuy.resume(),
+      ), {
+        skipIfFreshMs,
+      });
+      await stage("canary-adopt", runOrIdleStage("canary-adopt",
+        idleFor(config.enablePodControls, true),
+        () => runCanaryAdoption(),
+      ), { skipIfFreshMs });
+      const isolationRigResult: unknown = await stage("isolation-rig", runOrIdleStage("isolation-rig",
+        idleFor(config.enableIsolationRig, true),
+        () => isolationRig.run(),
+      ), {
+        skipIfFreshMs,
+      });
+      await stage("copy-isolation", runOrIdleStage("copy-isolation",
+        idleFor(config.enableCopyIsolation, true),
+        async () => {
           for (const run of state.listIsolationRuns()) {
             if (!run.teardownStarted) continue;
             await copyIsolation.runForCampaign(run);
           }
-        }, { skipIfFreshMs });
-      }
+        },
+      ), { skipIfFreshMs });
       return {
         monitor: monitorResult,
         warmupGate: warmupGateResult,
@@ -2310,12 +2362,21 @@ async function main(): Promise<void> {
       }
     }
   };
-  if (secretsReady) {
+  // D336 — testing off (D333): no boot kick at all; the monitor's
+  // canary-adopt stage stamps testing-off so /health stays fresh.
+  if (
+    shouldBootKickCanaryAdopt({
+      secretsReady,
+      testingEnabled: isDeliverabilityTestingEnabled(),
+    })
+  ) {
     setTimeout(() => {
       void runCanaryAdoption().catch((error) => {
         console.warn("[copy-canary-adopt] boot kick failed", error);
       });
     }, 90_000);
+  } else if (secretsReady) {
+    logTestingOff("canary-adopt boot kick");
   }
 
   // Old Slack buttons were posted by another bot, so taps never arrived.

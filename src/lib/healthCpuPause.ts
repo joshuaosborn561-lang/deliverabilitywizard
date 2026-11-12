@@ -37,20 +37,66 @@ export function isSlackInteractionExclusive(): boolean {
   return slackInteractionExclusive;
 }
 
+/**
+ * D336 — a monitor walk that meets a live health pass exits instead of
+ * pausing on its own 10-minute stage clock. The stage wrapper catches
+ * this sentinel and leaves lastOk untouched (no failure, no success
+ * stamp), so the D167 resume after health retries the stage.
+ */
+export class PausedForHealthError extends Error {
+  readonly pausedForHealth = true;
+  constructor(label = "campaign-audit") {
+    super(`${label} paused for health`);
+    this.name = "PausedForHealthError";
+  }
+}
+
+export function isPausedForHealth(error: unknown): error is PausedForHealthError {
+  return (
+    error instanceof PausedForHealthError ||
+    (typeof error === "object" &&
+      error !== null &&
+      (error as { pausedForHealth?: unknown }).pausedForHealth === true)
+  );
+}
+
+/** D336 — stop a walk whose stage budget already rejected (raceStep abort). */
+function throwIfAborted(signal: AbortSignal | undefined, label: string): void {
+  if (!signal?.aborted) return;
+  const reason: unknown = signal.reason;
+  if (reason instanceof Error) throw reason;
+  throw new Error(`${label} aborted`);
+}
+
 export async function pauseWhileHealthLive(
   isLive: (() => boolean) | undefined,
-  opts: { label?: string } = {},
+  opts: {
+    label?: string;
+    /** D336 — stop waiting (throw) once the stage's raceStep aborts. */
+    signal?: AbortSignal;
+    /** D336 — throw PausedForHealthError instead of waiting. */
+    exitOnLive?: boolean;
+  } = {},
 ): Promise<void> {
-  if (!isLive || !isLive()) return;
   const label = opts.label ?? "campaign-audit";
+  throwIfAborted(opts.signal, label);
+  if (!isLive || !isLive()) return;
+  if (opts.exitOnLive) {
+    console.log(
+      `[${label}] health pass live — exiting for health; resumes after health (D336)`,
+    );
+    throw new PausedForHealthError(label);
+  }
   console.log(
     `[${label}] health pass live — pausing CPU until health ends (D272)`,
   );
   while (isLive()) {
+    throwIfAborted(opts.signal, label);
     await new Promise<void>((resolve) => {
       setTimeout(resolve, HEALTH_CPU_PAUSE_MS);
     });
   }
+  throwIfAborted(opts.signal, label);
 }
 
 export async function pauseWhileOverdueCanonOps(

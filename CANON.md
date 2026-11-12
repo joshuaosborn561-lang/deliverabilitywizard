@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D333** (2026-11-11). One page of current truth. When a new
+Canon as of **D336** (2026-11-12). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -9,6 +9,8 @@ guard in `src/guards/meta.test.ts` enforces both).
 and every reversal, and most of it is **superseded**. Do not derive behaviour
 from it. Derive behaviour from this file; use the ledger only to understand
 *why* a rule here exists (each rule cites its decision numbers).
+
+**D336.** Every 6-hour monitor stage stamps every sitting: a stage whose enable flag is off records lastOk with `lastSkipReason` `disabled`, and canary-adopt, canary-buy-resume, isolation-rig and copy-isolation record `testing-off` while testing is off (D333) — no Smartlead call, and they are never D167 leftovers. No canary-adopt boot kick while testing is off. A scheduled campaign-audit never starts or keeps its 10-minute clock while health is live: it defers or exits with lastOk unchanged (no failure, no success), the sitting ends, and the D167 resume after health retries it. campaign-audit stops when its stage budget aborts and reads no SmartDelivery test list while testing is off. Flags (`ENABLE_POD_CONTROLS` stays as set), budgets, cadence and test-reconcile are unchanged. LOCKED section unchanged.
 
 **D333.** **No deliverability testing.** No placement tests, canaries, or known-good sends: the wizard creates no SmartDelivery placement test (`Auto: campaign placement`, backfill, `Pod control known-good`, `Canary copy`, variant, reply-drop, isolation) and no `Canary shell` campaign, and canary-adopt and monitor-results do nothing. One switch, `DELIVERABILITY_TESTING_ENABLED`, default off (only the exact string `"true"` enables it). `no_placement_test`, `missing_canary`, `inbox_missing_known_good` and `below_launch_bar` are never raised and never count on `/health`, Slack, Today or the wake queue. No campaign is held from START for a missing test or canary. Existing canary shells stay PAUSED/STOPPED, untouched. This supersedes the daily Auto placement test on every campaign and every older canary / placement rule below while the switch is off; the LOCKED D303 per-variant test and D311 reply-drop test text is updated in the CANON docs PR (`canon-change`, D322) — until then the code follows D333. Everything else is unchanged.
 

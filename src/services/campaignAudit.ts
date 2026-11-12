@@ -29,6 +29,7 @@ import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
 import { indexAccountsByCampaign } from "../lib/accountCampaignIndex.js";
 import { pauseWhileHealthLive } from "../lib/healthCpuPause.js";
+import { isDeliverabilityTestingEnabled } from "../lib/deliverabilityTesting.js";
 import { createTimeSlicer, yieldEventLoop } from "../lib/stringifyYielding.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
 import {
@@ -125,12 +126,24 @@ export class CampaignAuditService {
     private readonly book: InventoryBook,
   ) {}
 
-  async run(opts: { pauseWhile?: () => boolean } = {}): Promise<CampaignAuditResult> {
+  async run(
+    opts: {
+      pauseWhile?: () => boolean;
+      /** D336 — the stage's raceStep signal; the walk stops when it aborts. */
+      signal?: AbortSignal;
+      /**
+       * D336 — monitor sittings exit (PausedForHealthError) instead of
+       * pausing on the 10-minute stage clock; the D167 resume retries.
+       */
+      exitOnHealth?: boolean;
+    } = {},
+  ): Promise<CampaignAuditResult> {
     // D132 — the audit reads the shared account book instead of refetching
     // the whole fleet; its own triple-fetch was a steady 429 source.
     // D272 — when health is live, pause this walk so stringify / inventory
     // / one-client are not competing with campaign-audit CPU (hunch).
-    await pauseWhileHealthLive(opts.pauseWhile);
+    const healthPause = { signal: opts.signal, exitOnLive: opts.exitOnHealth };
+    await pauseWhileHealthLive(opts.pauseWhile, healthPause);
     const { campaigns, accounts, clients } = await this.book.get();
     const brandByClientId = new Map<number, string>();
     for (const client of clients) {
@@ -154,7 +167,7 @@ export class CampaignAuditService {
       seatN += 1;
       if (seatN % 64 === 0) {
         await yieldEventLoop();
-        await pauseWhileHealthLive(opts.pauseWhile);
+        await pauseWhileHealthLive(opts.pauseWhile, healthPause);
       } else {
         await seatSlice();
       }
@@ -186,16 +199,22 @@ export class CampaignAuditService {
     }
 
     let tested = new Set<string>();
-    try {
-      const listed = normalizeTestList(await this.smartDelivery.listTests({}));
-      const enriched = await this.smartDelivery.enrichCampaignIds(listed);
-      tested = testedCampaignCoverage(
-        enriched,
-        this.state.get().testedCampaigns,
-      );
-    } catch (error) {
-      console.warn("[campaign-audit] could not list tests", error);
+    // D336 — testing off (D333): no-test findings are suppressed, so do
+    // not spend SmartDelivery list/lookup calls on them.
+    const testingOn = isDeliverabilityTestingEnabled();
+    if (testingOn) {
+      try {
+        const listed = normalizeTestList(await this.smartDelivery.listTests({}));
+        const enriched = await this.smartDelivery.enrichCampaignIds(listed);
+        tested = testedCampaignCoverage(
+          enriched,
+          this.state.get().testedCampaigns,
+        );
+      } catch (error) {
+        console.warn("[campaign-audit] could not list tests", error);
+      }
     }
+    opts.signal?.throwIfAborted();
 
     const clientInboxFloors = countClientInboxFloors(
       accounts as SmartleadAccountWithCampaigns[],
@@ -262,7 +281,7 @@ export class CampaignAuditService {
       ),
     };
 
-    const untested = rows.filter((r) => !r.hasTest);
+    const untested = testingOn ? rows.filter((r) => !r.hasTest) : [];
     const understaffed = rows.filter((r) => r.shortBy > 0);
     const namedClientIds = [
       ...new Set(
@@ -301,6 +320,8 @@ export class CampaignAuditService {
       brandByClientId,
       allBrands,
       pauseWhile: opts.pauseWhile,
+      signal: opts.signal,
+      exitOnHealth: opts.exitOnHealth,
     });
     const result: CampaignAuditResult = {
       campaigns: rows,
@@ -329,7 +350,7 @@ export class CampaignAuditService {
         .map((d) => `${d.domain}:${d.count}`)
         .join(" ");
       console.log(
-        `[campaign-audit]   #${r.id} ${r.name} — staffable ${displayStaffedSenders(r.staffable)}/${r.floor} (membership ${r.senders})${r.shortBy ? ` short ${displayShortfallSenders(r.shortBy)}` : ""}${r.hasTest ? "" : " NO-TEST"} [${brands}]`,
+        `[campaign-audit]   #${r.id} ${r.name} — staffable ${displayStaffedSenders(r.staffable)}/${r.floor} (membership ${r.senders})${r.shortBy ? ` short ${displayShortfallSenders(r.shortBy)}` : ""}${r.hasTest || !testingOn ? "" : " NO-TEST"} [${brands}]`,
       );
     }
     const idle = [...idleByDomain.entries()].sort((a, b) => b[1] - a[1]);
@@ -379,6 +400,8 @@ export class CampaignAuditService {
     brandByClientId: Map<number, string>;
     allBrands: string[];
     pauseWhile?: () => boolean;
+    signal?: AbortSignal;
+    exitOnHealth?: boolean;
   }): Promise<SignatureQaIssue[]> {
     const issues: SignatureQaIssue[] = [];
     const campaignById = new Map(
@@ -390,15 +413,18 @@ export class CampaignAuditService {
     });
     const membersByCampaign = await indexAccountsByCampaign(input.accounts, {
       pauseWhile: input.pauseWhile,
+      signal: input.signal,
+      exitOnHealth: input.exitOnHealth,
     });
+    const healthPause = { signal: input.signal, exitOnLive: input.exitOnHealth };
 
     let auditN = 0;
     for (const campaign of live) {
       auditN += 1;
-      if (auditN % 4 === 0) {
-        await yieldEventLoop();
-        await pauseWhileHealthLive(input.pauseWhile);
-      }
+      // D336 — every campaign costs a sequences read: stop on abort or a
+      // live health pass before it, not after the stage already timed out.
+      if (auditN % 4 === 0) await yieldEventLoop();
+      await pauseWhileHealthLive(input.pauseWhile, healthPause);
       const campaignName = String(campaign.name ?? campaign.id);
       const expected =
         typeof campaign.client_id === "number"

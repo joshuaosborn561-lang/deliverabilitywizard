@@ -19636,3 +19636,57 @@ describe("owner intent — D333 deliverability testing is off", () => {
     assert.match(decisions, /^\| D333 \|/m);
   });
 });
+
+describe("owner intent — D336 monitor stages always stamp; campaign-audit yields to health", () => {
+  it("D336: idle stages stamp, no testing-off boot kick, campaign-audit defers/aborts", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const read = (rel: string) => readFile(new URL(rel, import.meta.url), "utf8");
+    const [index, idle, pause, stamp, audit, canon, decisions] = await Promise.all([
+      read("../index.ts"),
+      read("../lib/monitorStageIdle.ts"),
+      read("../lib/healthCpuPause.ts"),
+      read("../lib/stageStamp.ts"),
+      read("../services/campaignAudit.ts"),
+      read("../../CANON.md"),
+      read("../../DECISIONS.md"),
+    ]);
+    const stop = (problem: string) =>
+      [
+        "STOP — this reverses one of Josh's decisions.",
+        "  Decision: every monitor stage stamps every sitting; campaign-audit yields to health (D336, 2026-11-12).",
+        `  Problem:  ${problem}`,
+        "Check with Josh before changing it. Do not delete this guard to go green.",
+      ].join("\n");
+    const monitor = index.slice(
+      index.indexOf("const runMonitor = async"),
+      index.indexOf("monitorInFlight = run.finally"),
+    );
+    assert.doesNotMatch(
+      monitor,
+      /if \(config\.enablePodControls\)/,
+      stop("pod stages are hidden behind ENABLE_POD_CONTROLS again — they never stamp and the D167 resume storms every 15m."),
+    );
+    for (const name of [
+      "pod-tags", "pod-controls", "domain-client-audit", "domain-lifecycle",
+      "isolation-buy-resume", "canary-buy-resume", "canary-adopt",
+      "isolation-rig", "copy-isolation",
+    ]) {
+      assert.match(
+        monitor,
+        new RegExp(`stage\\("${name}", runOrIdleStage\\("${name}",`),
+        stop(`${name} no longer stamps when disabled / testing-off.`),
+      );
+    }
+    assert.match(idle, /return "testing-off"/, stop("testing-off idle reason is gone."));
+    assert.match(index, /shouldBootKickCanaryAdopt\(\{/, stop("canary-adopt boot kick runs while testing is off."));
+    assert.match(pause, /class PausedForHealthError/, stop("health-exit sentinel is gone."));
+    assert.match(stamp, /deferred\?\.\(error\)/, stop("a health exit is stamped as a failure or a lastOk again."));
+    assert.match(monitor, /deferWhile: \(\) =>/, stop("campaign-audit starts its 10m clock while health is live."));
+    assert.match(monitor, /signal,\n\s*exitOnHealth,/, stop("campaign-audit ignores its stage abort signal."));
+    assert.match(audit, /opts\.signal\?\.throwIfAborted\(\)/, stop("campaign-audit walks on after its stage aborts."));
+    assert.match(canon, /Canon as of \*\*D(33[6-9]|3[4-9][0-9])\*\*/);
+    assert.match(canon, /\*\*D336\.\*\* Every 6-hour monitor stage stamps every sitting/);
+    assert.match(decisions, /## D336 — /);
+    assert.match(decisions, /^\| D336 \|/m);
+  });
+});

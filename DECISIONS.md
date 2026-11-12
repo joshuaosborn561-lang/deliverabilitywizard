@@ -323,6 +323,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D330 | Live | Weekly POD swap attaches and confirms the on-week pod before it detaches the off-week pod. A 429 or the pass budget saves a cursor and resumes; the 15-minute stage ceiling stays. `GET /pod-swap` publishes `in_progress`, `started_at`, `finished_at`. HTTP 429 honors Retry-After. Pod schedule, seat rules, D228 exemption after confirm, generic top-up, and thresholds unchanged. |
 | D331 | Live | Smartlead client spaces are deleted (Josh, 2026-11-11). Ownership comes from tags, not `client_id`: a campaign is owned by its unique `sg-owner:<slug>` tag (read with `include_tags=true`); wizard shells stay unowned. A mailbox is owned by a wizard override, else its live `client_id`, else the committed 2026-11-11 seed (`src/data/mailboxOwnerSeed.ts`, 1,590 rows), else the unique sg-owner of the campaigns it sends on (never for GENERIC / POC / CANARY), else pool. Owners keep their legacy numeric ids and display names, so every rule keyed by `client_id` is unchanged. Client writes go to the persisted override book, never to Smartlead. |
 | D333 | Live | All deliverability testing is off (Josh, 2026-11-11). `DELIVERABILITY_TESTING_ENABLED` (default off; only `"true"` enables) gates placement-test creation (Auto, backfill, known-good, Canary copy, variant, reply-drop, isolation), canary shells, canary-adopt and monitor-results. `no_placement_test` / `missing_canary` / `inbox_missing_known_good` / `below_launch_bar` are never emitted, clear on the next pass and do not count in `/health`, Slack, Today or the wake queue. qa-unpause STARTs without a placement reading. Supersedes the daily Auto placement test rule. |
+| D336 | Live | Every 6-hour monitor stage stamps every sitting: a stage whose enable flag is off idles as `disabled`, and canary-adopt / canary-buy-resume / isolation-rig / copy-isolation idle as `testing-off` while D333 testing is off — lastOk + lastSkipReason, no Smartlead call — so they stop being D167 leftovers. No canary-adopt boot kick while testing is off. A scheduled campaign-audit does not start its 10m clock while health is live, and exits (no failure, no lastOk) when health starts mid-walk; the monitor sitting ends and the D167 resume retries after health. campaign-audit honors the raceStep abort and skips SmartDelivery listTests while testing is off. Flags, cadence, budgets, test-reconcile and `SMARTLEAD_MAX_PER_MIN` unchanged. |
 
 ---
 
@@ -12132,3 +12133,64 @@ optional Sunday-only test path (off) follow in later PRs.
 
 **Guards.** `src/services/testingOff.test.ts`,
 `src/lib/deliverabilityTesting.test.ts`, `src/guards/canon.test.ts` D333.
+
+## D336 — Monitor stages always stamp; campaign-audit yields to health
+
+**Date.** 2026-11-12. **Who.** Josh (production triage of the 11/12
+campaign-audit / inventory timeouts; "disable canary-adopt" from
+deliverability).
+
+**Problem (production, 2026-11-12, sha 1301446).** campaign-audit last
+succeeded 10:58 UTC, then six `timeout after 10m` (12:21–18:53 UTC);
+lead-runout and inventory also timed out; the shared Smartlead limiter sat
+at 140/150 per minute with 284 HTTP 429s between 14:00 and 19:20 UTC.
+`ENABLE_POD_CONTROLS` is off, so `runMonitor` never entered the
+`if (config.enablePodControls)` block: pod-tags, pod-controls,
+domain-client-audit, domain-lifecycle, canary-buy-resume and canary-adopt
+never stamped and stayed D167 leftovers forever (canary-adopt's only
+testing-off skip was the 90s boot kick, which bypasses `stage()`). Every
+health pass therefore kicked another monitor resume sitting; it reached
+campaign-audit, the next */15 health pass started, the D272 pause held the
+walk while the 10m `raceStep` clock ran, and the stage timed out. The walk
+ignored the abort signal and kept going (a full audit dump logged 4
+minutes after the timeout), and `runMonitor` stacked lead-runout on top.
+
+**Decision.**
+1. Every monitor stage goes through `stage()` every sitting. A stage whose
+   enable flag is off runs an idle body `{ skipped: true, reason:
+   "disabled" }`; canary-adopt, canary-buy-resume, isolation-rig and
+   copy-isolation idle as `testing-off` while D333 testing is off. That
+   stamps lastOk + lastSkipReason (`stageIdleReason`, as pod-cover and
+   canon-ops already do) and makes no Smartlead / SmartDelivery call
+   (`src/lib/monitorStageIdle.ts`). The flags themselves are respected:
+   with `ENABLE_POD_CONTROLS` off, pod-tags / pod-controls / the domain
+   audits stay idle until someone turns it on.
+2. The 90s canary-adopt boot kick is not scheduled while testing is off.
+3. A scheduled monitor sitting does not start campaign-audit's 10m clock
+   while health is live (`deferWhile`): nothing is stamped. If health
+   starts mid-walk, `pauseWhileHealthLive(..., { exitOnLive })` throws
+   `PausedForHealthError`; `runStampedStage` treats it as `deferred` —
+   neither a failure nor a lastOk (a "paused-for-health" lastOk would
+   skip the audit for six hours). The sitting then ends and the D167
+   resume after health retries the leftover tail. Josh-live `/run` and
+   the ops path keep the D272 pause.
+4. campaign-audit takes the `raceStep` AbortSignal and stops at the next
+   yield / sequences read once it aborts — no orphan limiter traffic after
+   a timeout. `pauseWhileHealthLive` stops waiting when its signal aborts.
+5. campaign-audit skips SmartDelivery `listTests` / lookups while testing
+   is off (no-test findings are already suppressed by D333) and lists no
+   untested campaigns.
+
+**Inventory.** The `inventory` stage is only ever run by the health pass
+itself (on the exclusive health lane), so it is not deferred for health;
+its 5m budget is unchanged. Its flapping is attributed to the competing
+monitor traffic above (orphan campaign-audit walks, resume storm).
+
+**Does not change.** `ENABLE_POD_CONTROLS` or any Railway variable,
+`DELIVERABILITY_TESTING_ENABLED`, test-reconcile (still on; D333 left it
+alone), `SMARTLEAD_MAX_PER_MIN`, stage budgets, cron cadence, D272 for
+non-monitor callers.
+
+**Guards.** `src/lib/monitorStageIdle.test.ts`,
+`src/lib/healthCpuPause.test.ts` D336, `src/lib/stageStamp.test.ts` D336,
+`src/services/campaignAudit.test.ts` D336, `src/guards/canon.test.ts` D336.

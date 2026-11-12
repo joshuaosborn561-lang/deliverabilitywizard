@@ -6,6 +6,8 @@ import {
   STAGE_PASS_SUPERSEDED,
   STAGE_SILENT_EXIT,
 } from "./stageStamp.js";
+import { isPausedForHealth, PausedForHealthError } from "./healthCpuPause.js";
+import { raceStep } from "./stepTimeout.js";
 
 describe("stage stamp (D261)", () => {
   it("finalizeStageStamp writes exited-without-stamp only when nothing landed", () => {
@@ -91,5 +93,43 @@ describe("stage stamp (D261)", () => {
     });
     assert.equal(stamped, true);
     assert.deepEqual(recorded, [STAGE_SILENT_EXIT]);
+  });
+});
+
+describe("D336 deferred stage exit", () => {
+  it("a PausedForHealth exit stamps neither ok nor error (not timeout after 10m, not a fresh lastOk)", async () => {
+    const ok: string[] = [];
+    const err: string[] = [];
+    const out = await runStampedStage({
+      name: "campaign-audit",
+      startedAt: Date.now(),
+      run: () =>
+        raceStep(async () => {
+          throw new PausedForHealthError("campaign-audit");
+        }, 60_000),
+      recordOk: (name, _ms, skip) => ok.push(`${name}:${skip ?? ""}`),
+      recordError: (name, message) => err.push(`${name}:${message}`),
+      checkpoint: async () => {},
+      deferred: (error) => (isPausedForHealth(error) ? "health pass live" : null),
+    });
+    assert.equal(out, null);
+    assert.deepEqual(ok, []);
+    assert.deepEqual(err, []);
+  });
+
+  it("a real error still stamps when a deferred hook is present", async () => {
+    const err: string[] = [];
+    await runStampedStage({
+      name: "campaign-audit",
+      startedAt: Date.now(),
+      run: async () => {
+        throw new Error("timeout after 10m");
+      },
+      recordOk: () => assert.fail("no ok"),
+      recordError: (name, message) => err.push(`${name}:${message}`),
+      checkpoint: async () => {},
+      deferred: (error) => (isPausedForHealth(error) ? "health pass live" : null),
+    });
+    assert.deepEqual(err, ["campaign-audit:timeout after 10m"]);
   });
 });

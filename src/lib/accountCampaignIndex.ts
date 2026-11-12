@@ -24,6 +24,10 @@ export interface IndexAccountsOpts {
    * campaign-check omit this (they *are* the health cycle).
    */
   pauseWhile?: () => boolean;
+  /** D336 — campaign-audit's raceStep signal; the walk stops when it aborts. */
+  signal?: AbortSignal;
+  /** D336 — throw PausedForHealthError instead of waiting on health. */
+  exitOnHealth?: boolean;
   /**
    * D293 — min40 / surplus-return (the overdue canon-ops holder) must
    * not wait on the exclusive flag they themselves set.
@@ -83,6 +87,8 @@ export async function indexAccountsByCampaign(
       await yieldToTimers();
       await pauseWhileHealthLive(opts.pauseWhile, {
         label: "scan:indexAccountsByCampaign",
+        signal: opts.signal,
+        exitOnLive: opts.exitOnHealth,
       });
       await pauseWhileOverdueCanonOps({
         label: "scan:indexAccountsByCampaign",
